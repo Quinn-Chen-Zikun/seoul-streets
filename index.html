@@ -1,0 +1,1177 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="首尔夜行：首尔市中心的 3D 开放城市小游戏，浏览器直接游玩。">
+<title>首尔夜行</title>
+<style>
+:root{color-scheme:dark;--ink:#edf3ed;--muted:#a9bfbe;--mint:#a5f0cb;--orange:#ffb76d}*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#182f3e;font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;user-select:none;-webkit-user-select:none;touch-action:none}button{font:inherit;cursor:pointer}#world{position:fixed;inset:0;display:block;width:100%;height:100%;outline:none}#vignette{position:fixed;inset:0;pointer-events:none;background:linear-gradient(180deg,#09222c48,transparent 24%,transparent 74%,#061d2860)}#hud{position:fixed;inset:0;pointer-events:none;color:var(--ink);opacity:0;transition:opacity .8s}.playing #hud{opacity:1}.topbar{position:absolute;left:32px;right:32px;top:25px;display:flex;align-items:flex-start;justify-content:space-between;gap:20px}.brand{font-size:12px;letter-spacing:5px;color:#c5e1d7;display:flex;align-items:center;gap:12px}.brand:before{content:"";width:25px;height:25px;border:1px solid #a5f0cb88;border-radius:50%;box-shadow:inset 0 0 0 5px #a5f0cb15}.location{font-size:24px;letter-spacing:3px;margin:11px 0 5px;font-weight:600;text-shadow:0 2px 12px #0008}.sub{font-size:10px;color:#c0d3cf;letter-spacing:2px}.stats{display:flex;gap:25px;text-align:right}.stat small{display:block;color:#a9c7c2;font-size:9px;letter-spacing:2px;margin-bottom:6px}.stat b{font-variant-numeric:tabular-nums;font-size:19px;font-weight:500;letter-spacing:1px}.mission{position:absolute;right:32px;top:110px;width:265px;padding:18px 20px 17px;border-top:1px solid #a5f0cb6b;border-left:1px solid #c8e5de18;background:linear-gradient(120deg,#102c34df,#122d35a8);backdrop-filter:blur(12px);box-shadow:0 10px 30px #00182330}.eyebrow{font-size:9px;letter-spacing:3px;color:var(--mint);display:flex;justify-content:space-between}.mission h3{font-size:17px;font-weight:500;letter-spacing:2px;margin:13px 0 6px}.mission p{font-size:11px;line-height:1.8;color:#b3cac5;margin:0}.mission-line{display:flex;align-items:baseline;justify-content:space-between;margin-top:16px}.mission-line strong{font-size:23px;font-weight:400;font-variant-numeric:tabular-nums}.mission-line span{font-size:11px;color:var(--orange)}.progress{height:2px;background:#d6f5e51b;margin-top:11px}.progress i{display:block;height:100%;background:var(--mint);width:100%;transform-origin:left center}.map-wrap{position:absolute;bottom:32px;left:32px;width:184px;height:184px;border-radius:50%;padding:5px;border:1px solid #c4e7d155;background:#0a2836cc;box-shadow:0 5px 35px #001b354d}#minimap{width:172px;height:172px;border-radius:50%;display:block}.map-n{position:absolute;top:-19px;left:87px;font-size:9px;color:#c5e5da;letter-spacing:2px}.map-caption{position:absolute;top:194px;left:0;width:184px;text-align:center;font-size:9px;letter-spacing:2px;color:#adc9c3}.telemetry{position:absolute;bottom:38px;left:244px}.speed{font-size:49px;font-weight:250;letter-spacing:-2px;line-height:1}.speed small{font-size:10px;letter-spacing:2px;margin-left:8px;color:#adc5c2}.mode{margin-top:9px;letter-spacing:3px;font-size:10px;color:#bfd5ca}.keybar{position:absolute;bottom:34px;right:32px;display:flex;gap:15px;align-items:center;font-size:10px;color:#c7d8d0}kbd{display:inline-grid;place-items:center;min-width:22px;height:23px;padding:0 5px;border:1px solid #c5e5d14d;background:#102d3599;border-radius:4px;font:10px system-ui;margin-right:5px}.interaction{position:absolute;left:50%;bottom:95px;transform:translateX(-50%);background:#0c2936df;border:1px solid #a5f0cb55;padding:10px 16px;border-radius:4px;font-size:12px;letter-spacing:1px;display:none;white-space:nowrap}.interaction.visible{display:block}#toast{position:absolute;top:26%;left:50%;transform:translate(-50%,-12px);opacity:0;transition:.35s;background:#0b2b35ec;border-left:3px solid var(--mint);padding:16px 23px;text-align:center;font-size:13px;line-height:1.8;letter-spacing:2px;max-width:90vw}#toast.show{opacity:1;transform:translate(-50%,0)}#crosshair{position:absolute;left:50%;top:50%;width:3px;height:3px;background:#fff7;border-radius:50%;display:none}.locked.armed #crosshair{display:block}.intro{position:fixed;inset:0;z-index:10;color:var(--ink);background:linear-gradient(90deg,#06242cee 0%,#082530bd 32%,#0a293421 70%),linear-gradient(0deg,#082730b3,transparent 35%);display:flex;flex-direction:column;justify-content:center;padding:7vh 7vw;transition:opacity .7s,visibility .7s}.intro.hidden{opacity:0;visibility:hidden;pointer-events:none}.intro .serial{font-size:10px;letter-spacing:5px;color:var(--mint);display:flex;align-items:center;gap:15px}.serial:before{content:"";height:1px;width:38px;background:var(--mint)}h1{font-size:clamp(64px,9vw,130px);font-weight:500;line-height:1.12;letter-spacing:.12em;margin:29px 0 24px;text-shadow:0 5px 40px #00141e33}h1 em{font-weight:300;font-style:normal;color:#a5f0cb}.intro .poem{font-size:14px;letter-spacing:5px;color:#c4d7ce;line-height:2}.intro .description{max-width:350px;font-size:11px;color:#9fbdb9;line-height:2;letter-spacing:1px;margin:18px 0 27px}.start{width:256px;background:#b1efd1;color:#102f34;border:0;border-radius:2px;text-align:left;padding:18px 23px;font-size:13px;font-weight:600;letter-spacing:4px;box-shadow:0 5px 30px #8dd6bd12;transition:.2s}.start:hover{background:#d1ffe7;transform:translateY(-2px)}.start span{float:right;font-size:18px;line-height:18px}.start:disabled{opacity:.5;cursor:wait}.intro-controls{display:flex;gap:20px;flex-wrap:wrap;margin-top:23px;font-size:10px;line-height:2;color:#aac5c0;max-width:430px}.intro-footer{position:absolute;left:7vw;bottom:27px;font-size:9px;letter-spacing:3px;color:#91afad}.intro-coord{position:absolute;right:36px;bottom:27px;text-align:right;font-size:9px;letter-spacing:2px;line-height:2;color:#bed7ce}.intro-badge{position:absolute;right:38px;top:30px;font-size:10px;letter-spacing:3px;border-top:1px solid #bbdfcc77;padding-top:12px;color:#c4ded4}.mobile{display:none}#joystick{position:absolute;left:28px;bottom:30px;width:126px;height:126px;border:1px solid #c4e6d353;background:#153c4b52;border-radius:50%;pointer-events:auto;touch-action:none}#joystick:after{content:"";position:absolute;inset:22px;border:1px dashed #c9ead82b;border-radius:50%}#stick{position:absolute;left:39px;top:39px;width:46px;height:46px;background:#b5e8d162;border:1px solid #d7ffea99;border-radius:50%;box-shadow:0 3px 16px #002a354d}.touch-buttons{position:absolute;right:22px;bottom:26px;display:none;grid-template-columns:65px 65px;gap:12px;pointer-events:auto}.touch-buttons button{width:65px;height:65px;border:1px solid #c2ead05c;color:#e4f6ec;background:#1233429e;border-radius:50%;font-size:11px;touch-action:none;backdrop-filter:blur(6px)}.touch-buttons button:active,.touch-buttons button.held{background:#83d5af82}.touch-buttons button:first-child{border-color:#a8e7ca9e}.touchhint{position:absolute;bottom:180px;right:26px;font-size:9px;letter-spacing:2px;color:#d2e7d180}#error{display:none;color:#ffcf9f;font-size:12px;line-height:1.8;max-width:400px;margin-top:14px}.paused-label{display:none;position:absolute;left:50%;top:12px;transform:translateX(-50%);font-size:10px;letter-spacing:2px;padding:7px 12px;background:#082936b0}.paused .paused-label{display:block}@media(pointer:coarse){.mobile{display:block}.touch-buttons{display:grid}.keybar{display:none}.map-wrap{bottom:183px;left:28px;width:128px;height:128px}#minimap{width:116px;height:116px}.map-n{left:59px}.map-caption{top:135px;width:126px;font-size:8px}.telemetry{left:179px;bottom:35px}.speed{font-size:34px}.interaction{bottom:180px}.intro-controls{max-width:330px}.desktop-help{display:none}}@media(max-width:650px){.topbar{left:20px;right:20px;top:20px}.brand{font-size:9px;letter-spacing:3px}.brand:before{width:20px;height:20px}.location{font-size:19px;margin-top:8px}.stats{gap:14px}.stat b{font-size:15px}.stat small{font-size:8px}.mission{right:20px;top:104px;width:211px;padding:13px 15px}.mission h3{font-size:15px;margin-top:9px}.mission p{font-size:10px}.mission-line{margin-top:9px}.mission-line strong{font-size:20px}.intro{padding:6vh 8vw}.intro .serial{font-size:8px;letter-spacing:3px}h1{margin-top:24px;font-size:76px}.intro .poem{font-size:11px;letter-spacing:3px}.intro .description{max-width:280px}.intro-badge,.intro-coord{display:none}.intro-footer{left:8vw;bottom:21px;font-size:8px}.intro-controls{gap:7px 15px}.keybar{display:none}.sub{font-size:8px}.telemetry{bottom:33px}.touchhint{bottom:174px}#toast{top:36%;font-size:12px}.interaction{font-size:10px;padding:9px 12px}}@media(max-height:560px){.intro{padding-top:25px;padding-bottom:30px}h1{font-size:60px;margin:15px 0}.intro .description{display:none}.intro-controls{margin-top:12px}.intro-footer{display:none}.mission{top:90px}.map-wrap{width:120px;height:120px;bottom:28px;left:20px}#minimap{width:108px;height:108px}.map-n{left:54px}.map-caption{display:none}.telemetry{left:160px;bottom:28px}@media(pointer:coarse){.map-wrap{bottom:170px;width:90px;height:90px}#minimap{width:78px;height:78px}.map-n{left:39px}.mission{width:200px;top:85px}.mission p{display:none}.interaction{bottom:30px}.touchhint{display:none}}}
+
+.vitals{position:absolute;left:10px;right:10px;bottom:-15px;display:flex;gap:5px}.vital{height:5px;flex:1;background:#071c25;border-radius:8px;overflow:hidden}.vital i{display:block;height:100%;width:100%;background:#91e9b2;transition:width .15s}.vital.armor i{background:#8dc9fa}.vital-label{position:absolute;left:0;right:0;top:217px;font-size:9px;text-align:center;color:#c5ded8}.map-caption{display:none}.map-wrap{bottom:69px}.weapon-panel{position:absolute;right:32px;bottom:90px;text-align:right;padding:14px 18px;border-right:2px solid #a5f0cb88;background:#0c2835c9;min-width:185px}.weapon-panel strong{font-size:16px;font-weight:500}.weapon-panel b{font-size:25px;display:block;margin-top:5px;font-variant-numeric:tabular-nums}.weapon-panel small{display:block;color:#b6cfc8;font-size:9px;margin-top:5px;letter-spacing:1px}#heat{position:absolute;right:32px;top:77px;letter-spacing:5px;font-size:19px;color:#ffd28c;text-shadow:0 0 13px #ffb04f55}#heat.searching{color:#a6c2d4}#crosshair{width:18px;height:18px;border:1px solid #d4fff9aa;background:none;border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 2px #000}.armed #crosshair{display:block}.hit #crosshair{border-color:#ffbd81;transform:translate(-50%,-50%) scale(1.4)}#downscreen{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;flex-direction:column;color:#d9ebe3;background:#081c2cba;backdrop-filter:grayscale(1) blur(3px);letter-spacing:7px}#downscreen.visible{display:flex}#downscreen strong{font-size:72px;font-weight:400}#downscreen p{font-size:13px;letter-spacing:2px;margin-top:20px}.keybar{gap:9px;font-size:9px}.mission p{min-height:38px}#damage{position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 150px #bd563c;opacity:0;transition:opacity .2s}.map-legend{color:#97beb7;font-size:9px;position:absolute;left:32px;bottom:10px;letter-spacing:1px}@media(max-width:700px){.keybar{display:none}.weapon-panel{right:16px;bottom:170px;padding:8px;min-width:140px}.map-legend{display:none}.vital-label{top:150px}.map-caption{display:none}#heat{right:20px;top:76px}.weapon-panel strong{font-size:12px}.weapon-panel b{font-size:20px}}@media(pointer:coarse){.map-wrap{bottom:205px}.vital-label{top:146px}.map-caption{display:none}}
+.stamina{width:122px;margin-top:9px;font-size:9px;color:#b8d3c6;letter-spacing:1px}.stamina-track{height:4px;margin-top:4px;background:#071e2ba8;border-radius:4px;overflow:hidden}.stamina-track i{display:block;width:100%;height:100%;background:#abedca;transform-origin:left;transition:transform .12s}.stamina.low i{background:#f2b37c}#bobToggle{pointer-events:auto;background:#12334299;border:1px solid #a5f0cb44;color:#c7ded3;font-size:9px;padding:5px 7px;margin-top:8px;border-radius:4px}.touch-buttons{grid-template-columns:65px 65px 65px}.touch-buttons button{height:58px;width:58px}.touchhint{bottom:166px}@media(pointer:coarse){.telemetry{left:166px;bottom:150px}.weapon-panel{bottom:274px;right:16px}.interaction{bottom:220px}.mode{letter-spacing:1px}.stamina{width:104px}.touch-buttons{gap:8px;right:16px;bottom:24px}}@media(pointer:coarse) and (max-height:560px){.telemetry{bottom:160px}.weapon-panel{bottom:170px}.mission{max-width:190px}.interaction{bottom:144px}}#fps{position:absolute;left:32px;top:64px;font-size:10px;color:#bff0d8;letter-spacing:1px;display:none;font-variant-numeric:tabular-nums}#fps.show{display:block}#qualityToggle{pointer-events:auto;background:#12334299;border:1px solid #a5f0cb44;color:#c7ded3;font-size:9px;padding:5px 7px;margin-top:8px;border-radius:4px}#settingsBtn{pointer-events:auto;background:#12334299;border:1px solid #a5f0cb44;color:#c7ded3;font-size:9px;padding:5px 7px;margin-top:8px;margin-left:5px;border-radius:4px}#settingsPanel{position:absolute;right:32px;bottom:238px;width:218px;background:#0b2734ef;border:1px solid #a5f0cb55;border-top:2px solid #a5f0cb;padding:14px 16px;display:none;pointer-events:auto;box-shadow:0 10px 32px #00172255;letter-spacing:1px}#settingsPanel.open{display:block}#settingsPanel h4{margin:0 0 12px;font-size:11px;font-weight:500;color:#d9efe5;letter-spacing:3px}#settingsPanel label{display:block;font-size:10px;color:#b7d2c8;margin:11px 0 6px}#settingsPanel input[type=range]{width:100%;accent-color:#a5f0cb;height:16px}#settingsPanel .setting-value{float:right;color:#a5f0cb;font-variant-numeric:tabular-nums}#settingsPanel .setting-hint{font-size:9px;color:#8fada7;line-height:1.7;margin-top:9px;letter-spacing:0}#weaponSlots{position:absolute;right:32px;bottom:196px;display:flex;gap:6px}#weaponSlots .slot{width:44px;height:44px;border:1px solid #a5f0cb33;background:#0c2a36c9;border-radius:3px;position:relative;opacity:.55}#weaponSlots .slot.active{opacity:1;border-color:#a5f0cb;box-shadow:0 0 14px #a5f0cb33}#weaponSlots canvas{width:44px;height:44px;display:block}#weaponSlots .slot small{position:absolute;right:3px;bottom:1px;font-size:8px;color:#cfe6db;text-shadow:0 1px 2px #000}#crosshair{width:0;height:0;border:0;background:none;border-radius:0;transform:translate(-50%,-50%)}#crosshair i{position:absolute;display:block;background:#ecfff8;box-shadow:0 0 2px #001a22cc;transition:none}#crosshair i:nth-child(1),#crosshair i:nth-child(2){width:2px;height:7px;left:-1px}#crosshair i:nth-child(1){top:calc(-1*var(--spread,7px) - 7px)}#crosshair i:nth-child(2){top:var(--spread,7px)}#crosshair i:nth-child(3),#crosshair i:nth-child(4){height:2px;width:7px;top:-1px}#crosshair i:nth-child(3){left:calc(-1*var(--spread,7px) - 7px)}#crosshair i:nth-child(4){left:var(--spread,7px)}#crosshair b{position:absolute;width:2px;height:2px;left:-1px;top:-1px;border-radius:50%;background:#ecfff8;box-shadow:0 0 2px #001a22}#hitmark{position:fixed;left:50%;top:50%;width:0;height:0;pointer-events:none;opacity:0;z-index:5}#hitmark.show{opacity:1}#hitmark i{position:absolute;width:10px;height:2px;background:#ffd9a0;box-shadow:0 0 4px #ff9d51;left:-5px;top:-1px}#hitmark i:nth-child(1){transform:rotate(45deg) translate(13px,0)}#hitmark i:nth-child(2){transform:rotate(135deg) translate(13px,0)}#hitmark i:nth-child(3){transform:rotate(-45deg) translate(13px,0)}#hitmark i:nth-child(4){transform:rotate(-135deg) translate(13px,0)}@media(max-width:700px){#settingsPanel{right:16px;bottom:300px}#weaponSlots{right:16px;bottom:260px;gap:4px}#weaponSlots .slot{width:36px;height:36px}#weaponSlots canvas{width:36px;height:36px}}@media(pointer:coarse){#settingsPanel{display:none!important}}
+</style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<canvas id="world" tabindex="0" aria-label="首尔夜行，三维开放城市"></canvas>
+<div id="vignette"></div>
+<div id="hud">
+  <div class="topbar"><div><div class="brand">首尔夜行 <span style="opacity:.5">/</span> SEOUL</div><div class="location" id="area">종로 · 钟路</div><div class="sub" id="district">종로구 / 도심</div></div><div class="stats"><div class="stat"><small>城市时间</small><b id="clock">17:20</b></div><div class="stat"><small>随身现金</small><b id="money">¥ 2,400</b></div></div></div>
+  <div class="mission"><div class="eyebrow"><span id="missionTag">城市采风 / 01</span><span>● LIVE</span></div><h3 id="missionName">북궐 · 宫阙正门</h3><p id="missionDesc">赶在约定时间前抵达光柱，收集一份城市印记。</p><div class="mission-line"><strong id="countdown">03:00</strong><span id="reward">+ ¥ 680 · 128 m</span></div><div class="progress"><i id="missionProgress"></i></div></div>
+  <div class="map-wrap"><div class="map-n" id="north">N</div><canvas id="minimap" width="360" height="360"></canvas><div class="vitals"><div class="vital" title="生命"><i id="healthBar"></i></div><div class="vital armor" title="护甲"><i id="armorBar"></i></div></div><div class="vital-label" id="vitalsText">生命 100 · 护甲 60</div><div class="map-caption">서울 야간 / 自由探索</div></div>
+  <div class="telemetry"><div class="speed"><span id="speed">0</span><small id="speedUnit">KM/H</small></div><div class="mode" id="mode">慢跑 · 서울夜行者</div><div class="stamina" id="stamina"><span id="staminaText">体力 100%</span><div class="stamina-track" role="progressbar" aria-label="体力" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" id="staminaMeter"><i id="staminaBar"></i></div></div><button id="bobToggle" aria-pressed="false">镜头起伏：关 · B</button><button id="qualityToggle">画质：自动</button><button id="settingsBtn" aria-expanded="false">灵敏度</button></div>
+  <div id="settingsPanel" role="dialog" aria-label="设置"><h4>视角设置</h4><label>鼠标灵敏度 <span class="setting-value" id="sensValue">1.00×</span></label><input type="range" id="sensRange" min="0.3" max="2.4" step="0.05" value="1" aria-label="鼠标灵敏度"><label>瞄准灵敏度 <span class="setting-value" id="aimSensValue">0.65×</span></label><input type="range" id="aimSensRange" min="0.25" max="1.5" step="0.05" value="0.65" aria-label="瞄准灵敏度"><label>垂直视角 <span class="setting-value" id="invertValue">标准</span></label><input type="range" id="pitchRange" min="0" max="1" step="1" value="0" aria-label="垂直视角方向"><div class="setting-hint">拖动滑块实时生效 · 也可点击「画质」循环自动 / 高 / 中 / 低</div></div>
+  <div id="weaponSlots" aria-label="武器快捷栏"></div>
+  <div id="heat" aria-label="警戒等级"></div><div class="weapon-panel"><strong id="weaponName">徒手</strong><b id="ammo">—</b><small id="weaponHint">1–3 切换 · H 收起武器</small></div><div class="map-legend">青绿 은빛단 · 朱红 붉은매 · 蓝红 巡警 · 金色 补给</div><div class="keybar"><span><kbd>WASD</kbd>移动</span><span><kbd>F</kbd>驾驶</span><span><kbd>Shift</kbd>疾跑 / C 步行</span><span><kbd>Space</kbd>跳 / 手刹</span><span><kbd>1–3</kbd>武器</span><span><kbd>R</kbd>换弹</span><span><kbd>H</kbd>收起</span><span><kbd>M</kbd>任务</span><span>右键瞄准 · 左键攻击</span></div>
+  <div class="interaction" id="interaction"><kbd>F</kbd>驾驶车辆</div><div id="toast" role="status"></div><div id="crosshair"><b></b><i></i><i></i><i></i><i></i></div><div id="hitmark"><i></i><i></i><i></i><i></i></div><div class="paused-label">窗口暂离 · 城市已暂停</div>
+  <div id="joystick" class="mobile"><div id="stick"></div></div><div class="touchhint mobile">右侧滑动 · 环顾城市</div><div class="touch-buttons mobile"><button id="touchEnter" aria-label="上车或下车">上车</button><button id="touchJump" aria-label="跳跃">跳跃</button><button id="touchSprint" aria-label="按住疾跑">疾跑</button><button id="touchGait" aria-label="切换行走或奔跑" aria-pressed="false">行走/奔跑</button><button id="touchBrake" aria-label="按住手刹">手刹</button></div>
+<div id="fps"></div>
+</div>
+<div id="damage"></div><div id="downscreen"><strong>倒下了</strong><p id="respawnText">正在送往最近的医疗站</p></div><div class="intro" id="intro"><div class="intro-badge">一条江 · 一座城 · 你的路线</div><div class="serial">原创开放城市 / 首尔夜行计划</div><h1>首尔<br><em>夜行</em></h1><div class="poem">从汉江的一阵风，驶入山与霓虹之间。</div><p class="description">跨过汉江大桥，绕过南山，在宫墙与霓虹之间自由穿行。驾驶街头车辆，追随地标光柱；或接下街区委托，在两支原创帮派与城市巡警之间选择你的路线。</p><button class="start" id="start" disabled>正在构筑首尔 <span>↗</span></button><div class="intro-controls"><span><kbd>WASD</kbd>行走 / 驾驶</span><span><kbd>F</kbd>上车 / 下车</span><span><kbd>Shift</kbd>疾跑</span><span><kbd>Space</kbd>跳跃 / 手刹</span><span class="desktop-help">点击画面锁定视角 · Esc 释放 · 滚轮始终变焦<br>C / Caps Lock 步行切换 · Shift 疾跑 · Q/E 或 1–3 武器<br>右键瞄准 · 左键攻击 · R 换弹 · H 收起 · B 镜头起伏 · M 任务</span><span class="mobile">摇杆小推步行 / 大推慢跑 · 按住疾跑 · 右侧滑动环顾</span></div><div id="error" role="alert"></div><div class="intro-footer">程序化构筑 / 无界漫游 / 原创体验</div><div class="intro-coord">37° 33′ N &nbsp; 126° 59′ E<br>SEOUL, SOUTH KOREA</div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+(() => {
+const $=id=>document.getElementById(id);
+const error=$('error');
+if(!window.THREE){error.style.display='block';error.textContent='三维引擎未能载入。请检查网络连接，然后刷新页面。';$('start').textContent='引擎尚未就绪';return;}
+try {
+const T=THREE, PI=Math.PI, TAU=PI*2, WORLD=1260, coarse=matchMedia('(pointer:coarse)').matches;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)), lerp=(a,b,t)=>a+(b-a)*t;
+let seed=31107;
+function rnd(){seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;}
+function rand(a,b){return a+(b-a)*rnd();}
+function angleDelta(a,b){let d=(b-a)%TAU;if(d>PI)d-=TAU;if(d<-PI)d+=TAU;return d;}
+function approachAngle(a,b,t){return a+angleDelta(a,b)*Math.min(t,1);}
+const canvas=$('world');
+const quality={mode:'auto',level:2};
+const Q=[{ratio:.75,shadows:0,map:1024,far:2200,fogNear:420,fogFar:1500},{ratio:.85,shadows:1,map:1024,far:2800,fogNear:520,fogFar:1800},{ratio:1,shadows:1,map:2048,far:3500,fogNear:650,fogFar:2200}];
+function qualityLevel(){return quality.mode==='auto'?quality.level:(quality.mode==='低'?0:quality.mode==='中'?1:2);}
+const renderer=new T.WebGLRenderer({canvas,antialias:!coarse&&quality.mode!=='auto',powerPreference:'high-performance'});
+renderer.outputEncoding=T.sRGBEncoding;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.02;
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFShadowMap;
+const scene=new T.Scene();scene.fog=new T.Fog(0xc3c6bd,650,2200);
+const camera=new T.PerspectiveCamera(65,innerWidth/innerHeight,.08,3500);
+const hemi=new T.HemisphereLight(0xc5dfef,0x5f6854,.9);scene.add(hemi);
+const sun=new T.DirectionalLight(0xffdab0,1.8);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-65;sun.shadow.camera.right=65;sun.shadow.camera.top=65;sun.shadow.camera.bottom=-65;sun.shadow.camera.near=10;sun.shadow.camera.far=800;sun.shadow.bias=-.0003;sun.shadow.normalBias=.035;scene.add(sun,sun.target);
+function applyQuality(){const cfg=Q[qualityLevel()];renderer.setPixelRatio(Math.min(devicePixelRatio||1,cfg.ratio));renderer.setSize(innerWidth,innerHeight);camera.aspect=innerWidth/innerHeight;renderer.shadowMap.enabled=cfg.shadows>0;renderer.shadowMap.type=T.PCFShadowMap;if(sun.shadow.mapSize.x!==cfg.map){sun.shadow.mapSize.set(cfg.map,cfg.map);if(sun.shadow.map){sun.shadow.map.dispose();sun.shadow.map=null;}}camera.far=cfg.far;camera.updateProjectionMatrix();scene.fog.near=cfg.fogNear;scene.fog.far=cfg.fogFar;const t=$('qualityToggle');if(t)t.textContent='画质：'+(quality.mode==='auto'?'自动 · '+['低','中','高'][quality.level]:quality.mode);}
+applyQuality();
+const dummy=new T.Object3D(), tempV=new T.Vector3(), lookTarget=new T.Vector3(), camTarget=new T.Vector3(), camWant=new T.Vector3(), skyDirection=new T.Vector3();
+const box=new T.BoxGeometry(1,1,1), cylinder=new T.CylinderGeometry(1,1,1,7), leafGeo=new T.IcosahedronGeometry(1,1);
+const mat=(color,extra)=>new T.MeshStandardMaterial(Object.assign({color,roughness:.85},extra));
+const asphalt=mat(0x596064), sidewalk=mat(0xb4b5a1), stripeMat=mat(0xe1d7b0), curbMat=mat(0x6e827d), stoneMat=mat(0xb8b5a0), darkMat=mat(0x233b3c);
+// Canvas noise is local, deterministic, and contains no fetched imagery.
+const roadCanvas=document.createElement('canvas');roadCanvas.width=roadCanvas.height=128;
+const roadCtx=roadCanvas.getContext('2d'),roadPixels=roadCtx.createImageData(128,128);
+for(let i=0;i<roadPixels.data.length;i+=4){const n=65+rnd()*42;roadPixels.data[i]=n;roadPixels.data[i+1]=n+3;roadPixels.data[i+2]=n+5;roadPixels.data[i+3]=255;}roadCtx.putImageData(roadPixels,0,0);
+const roadTex=new T.CanvasTexture(roadCanvas);roadTex.wrapS=roadTex.wrapT=T.RepeatWrapping;roadTex.repeat.set(8,32);roadTex.anisotropy=4;asphalt.map=roadTex;asphalt.roughness=.97;
+const roadBatch=[],sideBatch=[],markBatch=[],curbBatch=[],trunkBatch=[],leafBatch=[],willowBatch=[],lampBatch=[],lampHeadBatch=[],poolBatch=[],roofBatch=[],railBatch=[],benchBatch=[],foamBatch=[],lampPoints=[];
+function record(list,x,y,z,sx,sy,sz,yaw=0,color=null){list.push({x,y,z,sx,sy,sz,yaw,color});}
+// Spatial tiles give r128 an explicit bounding sphere for instance-aware culling.
+function buildInstances(geo,material,list,shadows=false){
+ const tiles=new Map();for(const p of list){const key=Math.floor(p.x/640)+','+Math.floor(p.z/640);if(!tiles.has(key))tiles.set(key,[]);tiles.get(key).push(p);}
+ let last=null;for(const entries of tiles.values()){
+  const g=geo.clone(),bounds=new T.Box3(),v=new T.Vector3();
+  const mesh=new T.InstancedMesh(g,material,entries.length);
+  entries.forEach((p,i)=>{dummy.position.set(p.x,p.y,p.z);dummy.rotation.set(p.pitch||0,p.yaw,0,'YXZ');dummy.scale.set(p.sx,p.sy,p.sz);dummy.updateMatrix();mesh.setMatrixAt(i,dummy.matrix);if(p.color!==null)mesh.setColorAt(i,new T.Color(p.color));const r=Math.hypot(p.sx,p.sy,p.sz);bounds.expandByPoint(v.set(p.x-r,p.y-r,p.z-r));bounds.expandByPoint(v.set(p.x+r,p.y+r,p.z+r));});
+  g.boundingSphere=bounds.getBoundingSphere(new T.Sphere());mesh.frustumCulled=true;mesh.castShadow=shadows;mesh.receiveShadow=true;mesh.instanceMatrix.needsUpdate=true;scene.add(mesh);last=mesh;
+ }return last;
+}
+function meshAt(geo,material,x,y,z,sx=1,sy=1,sz=1,yaw=0,parent=scene){const m=new T.Mesh(geo,material);m.position.set(x,y,z);m.scale.set(sx,sy,sz);m.rotation.y=yaw;m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;}
+// Seoul layout: the Han River runs west-east across the south, Namsan sits in the centre.
+const RIVER_N=60,RIVER_S=860,BRIDGE_DECK=1.35;
+function riverNorth(x){return RIVER_N+Math.sin(x*.0037)*13+Math.sin(x*.011+1.2)*6;}
+function riverSouth(x){return RIVER_S+Math.sin(x*.0031+2.1)*8+Math.sin(x*.009+.5)*4;}
+function pointInRiver(x,z){return z>riverNorth(x)&&z<riverSouth(x);}
+const island={x:-780,z:450,rx:260,rz:120};
+function onIsland(x,z){return ((x-island.x)/island.rx)**2+((z-island.z)/island.rz)**2<1;}
+const bridges=[];
+function bridgeProfile(b,z){const edge=Math.min(z-b.z0,b.z1-z);return .12+(BRIDGE_DECK-.12)*clamp(edge/55,0,1);}
+function causewayAt(x,z,r=0){for(let i=0;i<bridges.length;i++){const b=bridges[i];if(Math.abs(x-b.x)<b.w*.5-r&&z>b.z0+r&&z<b.z1-r)return b;}return null;}
+function onCauseway(x,z,r=0){return !!causewayAt(x,z,r);}
+function bridgeHeight(x,z){const b=causewayAt(x,z);return b?bridgeProfile(b,z):-1;}
+// Bugaksan and Inwangsan behind the palace, Namsan in the middle, hills on every edge.
+const hillDefs=[[-80,-1270,205,168],[-1090,-980,245,172],[930,-1080,180,112],[0,-340,265,158],[280,-300,120,55],[-1140,-150,170,95],[1160,-380,180,90],[1120,1210,190,80],[-1140,1180,210,85]];
+function hillHeight(x,z){let h=0;for(let i=0;i<hillDefs.length;i++){const p=hillDefs[i],d=Math.hypot(x-p[0],z-p[1])/p[2];if(d<1)h=Math.max(h,p[3]*Math.pow(1-d*d,2));}return h;}
+// Han riverside promenades: both banks, plus Yeouido's park loop.
+const paths=[{a:[-1120,32],b:[1120,32],w:9,name:'한강공원 북측 산책로'},{a:[-1010,420],b:[-815,420],w:8,name:'여의도공원 서측 산책로'},{a:[-745,470],b:[-540,470],w:8,name:'여의도공원 동측 산책로'},{a:[-830,340],b:[-830,560],w:8,name:'여의도 세로 산책로'}];
+// The south promenade follows the bank curve in short segments instead of a fixed z.
+for(let x=-1120;x<1120;x+=160)paths.push({a:[x,riverSouth(x)+12],b:[x+160,riverSouth(x+160)+12],w:8,name:'한강공원 남측 산책로'});
+function segmentDistance(x,z,ax,az,bx,bz){const dx=bx-ax,dz=bz-az,den=dx*dx+dz*dz,t=den>1e-10?clamp(((x-ax)*dx+(z-az)*dz)/den,0,1):0;return Math.hypot(x-ax-t*dx,z-az-t*dz);}
+function isWater(x,z,r=0){return pointInRiver(x,z)&&!onIsland(x,z)&&!onCauseway(x,z,r);}
+function groundHeight(x,z){const b=causewayAt(x,z);if(b)return bridgeProfile(b,z);if(onIsland(x,z))return .8;return hillHeight(x,z);}
+const terrainDivisions=270;
+const groundGeo=new T.PlaneGeometry(2700,2700,terrainDivisions,terrainDivisions);groundGeo.rotateX(-PI/2);
+const gp=groundGeo.attributes.position,gc=new Float32Array(gp.count*3),terrainColor=new T.Color();
+for(let i=0;i<gp.count;i++){const x=gp.getX(i),z=gp.getZ(i),h=hillHeight(x,z);gp.setY(i,pointInRiver(x,z)?-2.2:h-.12);terrainColor.setHex(h>22?0x4b7466:(z>RIVER_S?0x899584:0x7d927f));terrainColor.multiplyScalar(rand(.89,1.08));gc[i*3]=terrainColor.r;gc[i*3+1]=terrainColor.g;gc[i*3+2]=terrainColor.b;}
+groundGeo.setAttribute('color',new T.BufferAttribute(gc,3));groundGeo.computeVertexNormals();const ground=meshAt(groundGeo,mat(0xffffff,{vertexColors:true,flatShading:true}),0,0,0);ground.castShadow=false;
+// The Han River: both shores and Yeouido use the same functions as collision.
+const waterVertices=[],waterNormals=[];
+for(let x=-1250;x<1250;x+=20)for(let z=0;z<900;z+=20){if(!pointInRiver(x+10,z+10)||onIsland(x+10,z+10))continue;const v=[x,-.65,z,x,-.65,z+20,x+20,-.65,z,x+20,-.65,z,x,-.65,z+20,x+20,-.65,z+20];waterVertices.push(...v);for(let n=0;n<6;n++)waterNormals.push(0,1,0);}
+const waterGeo=new T.BufferGeometry();waterGeo.setAttribute('position',new T.Float32BufferAttribute(waterVertices,3));waterGeo.setAttribute('normal',new T.Float32BufferAttribute(waterNormals,3));
+const waterTime={value:0},waterNight={value:0},waterSun={value:new T.Vector3(-.8,.35,-.25)},waterSunColor={value:new T.Color(0xffd9a3)},waterSkyHorizon={value:new T.Color(0xf8bc88)},waterSkyTop={value:new T.Color(0x397b91)};
+const waterMat=mat(0x559b9b,{metalness:.5,roughness:.24});
+waterMat.onBeforeCompile=s=>{s.uniforms.uTime=waterTime;s.uniforms.uNight=waterNight;s.uniforms.uSunDir=waterSun;s.uniforms.uSunColor=waterSunColor;s.uniforms.uSkyHorizon=waterSkyHorizon;s.uniforms.uSkyTop=waterSkyTop;
+ s.fragmentShader='uniform vec3 uSunDir; uniform vec3 uSunColor; uniform vec3 uSkyHorizon; uniform vec3 uSkyTop;\n'+s.fragmentShader;
+ s.fragmentShader=s.fragmentShader.replace('#include <tonemapping_fragment>',`vec3 lakeView=normalize(cameraPosition-vLake);vec3 lakeHalf=normalize(lakeView+normalize(uSunDir));vec3 lakeUp=vec3(0.,1.,0.);float lakeGlint=pow(max(dot(lakeUp,lakeHalf),0.),150.)*max(dot(lakeUp,normalize(uSunDir)),0.)*2.6;outgoingLight+=uSunColor*lakeGlint;float lakeMirror=pow(1.-max(dot(lakeUp,lakeView),0.),3.);outgoingLight=mix(outgoingLight,uSkyHorizon*.85+uSkyTop*.15,lakeMirror*.3);
+#include <tonemapping_fragment>`);s.vertexShader='uniform float uTime; varying vec3 vLake;\n'+s.vertexShader;s.vertexShader=s.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\n vLake=position; transformed.y += sin(position.x*.055+uTime*.7)*.12+cos(position.z*.07+uTime*.5)*.09;');s.vertexShader=s.vertexShader.replace('#include <beginnormal_vertex>','#include <beginnormal_vertex>\n objectNormal=normalize(vec3(-.018*cos(position.x*.055+uTime*.7),1.,.015*sin(position.z*.07+uTime*.5)));');s.fragmentShader='uniform float uTime; uniform float uNight; varying vec3 vLake;\n'+s.fragmentShader;s.fragmentShader=s.fragmentShader.replace('#include <color_fragment>','#include <color_fragment>\n float ripple=sin(vLake.x*.16+vLake.z*.11+uTime)*sin(vLake.z*.22-uTime*.6); diffuseColor.rgb += vec3(.12,.16,.14)*pow(max(ripple,0.),12.)*(1.-uNight*.8);');};
+const water=meshAt(waterGeo,waterMat,0,0,0);water.castShadow=false;
+// Shore paving masks the intentionally low-poly shoreline.
+function strip(list,ax,az,bx,bz,width,y=.12,height=.2){const dx=bx-ax,dz=bz-az;record(list,(ax+bx)/2,y,(az+bz)/2,width,height,Math.hypot(dx,dz),Math.atan2(dx,dz));}
+for(let x=-1250;x<1250;x+=20){strip(sideBatch,x,riverNorth(x),x+20,riverNorth(x+20),12,.16,.45);strip(foamBatch,x,riverNorth(x),x+20,riverNorth(x+20),7,-.56,.14);strip(sideBatch,x,riverSouth(x),x+20,riverSouth(x+20),12,.16,.45);strip(foamBatch,x,riverSouth(x),x+20,riverSouth(x+20),7,-.56,.14);}
+const roads=[];
+function roadHeight(x,z){const bh=bridgeHeight(x,z);return bh>=0?bh:hillHeight(x,z);}
+function terrainStrip(list,ax,az,bx,bz,width,lift,height){const dx=bx-ax,dz=bz-az,len=Math.hypot(dx,dz),steps=Math.ceil(len/14);for(let i=0;i<steps;i++){const t0=i/steps,t1=(i+1)/steps,x0=lerp(ax,bx,t0),z0=lerp(az,bz,t0),x1=lerp(ax,bx,t1),z1=lerp(az,bz,t1),y0=roadHeight(x0,z0),y1=roadHeight(x1,z1);record(list,(x0+x1)/2,(y0+y1)/2+lift,(z0+z1)/2,width,height,Math.hypot(len/steps,y1-y0)+.2,Math.atan2(dx,dz));list[list.length-1].pitch=-Math.atan2(y1-y0,len/steps);}}
+function addRoad(name,points,width=14){width=width>=28?21:14;const road={name,points,width};roads.push(road);for(let k=0;k<points.length-1;k++){const a=points[k],b=points[k+1],dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz),nx=dz/len,nz=-dx/len;terrainStrip(roadBatch,a[0],a[1],b[0],b[1],width,.09,.16);for(const s of [-1,1]){const off=(width/2+1.9)*s;terrainStrip(sideBatch,a[0]+nx*off,a[1]+nz*off,b[0]+nx*off,b[1]+nz*off,3.5,.12,.22);terrainStrip(curbBatch,a[0]+nx*(width/2+.15)*s,a[1]+nz*(width/2+.15)*s,b[0]+nx*(width/2+.15)*s,b[1]+nz*(width/2+.15)*s,.3,.23,.3);}for(let t=5;t<len-5;t+=18){const x=a[0]+dx*t/len,z=a[1]+dz*t/len;record(markBatch,x,roadHeight(x,z)+.19,z,.18,.025,8,Math.atan2(dx,dz));markBatch[markBatch.length-1].pitch=-Math.atan2(roadHeight(x+dx/len*4,z+dz/len*4)-roadHeight(x-dx/len*4,z-dz/len*4),8);}for(let offset=-width/2+3.5;offset<width/2;offset+=3.5){if(Math.abs(offset)<.1)continue;for(let t=5;t<len-5;t+=12){const x=a[0]+dx*t/len+nx*offset,z=a[1]+dz*t/len+nz*offset;record(markBatch,x,roadHeight(x,z)+.195,z,.12,.025,4,Math.atan2(dx,dz));}}for(let t=27;t<len-14;t+=66){const x=a[0]+dx*t/len,z=a[1]+dz*t/len;for(const s of [-1,1])addLamp(x+nx*(width/2+2)*s,z+nz*(width/2+2)*s,Math.atan2(dx,dz));}}return road;}
+// Static props discovered before the collision grid exists are queued, then flushed.
+const propSolids=[],propOBBs=[];let collidersReady=false;
+function addProp(x,z,w,d,h=6){if(collidersReady)addCollider(x,z,w,d,h);else propSolids.push([x,z,w,d,h]);}
+function addPropOBB(x,z,w,d,h,yaw){if(collidersReady)addOBB(x,z,w,d,h,yaw);else propOBBs.push([x,z,w,d,h,yaw]);}
+function addLamp(x,z,yaw=0){const y=hillHeight(x,z);record(lampBatch,x,y+4.6,z,.2,9.2,.2);record(lampBatch,x,y+9,z,3.2,.15,.18,yaw);record(lampHeadBatch,x,y+8.9,z,3.1,.13,.65,yaw);record(poolBatch,x,y+.26,z,12,12,1);addProp(x,z,.55,.55,9.2);lampPoints.push({x,z,y:y+8.7});}
+// Three long crossings anchor the map; each is a road for navigation and a dry causeway for collision.
+function addBridge(name,x,z0,z1,deckW=30){
+ const b={name,x,z0,z1,w:deckW+9};bridges.push(b);roads.push({name,points:[[x,z0],[x,z1]],width:b.w,bridge:true});
+ const half=deckW*.5;
+ for(let z=z0;z<z1;z+=10){
+  const yc=(bridgeProfile(b,z)+bridgeProfile(b,z+10))*.5;
+  record(roadBatch,x,yc+.09,z+5,deckW,.16,10.3);
+  for(const s of [-1,1]){
+   record(sideBatch,x+s*(half+2.1),yc+.13,z+5,4,.22,10.3);
+   record(curbBatch,x+s*(half+.15),yc+.23,z+5,.3,.3,10.3);
+   record(railBatch,x+s*(half-.45),yc+1.05,z+5,.4,1.4,10.1);
+  }
+  for(const off of [-half*.5,half*.5])record(markBatch,x+off,yc+.185,z+5,.16,.02,5.6);
+  if(Math.round((z-z0)/10)%6===0)for(const s of [-1,1]){const lx=x+s*(half+2.6);record(lampBatch,lx,yc+4.4,z+5,.18,8.8,.18);record(lampHeadBatch,lx,yc+8.6,z+5,2.6,.12,.55);lampPoints.push({x:lx,z:z+5,y:yc+8.3});addProp(lx,z+5,.45,.45,8.8);}
+ }
+ for(let z=z0+75;z<z1-60;z+=92){for(const s of [-1,1])record(sideBatch,x+s*half*.55,-1.4,z,2.3,5.2,4.8);}
+ for(let z=z0+20;z<z1-10;z+=30)for(const s of [-1,1])addPropOBB(x+s*(half-.45),z+15,.5,30.4,1.5,0);
+ return b;
+}
+addBridge('한강대교',-130,-70,930,30);
+addBridge('양화대교',-780,-70,930,30);
+addBridge('성수대교',560,-70,930,28);
+// Downtown grid: Sejong-daero sweeps around the west flank of Namsan to the main bridge.
+addRoad('세종대로',[[0,-840],[-90,-730],[-210,-620],[-320,-490],[-390,-360],[-405,-240],[-350,-130],[-245,-55],[-150,-30],[-130,-30]],32);
+addRoad('종로',[[-1140,-800],[900,-800]],30);
+addRoad('을지로',[[-1080,-640],[1030,-640]],26);
+addRoad('명동길',[[290,-430],[860,-430]],22);
+addRoad('퇴계로',[[-1140,-40],[920,-40]],28);
+addRoad('서대문로',[[-700,-940],[-700,-40]],28);
+addRoad('남대문로',[[360,-800],[360,-40]],24);
+addRoad('동호로',[[560,-820],[560,-70]],28);
+addRoad('동대문로',[[760,-940],[760,-40]],28);
+addRoad('광장시장길',[[760,-700],[980,-700]],18);
+addRoad('남산순환로',[[-330,-480],[-200,-535],[-40,-505],[100,-430],[130,-320],[70,-215],[-15,-180],[-65,-255],[0,-320]],18);
+// Gangnam: the two signature boulevards plus the river approaches.
+addRoad('강남대로',[[-130,930],[-130,1245]],32);
+addRoad('테헤란로',[[-1120,1060],[1150,1060]],32);
+addRoad('봉은사로',[[-1140,900],[1150,900]],30);
+addRoad('영동대로',[[560,930],[560,1245]],30);
+addRoad('양화로',[[-780,-940],[-780,-70]],30);
+addRoad('양화로 남단',[[-780,930],[-780,1245]],28);
+addRoad('여의대로',[[-1040,450],[-520,450]],26);
+const eastWest=[['종로',-800],['을지로',-640],['명동길',-430],['퇴계로',-40],['봉은사로',900],['테헤란로',1060]];
+// Rasterize once. Runtime sampling is four typed-array reads, with no road scans.
+const SURFACE_CELL=2,SURFACE_ORIGIN=-1350,SURFACE_SIZE=1351;
+const surfaceGrid=new Float32Array(SURFACE_SIZE*SURFACE_SIZE),surfaceTypes=new Uint8Array(surfaceGrid.length);
+function terrainHeight(x,z){
+ const gx=clamp((x+1350)/10,0,terrainDivisions-.00001),gz=clamp((z+1350)/10,0,terrainDivisions-.00001),ix=Math.floor(gx),iz=Math.floor(gz),u=gx-ix,v=gz-iz,i=iz*(terrainDivisions+1)+ix;
+ const a=gp.getY(i),b=gp.getY(i+terrainDivisions+1),d=gp.getY(i+1),c=gp.getY(i+terrainDivisions+2);
+ return u+v<=1?a+(d-a)*u+(b-a)*v:c+(b-c)*(1-u)+(d-c)*(1-v);
+}
+function rasterSurface(minX,maxX,minZ,maxZ,test,height,type){
+ const x0=clamp(Math.floor((minX-SURFACE_ORIGIN)/2),0,SURFACE_SIZE-1),x1=clamp(Math.ceil((maxX-SURFACE_ORIGIN)/2),0,SURFACE_SIZE-1),z0=clamp(Math.floor((minZ-SURFACE_ORIGIN)/2),0,SURFACE_SIZE-1),z1=clamp(Math.ceil((maxZ-SURFACE_ORIGIN)/2),0,SURFACE_SIZE-1);
+ for(let iz=z0;iz<=z1;iz++)for(let ix=x0;ix<=x1;ix++){const x=SURFACE_ORIGIN+ix*2,z=SURFACE_ORIGIN+iz*2;if(test(x,z)){const i=iz*SURFACE_SIZE+ix;surfaceGrid[i]=Math.max(surfaceGrid[i],height(x,z));surfaceTypes[i]=type;}}
+}
+for(let iz=0;iz<SURFACE_SIZE;iz++)for(let ix=0;ix<SURFACE_SIZE;ix++)surfaceGrid[iz*SURFACE_SIZE+ix]=terrainHeight(SURFACE_ORIGIN+ix*2,SURFACE_ORIGIN+iz*2)+.01;
+for(const r of roads)for(let j=0;j<r.points.length-1;j++){const a=r.points[j],b=r.points[j+1],w=r.width/2+3.8;rasterSurface(Math.min(a[0],b[0])-w,Math.max(a[0],b[0])+w,Math.min(a[1],b[1])-w,Math.max(a[1],b[1])+w,(x,z)=>segmentDistance(x,z,...a,...b)<w,(x,z)=>roadHeight(x,z)+(segmentDistance(x,z,...a,...b)<r.width/2?.18:.24),1);}
+rasterSurface(island.x-island.rx,island.x+island.rx,island.z-island.rz,island.z+island.rz,onIsland,()=>.82,3);
+for(const p of paths)rasterSurface(Math.min(p.a[0],p.b[0])-p.w,Math.max(p.a[0],p.b[0])+p.w,Math.min(p.a[1],p.b[1])-p.w,Math.max(p.a[1],p.b[1])+p.w,(x,z)=>segmentDistance(x,z,...p.a,...p.b)<p.w/2,(x,z)=>groundHeight(x,z)+.1,3);
+function surfaceHeight(x,z){
+ if(!Number.isFinite(x)||!Number.isFinite(z))return 0;
+ const gx=clamp((x-SURFACE_ORIGIN)/SURFACE_CELL,0,SURFACE_SIZE-1.00001),gz=clamp((z-SURFACE_ORIGIN)/SURFACE_CELL,0,SURFACE_SIZE-1.00001),ix=Math.floor(gx),iz=Math.floor(gz),u=gx-ix,v=gz-iz,i=iz*SURFACE_SIZE+ix;
+ const a=surfaceGrid[i],b=surfaceGrid[i+1],c=surfaceGrid[i+SURFACE_SIZE],d=surfaceGrid[i+SURFACE_SIZE+1];if(surfaceTypes[i]===3||surfaceTypes[i+1]===3||surfaceTypes[i+SURFACE_SIZE]===3||surfaceTypes[i+SURFACE_SIZE+1]===3)return Math.max(a,b,c,d);return lerp(lerp(a,b,u),lerp(c,d,u),v);
+}
+// Shared collision bins keep checks local even in the dense eastern city.
+const bins=Array.from({length:27*27},()=>[]),colliders=[];
+function addCollider(x,z,w,d,height=40){const base=groundHeight(x,z),b={minX:x-w/2,maxX:x+w/2,minZ:z-d/2,maxZ:z+d/2,minY:base,height:base+height,rayStamp:0};colliders.push(b);const x0=clamp(Math.floor((b.minX+1350)/100),0,26),x1=clamp(Math.floor((b.maxX+1350)/100),0,26),z0=clamp(Math.floor((b.minZ+1350)/100),0,26),z1=clamp(Math.floor((b.maxZ+1350)/100),0,26);for(let zz=z0;zz<=z1;zz++)for(let xx=x0;xx<=x1;xx++)bins[zz*27+xx].push(b);}
+// Oriented boxes cover diagonals the axis-aligned grid cannot: railings, signposts, bridge rails.
+const obbColliders=[],obbBins=Array.from({length:27*27},()=>[]);
+function addOBB(x,z,w,d,height=40,yaw=0,base=null){const floor=base===null?groundHeight(x,z):base,b={x,z,hw:w/2,hd:d/2,cos:Math.cos(yaw),sin:Math.sin(yaw),yaw,minX:x-999,maxX:x+999,minZ:z-999,maxZ:z+999,minY:floor,height:floor+height,rayStamp:0};const radius=Math.hypot(b.hw,b.hd);b.minX=x-radius;b.maxX=x+radius;b.minZ=z-radius;b.maxZ=z+radius;obbColliders.push(b);const x0=clamp(Math.floor((b.minX+1350)/100),0,26),x1=clamp(Math.floor((b.maxX+1350)/100),0,26),z0=clamp(Math.floor((b.minZ+1350)/100),0,26),z1=clamp(Math.floor((b.maxZ+1350)/100),0,26);for(let zz=z0;zz<=z1;zz++)for(let xx=x0;xx<=x1;xx++)obbBins[zz*27+xx].push(b);return b;}
+collidersReady=true;for(const p of propSolids)addCollider(p[0],p[1],p[2],p[3],p[4]);propSolids.length=0;for(const p of propOBBs)addOBB(p[0],p[1],p[2],p[3],p[4],p[5]);propOBBs.length=0;
+const circlePush={nx:0,nz:0,depth:0};
+function aabbPush(x,z,r,b){const qx=clamp(x,b.minX,b.maxX),qz=clamp(z,b.minZ,b.maxZ);let dx=x-qx,dz=z-qz,d2=dx*dx+dz*dz;if(d2>=r*r)return false;if(d2>1e-9){const d=Math.sqrt(d2);circlePush.nx=dx/d;circlePush.nz=dz/d;circlePush.depth=r-d;return true;}const left=x-b.minX,right=b.maxX-x,back=z-b.minZ,front=b.maxZ-z;let m=left,nx=-1,nz=0;if(right<m){m=right;nx=1;nz=0;}if(back<m){m=back;nx=0;nz=-1;}if(front<m){m=front;nx=0;nz=1;}circlePush.nx=nx;circlePush.nz=nz;circlePush.depth=r+m;return true;}
+function orientedPush(x,z,r,cx,cz,hw,hd,cos,sin){const wx=x-cx,wz=z-cz,lx=wx*cos-wz*sin,lz=wx*sin+wz*cos;const qx=clamp(lx,-hw,hw),qz=clamp(lz,-hd,hd);let dx=lx-qx,dz=lz-qz,d2=dx*dx+dz*dz;if(d2>=r*r)return false;let nx,nz,depth;if(d2>1e-9){const d=Math.sqrt(d2);nx=dx/d;nz=dz/d;depth=r-d;}else{const left=lx+hw,right=hw-lx,back=lz+hd,front=hd-lz;let m=left;nx=-1;nz=0;if(right<m){m=right;nx=1;nz=0;}if(back<m){m=back;nx=0;nz=-1;}if(front<m){m=front;nx=0;nz=1;}depth=r+m;}circlePush.nx=nx*cos+nz*sin;circlePush.nz=-nx*sin+nz*cos;circlePush.depth=depth;return true;}
+function obbPush(x,z,r,b){return orientedPush(x,z,r,b.x,b.z,b.hw,b.hd,b.cos,b.sin);}
+const circleResult={x:0,z:0,nx:0,nz:0,hit:false};
+// Resolve penetration and slide: position is pushed out along the contact normal.
+function resolveCircle(x,z,r){
+ let nx=0,nz=0,hit=false;
+ for(let iter=0;iter<2;iter++){
+  let moved=false,ix=clamp(Math.floor((x+1350)/100),1,25),iz=clamp(Math.floor((z+1350)/100),1,25);
+  for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
+   const cell=bins[(iz+dz)*27+ix+dx];
+   for(let i=0;i<cell.length;i++){const b=cell[i];if(aabbPush(x,z,r,b)){x+=circlePush.nx*(circlePush.depth+.002);z+=circlePush.nz*(circlePush.depth+.002);nx+=circlePush.nx;nz+=circlePush.nz;hit=true;moved=true;}}
+   const oc=obbBins[(iz+dz)*27+ix+dx];
+   for(let i=0;i<oc.length;i++){const b=oc[i];if(obbPush(x,z,r,b)){x+=circlePush.nx*(circlePush.depth+.002);z+=circlePush.nz*(circlePush.depth+.002);nx+=circlePush.nx;nz+=circlePush.nz;hit=true;moved=true;}}
+  }
+  if(!moved)break;
+ }
+ const len=Math.hypot(nx,nz);circleResult.x=x;circleResult.z=z;circleResult.hit=hit;circleResult.nx=hit&&len>1e-4?nx/len:0;circleResult.nz=hit&&len>1e-4?nz/len:0;return circleResult;
+}
+function carCirclePush(x,z,r,c,pad=0){return orientedPush(x,z,r,c.x,c.z,c.spec.width/2+pad,c.spec.length/2+pad,Math.cos(c.yaw),Math.sin(c.yaw));}
+function blocked(x,z,r){if(Math.abs(x)>WORLD-r||Math.abs(z)>WORLD-r)return true;if(isWater(x,z,r)||isWater(x+r,z,r)||isWater(x-r,z,r)||isWater(x,z+r,r)||isWater(x,z-r,r))return true;const ix=clamp(Math.floor((x+1350)/100),1,25),iz=clamp(Math.floor((z+1350)/100),1,25);for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){const cell=bins[(iz+dz)*27+ix+dx];for(let i=0;i<cell.length;i++){const b=cell[i];if(x+r>b.minX&&x-r<b.maxX&&z+r>b.minZ&&z-r<b.maxZ)return true;}const oc=obbBins[(iz+dz)*27+ix+dx];for(let i=0;i<oc.length;i++){const b=oc[i];if(obbPush(x,z,r,b))return true;}}return false;}
+function makeFacade(variant,emissive){const c=document.createElement('canvas');c.width=128;c.height=256;const g=c.getContext('2d');g.fillStyle=emissive?'#000000':['#667e82','#6d787e','#698184'][variant];g.fillRect(0,0,128,256);for(let yy=8;yy<256;yy+=32)for(let xx=7;xx<128;xx+=32){const lit=emissive||rnd()>.38;g.fillStyle=emissive?(lit?['#f2bc73','#a9ddd5','#e4d8a0'][variant]:'#020505'):(lit?'#8d9f9d':'#334f5d');g.fillRect(xx,yy,17,21);}if(!emissive){g.fillStyle='#d0d5c018';for(let y=0;y<256;y+=32)g.fillRect(0,y,128,1);}const tex=new T.CanvasTexture(c);tex.encoding=T.sRGBEncoding;tex.anisotropy=2;tex.wrapS=tex.wrapT=T.RepeatWrapping;return tex;}
+const buildingMats=[],buildingBatches=[[],[],[],[]];for(let i=0;i<3;i++)buildingMats.push(mat([0xd1d4c9,0xc2c9ca,0xb5ccc7][i],{map:makeFacade(i,false),emissive:0xffffff,emissiveMap:makeFacade(i,true),emissiveIntensity:0,roughness:.73}));
+buildingMats.push(mat(0x8aafb8,{map:makeFacade(1,false),emissive:0xc5e8e3,emissiveMap:makeFacade(1,true),emissiveIntensity:0,roughness:.18,metalness:.7}));
+for(const material of buildingMats)material.onBeforeCompile=shader=>{
+ shader.vertexShader='varying vec3 vFacade;\n'+shader.vertexShader;
+ shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\n vFacade=(modelMatrix*instanceMatrix*vec4(position,1.)).xyz;');
+ shader.fragmentShader='varying vec3 vFacade;\n'+shader.fragmentShader;
+ shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>','#ifdef USE_MAP\n diffuseColor*=mapTexelToLinear(texture2D(map,vec2(vFacade.x+vFacade.z,vFacade.y)/vec2(12.8,25.6)));\n #endif');
+ shader.fragmentShader=shader.fragmentShader.replace('#include <emissivemap_fragment>','#ifdef USE_EMISSIVEMAP\n vec3 windowCell=floor(vFacade/3.2); float windowHash=fract(sin(dot(windowCell,vec3(127.1,311.7,74.7)))*43758.5453); totalEmissiveRadiance*=emissiveMapTexelToLinear(texture2D(emissiveMap,vec2(vFacade.x+vFacade.z,vFacade.y)/vec2(12.8,25.6))).rgb*step(.48,windowHash)*mix(vec3(1.,.79,.57),vec3(.66,.88,1.),windowHash);\n #endif');
+};
+const xs=[20,300,615,955,1220],zs=[-1240,-1020,-740,-450,-120,220,550,1030,1240];
+for(let ix=0;false&&ix<xs.length-1;ix++)for(let iz=0;iz<zs.length-1;iz++){const xa=xs[ix]+43,xb=xs[ix+1]-42,za=zs[iz]+42,zb=zs[iz+1]-42;for(let x=xa+20;x<xb-12;x+=67)for(let z=za+20;z<zb-12;z+=66){if((x<260&&z>-50&&z<190)||(x<430&&z>-1100&&z<-940)||(x<530&&z>590))continue;const w=rand(29,46),d=rand(29,45),cx=x+rand(-4,4),cz=z+rand(-4,4);const wulin=Math.exp(-((cx-350)**2+(cz+960)**2)/180000),qianjiang=clamp((cx-600)/650,0,1)*clamp((cz+100)/1200,0,1);const tower=wulin>.58||qianjiang>.24;const h=tower?clamp(60+wulin*rand(20,100)+qianjiang*rand(60,160),60,200):Math.floor(rand(4,9))*3.2+2;const variant=h>95&&rnd()<.28?3:Math.floor(rnd()*3),setback=h>65&&rnd()<.55,lowerH=setback?h*.68:h;record(buildingBatches[variant],cx,lowerH/2,cz,w,lowerH,d,0,[0xcbd7cd,0xb6c5c6,0xd7d3bc,0xb1c3c5][Math.floor(rnd()*4)]);addCollider(cx,cz,w,d,lowerH);if(setback){record(buildingBatches[variant],cx,lowerH+(h-lowerH)/2,cz,w*.72,h-lowerH,d*.72);buildingBatches[variant][buildingBatches[variant].length-1].upper=true;addCollider(cx,cz,w*.72,d*.72,h);record(roofBatch,cx,lowerH+.25,cz,w+1,.5,d+1);}record(roofBatch,cx,h+.4,cz,w*(setback?.72:1)+1,.8,d*(setback?.72:1)+1);record(roofBatch,cx+w*.25,h+1.1,cz-d*.2,3,2,2);if(h>60){record(roofBatch,cx,h+2,cz,w*.3,4,d*.35);if(rnd()>.65)record(lampHeadBatch,cx,h+5,cz,1.1,1,1.1);}}}
+// Wulin civic plaza: an open space among taller northern blocks.
+// Seoul building stock: mid-rise offices downtown, dense neon shops in Myeongdong,
+// glass towers in Gangnam and on Yeouido. Landmark plazas stay clear.
+const clearZones=[{x:-690,z:-330,r:34},{x:300,z:990,r:34},{x:-520,z:12,r:34},{x:0,z:-812,r:42},{x:0,z:-334,r:34},{x:-930,z:450,r:40},{x:620,z:876,r:36},{x:-130,z:1080,r:32},{x:900,z:-612,r:66},{x:450,z:-330,r:44},{x:-180,z:1010,r:44}];
+function zoneFree(x,z,pad=0){for(let i=0;i<clearZones.length;i++){const c=clearZones[i];if(Math.hypot(x-c.x,z-c.z)<c.r+pad)return false;}return true;}
+function inPalace(x,z,pad=0){return x>-315-pad&&x<335+pad&&z>-1105-pad&&z<-820+pad;}
+function inMyeong(x,z){return x>288&&x<575&&z>-585&&z<-168;}
+const placedBuildings=[];
+function footprintFree(x,z,w,d){for(let i=0;i<placedBuildings.length;i++){const b=placedBuildings[i];if(Math.abs(x-b.x)<(w+b.w)*.5+5&&Math.abs(z-b.z)<(d+b.d)*.5+5)return false;}return true;}
+function roadGap(x,z,w,d){const r=Math.hypot(w,d)*.5+2.5;for(let i=0;i<roads.length;i++){const road=roads[i],pts=road.points;for(let j=0;j<pts.length-1;j++){if(segmentDistance(x,z,pts[j][0],pts[j][1],pts[j+1][0],pts[j+1][1])<r+road.width*.5)return false;}}return true;}
+function addBuilding(cx,cz,w,d,h,glass=false){
+ if(!Number.isFinite(h)||h<6)return;
+ if(isWater(cx,cz,w*.45)||onCauseway(cx,cz,-w*.5)||hillHeight(cx,cz)>4)return;
+ if(!zoneFree(cx,cz,4)||inPalace(cx,cz,6)||!footprintFree(cx,cz,w,d)||!roadGap(cx,cz,w,d))return;
+ const variant=glass?3:Math.floor(rnd()*3),setback=h>62&&rnd()<.55,lowerH=setback?h*.7:h;
+ record(buildingBatches[variant],cx,lowerH*.5,cz,w,lowerH,d,0,[0xcbd7cd,0xb6c5c6,0xd7d3bc,0xb1c3c5][Math.floor(rnd()*4)]);
+ addCollider(cx,cz,w,d,lowerH);placedBuildings.push({x:cx,z:cz,w,d});
+ if(setback){record(buildingBatches[variant],cx,lowerH+(h-lowerH)*.5,cz,w*.72,h-lowerH,d*.72);buildingBatches[variant][buildingBatches[variant].length-1].upper=true;addCollider(cx,cz,w*.72,d*.72,h);record(roofBatch,cx,lowerH+.25,cz,w+1,.5,d+1);}
+ record(roofBatch,cx,h+.4,cz,w*(setback?.72:1)+1,.8,d*(setback?.72:1)+1);
+ record(roofBatch,cx+w*.24,h+1.1,cz-d*.18,3,2,2);
+ if(h>55){record(roofBatch,cx,h+2,cz,w*.3,4,d*.35);if(rnd()>.55)record(lampHeadBatch,cx,h+5,cz,1.1,1,1.1);}
+}
+// Myeongdong first: tight 3-6 storey shop blocks, then the wider office grid avoids them.
+for(let x=302;x<570;x+=38)for(let z=-572;z<-182;z+=36){const cx=x+rand(-5,5),cz=z+rand(-5,5),w=rand(15,24),d=rand(15,24);const near=(Math.abs(cz+430)<24||Math.abs(cx-360)<24);const h=near?Math.floor(rand(3,5))*3.4+rand(2,7):Math.floor(rand(3,7))*3.4+rand(2,8);addBuilding(cx,cz,w,d,clamp(h,10,30),false);}
+for(let x=-1040;x<980;x+=76)for(let z=-1040;z<-80;z+=72){
+ if(inMyeong(x,z))continue;
+ const cx=x+rand(-9,9),cz=z+rand(-9,9);if(cz>-78||cz<-1052||inPalace(cx,cz,10))continue;
+ const w=rand(27,45),d=rand(27,43);
+ let h=rand(17,42);
+ if(Math.abs(cz+800)<45||Math.abs(cz+640)<42||Math.abs(cz+40)<38)h=rand(28,72);
+ if(cz<-860)h=rand(13,28);
+ if(Math.abs(cx+130)<95&&cz>-500)h=rand(30,80);
+ if(rnd()<.16)h=rand(74,118);
+ addBuilding(cx,cz,w,d,h,h>78&&rnd()<.55);
+}
+// Gangnam: a wall of glass along Gangnam-daero and Teheran-ro.
+for(let x=-1080;x<1130;x+=84)for(let z=912;z<1235;z+=78){
+ const cx=x+rand(-8,8),cz=z+rand(-8,8),w=rand(29,46),d=rand(29,45);
+ const nearBlvd=Math.max(Math.exp(-((cx+130)**2)/52000),Math.exp(-((cz-1060)**2)/30000));
+ const h=clamp(58+nearBlvd*rand(70,150)+rand(0,45),52,210);
+ addBuilding(cx,cz,w,d,h,h>82||nearBlvd>.25);
+}
+// Yeouido: a compact glass cluster, with the bridge and park kept clear.
+for(let x=-1015;x<-545;x+=56)for(let z=358;z<548;z+=52){
+ if(!onIsland(x+rand(-6,6),z+rand(-6,6))&&!onIsland(x,z))continue;
+ const cx=x+rand(-7,7),cz=z+rand(-7,7);if(Math.abs(cx+780)<34)continue;
+ const w=rand(24,38),d=rand(24,36),h=rand(82,190);
+ addBuilding(cx,cz,w,d,h,true);
+}
+record(sideBatch,0,.14,-812,190,.25,96);
+// Zebra crossings at the main downtown intersections, clear of buildings.
+const crossings=[[-130,-800],[-130,-640],[-700,-800],[-700,-640],[360,-800],[360,-640],[760,-800],[760,-640],[560,-640],[-130,-40],[560,-40],[760,-40],[450,-430],[760,-430],[-130,900],[560,900],[-130,1060],[560,1060],[-780,900]];
+for(const c of crossings){for(let n=-4;n<=4;n++){record(markBatch,c[0]+n*2.1,roadHeight(c[0],c[1]+19)+.195,c[1]+19,1.1,.03,6);record(markBatch,c[0]+n*2.1,roadHeight(c[0],c[1]-19)+.195,c[1]-19,1.1,.03,6);record(markBatch,c[0]+19,roadHeight(c[0]+19,c[1])+.195,c[1]+n*2,.9,.03,6,PI/2);}}
+function textTexture(text,bg='#173c43',fg='#d3ead4',width=512,height=128){const c=document.createElement('canvas');c.width=width;c.height=height;const g=c.getContext('2d');g.fillStyle=bg;g.fillRect(0,0,width,height);g.strokeStyle=fg+'88';g.lineWidth=3;g.strokeRect(7,7,width-14,height-14);g.fillStyle=fg;g.font='500 '+Math.floor(height*.48)+'px sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(text,width/2,height*.51,width*.91);const tex=new T.CanvasTexture(c);tex.encoding=T.sRGBEncoding;return tex;}
+const neonMats=[];
+function sign(text,x,y,z,w,h,yaw=0,neon=false){const tex=textTexture(text,neon?'#16353c':'#1d5657',neon?'#c7ffe5':'#e7eed7');const material=mat(0xffffff,{map:tex,emissive:0xffffff,emissiveMap:tex,emissiveIntensity:neon?.65:.04,side:T.DoubleSide});if(neon)neonMats.push(material);const m=meshAt(new T.PlaneGeometry(w,h),material,x,y,z,1,1,1,yaw);m.castShadow=false;return m;}
+sign('종 로',-500,5,-782,9,2);sign('을 지 로',-600,5,-622,9,2);sign('명 동 길',448,5,-412,10,2);sign('퇴 계 로',-300,5,-22,9,2);sign('테 헤 란 로',180,5,1078,12,2);sign('봉 은 사 로',-500,5,918,10,2);
+sign('세 종 대 로',-424,5,-250,11,2,PI/2);sign('강 남 대 로',-96,5,1140,11,2,PI/2);sign('한 강 대 교',-130,6,0,12,2);sign('양 화 대 교',-780,6,0,12,2);sign('성 수 대 교',560,6,0,12,2);
+const shopGlass=[],shopFrames=[],shopSigns=[[],[],[],[],[],[],[],[]];
+const shopNames=['서울분식','한강서점','별빛노래방','동네치킨','밤거리카페','은하약국','청솔김밥','골목호프'];
+const shopColors=['#8ff1ce','#ffc88d','#c1d2ff','#ff9bd2','#a5ffcf','#ffe28f','#9bd6ff','#ffb38a'];
+// Choose visible street frontage by the nearest road; corner lots get two fronts.
+for(const batch of buildingBatches)for(const b of batch){
+ if(b.upper)continue;const faces=[{nx:0,nz:1,yaw:0,w:b.sx,depth:b.sz/2},{nx:1,nz:0,yaw:PI/2,w:b.sz,depth:b.sx/2},{nx:0,nz:-1,yaw:PI,w:b.sx,depth:b.sz/2},{nx:-1,nz:0,yaw:-PI/2,w:b.sz,depth:b.sx/2}];
+ let best=Infinity;
+ for(const f of faces){f.distance=Infinity;const x=b.x+f.nx*f.depth,z=b.z+f.nz*f.depth;
+  for(const r of roads)for(let j=0;j<r.points.length-1;j++){const a=r.points[j],c=r.points[j+1],dx=c[0]-a[0],dz=c[1]-a[1],den=dx*dx+dz*dz,t=den?clamp(((x-a[0])*dx+(z-a[1])*dz)/den,0,1):0,rx=a[0]+dx*t-x,rz=a[1]+dz*t-z;if(rx*f.nx+rz*f.nz>0)f.distance=Math.min(f.distance,Math.hypot(rx,rz));}best=Math.min(best,f.distance);
+ }
+ for(const f of faces){if(f.distance>best+18)continue;const x=b.x+f.nx*(f.depth+.12),z=b.z+f.nz*(f.depth+.12),tx=Math.cos(f.yaw),tz=-Math.sin(f.yaw);
+  record(shopGlass,x,1.65,z,f.w*.87,2.9,.12,f.yaw);
+  for(let offset=-f.w*.4;offset<f.w*.45;offset+=3.2)record(shopFrames,x+tx*offset+f.nx*.1,1.65,z+tz*offset+f.nz*.1,.12,3.2,.16,f.yaw);
+  record(shopSigns[Math.floor(rnd()*8)],x+f.nx*.15,3.5,z+f.nz*.15,Math.min(12,f.w*.65),.8,.12,f.yaw);
+  if(rnd()<.5)record(shopSigns[Math.floor(rnd()*8)],x+f.nx*.2,6.5,z+f.nz*.2,Math.min(7,f.w*.42),1.5,.12,f.yaw);
+ }
+}
+buildInstances(box,mat(0x305b66,{metalness:.65,roughness:.16}),shopGlass,false);buildInstances(box,darkMat,shopFrames,false);
+shopSigns.forEach((batch,i)=>{const texture=textTexture(shopNames[i],'#15383d',shopColors[i]);const material=mat(0xffffff,{map:texture,emissive:0xffffff,emissiveMap:texture,emissiveIntensity:.72});neonMats.push(material);buildInstances(box,material,batch,false);});
+// Myeongdong's neon canyon: vertical signs on both sides of the shopping street.
+const neonWords=['노래방','치킨','분식','약국','PC방','카페','화장품','김밥','호프','서점','사진관','떡볶이'];
+for(let i=0;i<22;i++){const x=318+i*24,z=-430+(i%2?18:-18),yaw=i%2?0:PI;sign(neonWords[i%neonWords.length],x,5+rand(0,2),z,3.4,rand(6,9),yaw,true);}
+sign('명 동',430,9,-430,18,4,0,true);sign('明 洞 夜 市',430,5.5,-412,14,2.6,0,true);
+// Gate posts frame the shopping street without blocking traffic.
+for(const s of [-1,1]){meshAt(box,darkMat,430,4,-430+s*13,.8,8,.8);addCollider(430,-430+s*13,.8,.8,8);}
+function tree(x,z,willow=false,scale=1){if(isWater(x,z)&&!onCauseway(x,z))return;const y=groundHeight(x,z);addProp(x,z,Math.max(.75,.85*scale),Math.max(.75,.85*scale),6.2*scale);record(trunkBatch,x,y+3.1*scale,z,.42*scale,6.2*scale,.42*scale);if(willow){record(leafBatch,x,y+7.1*scale,z,4.9*scale,2.8*scale,4.9*scale,rand(0,TAU),0x79a36c);for(let i=0;i<5;i++){const a=i*TAU/5;record(willowBatch,x+Math.sin(a)*3.6*scale,y+4.9*scale,z+Math.cos(a)*3.6*scale,1.25*scale,3.8*scale,1.3*scale,a,0x7ca476);}}else for(let i=0;i<3;i++){const a=i*TAU/3;record(leafBatch,x+Math.sin(a)*1.2*scale,y+(6.1+i*.45)*scale,z+Math.cos(a)*1.2*scale,2.9*scale,3*scale,2.8*scale,a,[0x668970,0x719b78,0x8ca67c][i]);}}
+for(let i=0;i<roads.length;i++){const r=roads[i];if(r.bridge)continue;for(let j=0;j<r.points.length-1;j++){const a=r.points[j],b=r.points[j+1],dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz),nx=dz/len,nz=-dx/len;for(let t=17;t<len-8;t+=34)for(const s of [-1,1]){const x=a[0]+dx*t/len+nx*(r.width/2+2.4)*s,z=a[1]+dz*t/len+nz*(r.width/2+2.4)*s;if(!blocked(x,z,1)&&!isWater(x,z,.4))tree(x,z,false,rand(.85,1.15));}}}
+// Han riverside parks on both banks: promenades, benches, willows.
+for(let i=0;i<paths.length;i++){const p=paths[i],dx=p.b[0]-p.a[0],dz=p.b[1]-p.a[1],len=Math.hypot(dx,dz),nx=dz/len,nz=-dx/len,segs=Math.max(1,Math.ceil(len/18));for(let s=0;s<segs;s++){const t0=s/segs,t1=(s+1)/segs,x0=lerp(p.a[0],p.b[0],t0),z0=lerp(p.a[1],p.b[1],t0),x1=lerp(p.a[0],p.b[0],t1),z1=lerp(p.a[1],p.b[1],t1);strip(sideBatch,x0,z0,x1,z1,p.w,groundHeight((x0+x1)*.5,(z0+z1)*.5)+.13,.28);}for(let t=12;t<len-10;t+=34){const x=p.a[0]+dx*t/len,z=p.a[1]+dz*t/len,bridgeHere=bridges.some(b=>Math.abs(x-b.x)<24);for(const s of [-1,1])if(!bridgeHere)tree(x+nx*(p.w/2+3)*s,z+nz*(p.w/2+3)*s,true,.82);if(t%102<34)addLamp(x,z,Math.atan2(dx,dz));if(t%68<34&&!bridgeHere){record(benchBatch,x+nx*(p.w/2+1.6),groundHeight(x,z)+.55,z+nz*(p.w/2+1.6),1.2,.3,3.2,Math.atan2(dx,dz));addProp(x+nx*(p.w/2+1.6),z+nz*(p.w/2+1.6),1.2,3.2,1);}}}
+for(let x=-1120;x<1120;x+=30){let near=false;for(const b of bridges)if(Math.abs(x-b.x)<24)near=true;if(near)continue;tree(x,riverNorth(x)-28,true,.95);tree(x,riverSouth(x)+4,true,.95);}
+// Promenade benches are generated along each bank path below, so they always sit on land.
+// Yeouido: a low green island carrying its own glass cluster.
+const yeouidoMesh=meshAt(new T.CylinderGeometry(1,1,1,40),mat(0x7f9a76),island.x,.05,island.z,island.rx,1.75,island.rz);yeouidoMesh.castShadow=false;
+for(let i=0;i<90;i++){const a=rnd()*TAU,r=Math.sqrt(rnd());const x=island.x+Math.sin(a)*r*island.rx*.92,z=island.z+Math.cos(a)*r*island.rz*.9;if(Math.abs(x+780)<32)continue;tree(x,z,i%4===0,.85);}
+sign('여 의 도',-900,4,380,18,4,0);sign('汝 矣 島 公 園',-900,9,380,16,3,0);
+// Namsan: an original observation tower on the summit, plus a winding road and trails.
+function namsanTower(x,z){
+ const y=groundHeight(x,z),g=new T.Group();g.position.set(x,y,z);scene.add(g);
+ const conc=mat(0xd7dcd8,{roughness:.55}),deckMat=mat(0x9db3b8,{metalness:.35,roughness:.35}),red=mat(0xc0493d,{emissive:0x8e2c25,emissiveIntensity:.4});
+ meshAt(new T.CylinderGeometry(22,27,5,16),stoneMat,0,2.5,0,1,1,1,0,g);addCollider(x,z,46,46,7);
+ meshAt(new T.CylinderGeometry(5.2,7.4,94,12),conc,0,52,0,1,1,1,0,g);
+ meshAt(new T.CylinderGeometry(13.5,15,8,16),deckMat,0,103,0,1,1,1,0,g);
+ meshAt(new T.CylinderGeometry(15.1,15.1,4.2,16),mat(0x7d9ea7,{metalness:.85,roughness:.16,envMapIntensity:1.2}),0,109,0,1,1,1,0,g);
+ meshAt(new T.CylinderGeometry(8,10,7,12),conc,0,116,0,1,1,1,0,g);
+ meshAt(new T.CylinderGeometry(2.2,4.2,10,10),deckMat,0,124,0,1,1,1,0,g);
+ meshAt(new T.CylinderGeometry(.5,1.2,26,8),conc,0,140,0,1,1,1,0,g);
+ meshAt(new T.ConeGeometry(1.2,7,8),red,0,156,0,1,1,1,0,g);
+ meshAt(new T.SphereGeometry(1.1,8,6),mat(0xff6a55,{emissive:0xff4a35,emissiveIntensity:2.2}),0,160,0,1,1,1,0,g);
+ sign('남 산 · 首尔塔',x,y+13,z+30,20,3.6,0,true);
+}
+namsanTower(0,-340);
+// Bukchwal palace: original walls, curved tiled roofs, gate and courtyard.
+const palaceStone=[],palaceWood=[],palaceRoof=[],palaceDoor=[];
+function roofParts(x,y,z,w,d,h){palaceRoof.push({g:new T.CylinderGeometry(.14,1,1,4,1),x,y,z,sx:w*.72,sy:h,sz:d*.72,ry:PI/4});palaceRoof.push({g:new T.CylinderGeometry(1,1.09,.34,4,1),x,y:y-h*.5,z,sx:w*.76,sy:1,sz:d*.76,ry:PI/4});}
+function palaceHall(x,z,w,d,roofH){
+ palaceStone.push({g:box,x,y:1.3,z,sx:w+14,sy:2.6,sz:d+12});
+ palaceStone.push({g:box,x,y:.55,z:d*.5+8,sx:12,sy:1.1,sz:8});
+ for(const sx of [-1,0,1])for(const sz of [-1,1])palaceWood.push({g:box,x:x+sx*(w*.42),y:7,z:z+sz*(d*.4),sx:.85,sy:9,sz:.85});
+ for(const sz of [-1,1])for(const sx of [-1,1])palaceWood.push({g:box,x:x+sx*(w*.45),y:7,z:z+sz*(d*.43),sx:.85,sy:9,sz:.85});
+ palaceWood.push({g:box,x,y:11.2,z,sx:w*.92,sy:.7,sz:d*.9});
+ roofParts(x,12.2+roofH*.5,z,w+7,d+7,roofH);
+ palaceRoof.push({g:box,x,y:12.2+roofH,z,sx:w*.42,sy:.7,sz:1.1});
+ palaceWood.push({g:box,x,y:6,z,sx:w*.72,sy:7,sz:d*.64});
+ addCollider(x,z,w+14,d+12,roofH+12);
+}
+palaceHall(0,-972,96,58,9);palaceHall(-205,-990,58,40,7.2);palaceHall(210,-990,58,40,7.2);
+// Perimeter walls, with a gate opening on the south side.
+function palaceWall(x1,z1,x2,z2){
+ const mx=(x1+x2)/2,mz=(z1+z2)/2,len=Math.hypot(x2-x1,z2-z1),yaw=Math.atan2(x2-x1,z2-z1);
+ palaceStone.push({g:box,x:mx,y:3.6,z:mz,sx:2.8,sy:7.2,sz:len,ry:yaw});
+ palaceRoof.push({g:box,x:mx,y:7.5,z:mz,sx:3.7,sy:.55,sz:len,ry:yaw});
+ addCollider(mx,mz,Math.abs(x2-x1)+2.8,Math.abs(z2-z1)+2.8,7.6);
+}
+palaceWall(-300,-840,-19,-840);palaceWall(19,-840,320,-840);
+palaceWall(-300,-1080,320,-1080);palaceWall(-300,-840,-300,-1080);palaceWall(320,-840,320,-1080);
+// Gate: stone piers, deep-red doors and two curved roof tiers.
+palaceStone.push({g:box,x:-13,y:3.6,z:-840,sx:11,sy:7.2,sz:17});palaceStone.push({g:box,x:13,y:3.6,z:-840,sx:11,sy:7.2,sz:17});
+palaceStone.push({g:box,x:0,y:7.3,z:-840,sx:26,sy:2.2,sz:15});
+addCollider(-13,-840,11,17,7.4);addCollider(13,-840,11,17,7.4);
+palaceDoor.push({g:box,x:-4,y:3.5,z:-846,sx:7.4,sy:6.4,sz:.5});palaceDoor.push({g:box,x:4,y:3.5,z:-846,sx:7.4,sy:6.4,sz:.5});
+roofParts(0,11.3,-840,44,26,5.6);roofParts(0,17.4,-840,32,19,4);
+palaceRoof.push({g:box,x:0,y:12.2,z:-840,sx:20,sy:.8,sz:1});
+// Courtyard paving, a few old trees, and the palace name boards.
+record(sideBatch,10,.16,-960,612,.25,230);
+rasterSurface(-296,316,-1076,-846,()=>true,()=>.31,2);
+for(const p of [[-160,-900],[160,-900],[-110,-1040],[120,-1040]])tree(p[0],p[1],false,1.15);
+{const stoneMesh=new T.Mesh(merged(palaceStone),stoneMat);stoneMesh.castShadow=true;stoneMesh.receiveShadow=true;scene.add(stoneMesh);
+ const woodMesh=new T.Mesh(merged(palaceWood),mat(0x8a4a3a,{roughness:.72}));woodMesh.castShadow=true;woodMesh.receiveShadow=true;scene.add(woodMesh);
+ const roofMesh=new T.Mesh(merged(palaceRoof),mat(0x2f3d40,{metalness:.18,roughness:.58}));roofMesh.castShadow=true;roofMesh.receiveShadow=true;scene.add(roofMesh);
+ const doorMesh=new T.Mesh(merged(palaceDoor),mat(0x7a2b22,{roughness:.7}));doorMesh.castShadow=true;scene.add(doorMesh);}
+sign('북 궐',0,14,-824,22,4.2,0,true);sign('宮 闕 正 門',0,9,-824,18,2.6,0,true);
+// Gwangjang market: original stalls with striped awnings.
+const stallWood=[],stallRed=[],stallCream=[];
+for(let i=0;i<12;i++){
+ const sx=900+((i%4)-1.5)*26,sz=-612+(Math.floor(i/4)-1)*30;
+ stallWood.push({g:box,x:sx,y:1.1,z:sz,sx:12,sy:2.2,sz:7});
+ stallWood.push({g:box,x:sx-6,y:1.6,z:sz,sx:.25,sy:3.2,sz:.25});stallWood.push({g:box,x:sx+6,y:1.6,z:sz,sx:.25,sy:3.2,sz:.25});
+ (i%2?stallRed:stallCream).push({g:box,x:sx,y:3.4,z:sz,sx:13.4,sy:.28,sz:8.2});
+ addCollider(sx,sz,12,7,2.4);
+}
+{const a=new T.Mesh(merged(stallWood),mat(0x6d5644,{roughness:.85})),b=new T.Mesh(merged(stallRed),mat(0xb84b3e,{roughness:.8})),c=new T.Mesh(merged(stallCream),mat(0xd8c9a3,{roughness:.85}));for(const m of [a,b,c]){m.castShadow=true;m.receiveShadow=true;scene.add(m);}}
+sign('광 장 시 장',900,7,-546,30,4.5,0,true);sign('广 藏 市 场',900,3.5,-546,18,2.4,0,true);
+// Mountain groves and stone trails.
+for(let i=0;i<300;i++){const x=rand(-1250,1250),z=rand(-1240,1240);if(hillHeight(x,z)>8&&!isWater(x,z)&&!inPalace(x,z,50)&&Math.hypot(x,z+340)>48&&zoneFree(x,z,10))tree(x,z,false,rand(1,1.55));}
+function hillPath(points,width){for(let i=0;i<points.length-1;i++){const a=points[i],b=points[i+1],len=Math.hypot(a[0]-b[0],a[1]-b[1]),steps=Math.ceil(len/5);rasterSurface(Math.min(a[0],b[0])-width,Math.max(a[0],b[0])+width,Math.min(a[1],b[1])-width,Math.max(a[1],b[1])+width,(x,z)=>segmentDistance(x,z,...a,...b)<width/2,(x,z)=>hillHeight(x,z)+.23,2);for(let j=0;j<steps;j++){const t=(j+.5)/steps,x=lerp(a[0],b[0],t),z=lerp(a[1],b[1],t);record(sideBatch,x,hillHeight(x,z)+.11,z,width,.22,len/steps+.3,Math.atan2(b[0]-a[0],b[1]-a[1]));}}}
+hillPath([[0,-150],[-55,-215],[-38,-285],[0,-318]],5);hillPath([[-30,-1076],[-56,-1130],[-80,-1185]],5);hillPath([[-720,34],[-700,-30]],6);hillPath([[700,60],[700,20]],6);
+sign('남 산 공 원',-90,5.5,-80,16,3.2,0);sign('한 강 공원',620,5,880,20,3.6,0);sign('漢 江 公 園',620,9,880,17,2.8,0);
+const trunkMat=mat(0x705e4e),leafMat=mat(0xabc794,{flatShading:true}),poleMat=mat(0x42585a,{metalness:.5}),lampGlow=mat(0xffefc6,{emissive:0xffd791,emissiveIntensity:0});
+buildInstances(box,asphalt,roadBatch,false);buildInstances(box,sidewalk,sideBatch,false);buildInstances(box,stripeMat,markBatch,false);buildInstances(box,curbMat,curbBatch,false);for(let i=0;i<buildingMats.length;i++)buildInstances(box,buildingMats[i],buildingBatches[i]);buildInstances(box,mat(0x80938f),roofBatch);buildInstances(cylinder,trunkMat,trunkBatch);buildInstances(leafGeo,leafMat,leafBatch.concat(willowBatch));buildInstances(box,poleMat,lampBatch);buildInstances(box,lampGlow,lampHeadBatch,false);buildInstances(box,stoneMat,railBatch,false);buildInstances(box,mat(0x88765b),benchBatch);
+const foamMat=new T.MeshBasicMaterial({color:0xdaf2e9,transparent:true,opacity:.14,depthWrite:false,blending:T.AdditiveBlending});buildInstances(box,foamMat,foamBatch,false);
+// Two pooled street lights snap to the nearest lamps at night; only on the high preset.
+const streetLights=[new T.PointLight(0xffd49a,0,26,2),new T.PointLight(0xffd49a,0,26,2)];for(const l of streetLights){l.castShadow=false;scene.add(l);}
+// Grass tufts are a single instanced draw, recycled around the player and only on 高.
+const tuftGeo=merged([{g:box,x:0,y:.22,z:0,sx:.045,sy:.44,sz:.045},{g:box,x:0,y:.18,z:0,sx:.04,sy:.36,sz:.04,ry:1.05},{g:box,x:0,y:.16,z:0,sx:.038,sy:.32,sz:.038,ry:2.1}]);
+const groundDetails=new T.InstancedMesh(tuftGeo,mat(0xffffff,{roughness:1}),150);groundDetails.instanceMatrix.setUsage(T.DynamicDrawUsage);groundDetails.frustumCulled=false;groundDetails.count=0;scene.add(groundDetails);
+let detailX=1e9,detailZ=1e9;
+function surfaceTypeAt(x,z){const ix=clamp(Math.floor((x+1350)/2),0,SURFACE_SIZE-1),iz=clamp(Math.floor((z+1350)/2),0,SURFACE_SIZE-1);return surfaceTypes[iz*SURFACE_SIZE+ix];}
+function updateGroundDetails(){
+ if(qualityLevel()<2){groundDetails.visible=false;return;}groundDetails.visible=true;
+ const px=playerRender.x,pz=playerRender.z;if(Math.hypot(px-detailX,pz-detailZ)<15)return;detailX=px;detailZ=pz;
+ let count=0;for(let i=0;i<150;i++){const a=rand(0,TAU),r=Math.sqrt(rnd())*34,x=px+Math.sin(a)*r,z=pz+Math.cos(a)*r;if(isWater(x,z,1)||surfaceTypeAt(x,z)!==0||blocked(x,z,.2))continue;if(hillHeight(x,z)>2.5)continue;const s=rand(.6,1.3);dummy.position.set(x,surfaceHeight(x,z),z);dummy.rotation.set(0,rand(0,TAU),0);dummy.scale.set(s,rand(.7,1.4),s);dummy.updateMatrix();groundDetails.setMatrixAt(count,dummy.matrix);const c=groundDetails.instanceColor?groundDetails.instanceColor:null;groundDetails.setColorAt(count,new T.Color().setHSL(.27+rand(-.03,.03),.28,rand(.35,.5)));count++;}
+ groundDetails.count=count;groundDetails.instanceMatrix.needsUpdate=true;if(groundDetails.instanceColor)groundDetails.instanceColor.needsUpdate=true;
+}
+const glowCanvas=document.createElement('canvas');glowCanvas.width=64;glowCanvas.height=64;const glowCtx=glowCanvas.getContext('2d'),grad=glowCtx.createRadialGradient(32,32,0,32,32,32);grad.addColorStop(0,'rgba(255,218,146,.6)');grad.addColorStop(.4,'rgba(255,211,130,.25)');grad.addColorStop(1,'rgba(255,211,130,0)');glowCtx.fillStyle=grad;glowCtx.fillRect(0,0,64,64);const poolGeo=new T.PlaneGeometry(1,1);poolGeo.rotateX(-PI/2);const poolMat=new T.MeshBasicMaterial({map:new T.CanvasTexture(glowCanvas),transparent:true,depthWrite:false,blending:T.AdditiveBlending,opacity:0});for(let i=0;i<poolBatch.length;i++){poolBatch[i].sz=poolBatch[i].sy;poolBatch[i].sy=1;}buildInstances(poolGeo,poolMat,poolBatch,false);
+// Procedural sky and a generated reflection environment; no image assets.
+const skyUniforms={top:{value:new T.Color(0x397b91)},horizon:{value:new T.Color(0xf8bc88)},night:{value:0},sunDir:{value:new T.Vector3(-.85,.2,-.35)},moonDir:{value:new T.Vector3(.55,.42,.72)},time:{value:0}};
+const sky=new T.Mesh(new T.SphereGeometry(2000,32,20),new T.ShaderMaterial({uniforms:skyUniforms,side:T.BackSide,depthWrite:false,vertexShader:`varying vec3 vDir; void main(){vDir=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,fragmentShader:`uniform vec3 top; uniform vec3 horizon; uniform vec3 sunDir; uniform vec3 moonDir; uniform float night; uniform float time; varying vec3 vDir;
+float h21(vec2 p){p=fract(p*vec2(127.1,311.7));p+=dot(p,p+34.7);return fract(p.x*p.y);}
+float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h21(i),h21(i+vec2(1.,0.)),f.x),mix(h21(i+vec2(0.,1.)),h21(i+vec2(1.,1.)),f.x),f.y);}
+float fbm(vec2 p){float v=0.,a=.55;for(int i=0;i<3;i++){v+=a*vnoise(p);p=p*2.07+vec2(11.3,7.7);a*=.5;}return v;}
+void main(){vec3 d=normalize(vDir);float h=max(d.y,0.);vec3 c=mix(horizon,top,pow(h,.42));
+ float s=dot(d,normalize(sunDir));
+ c+=vec3(1.,.63,.28)*smoothstep(.99925,.9997,s)*(1.-night)*1.55;
+ c+=vec3(1.,.48,.17)*pow(max(s,0.),42.)*.42*(1.-night);
+ c+=vec3(.42,.22,.08)*pow(max(s,0.),6.)*.12*(1.-night);
+ vec2 cuv=d.xz/(d.y+.16)*1.15+vec2(time*.0065,time*.0022);
+ float n=fbm(cuv*1.7)+fbm(cuv*3.1+vec2(4.,9.))*0.28;
+ float cloud=smoothstep(.55,.78,n)*smoothstep(.015,.16,d.y)*smoothstep(0.,.35,dot(d,normalize(sunDir))+.7);
+ vec3 cloudDay=mix(vec3(1.,.88,.75),vec3(.7,.77,.83),smoothstep(0.,.55,d.y));
+ vec3 cloudCol=mix(cloudDay,vec3(.1,.14,.2),night);
+ c=mix(c,cloudCol,cloud*.72*(1.-night*.35));
+ float m=dot(d,normalize(moonDir));
+ c+=vec3(.88,.93,1.)*smoothstep(.99955,.99986,m)*night*1.45;
+ c+=vec3(.35,.48,.72)*pow(max(m,0.),72.)*night*.38;
+ vec3 cell=floor(d*640.);float hash=h21(cell.xy+cell.z*17.3);
+ float star=step(.9983,hash)*smoothstep(.03,.26,d.y)*night*(.62+.38*sin(time*2.1+hash*47.));
+ c+=vec3(.62,.78,1.)*star;
+ gl_FragColor=vec4(c,1.);
+#include <tonemapping_fragment>
+#include <encodings_fragment>
+}`}));sky.frustumCulled=false;sky.renderOrder=-100;scene.add(sky);
+const environmentScene=new T.Scene(),environmentSky=new T.Mesh(new T.SphereGeometry(100,24,16),sky.material.clone());environmentScene.add(environmentSky);
+const pmrem=new T.PMREMGenerator(renderer);pmrem.compileCubemapShader();
+const environmentTarget=pmrem.fromScene(environmentScene,.08,.1,220);scene.environment=environmentTarget.texture;pmrem.dispose();
+waterMat.envMapIntensity=1.15;
+const waterCompile=waterMat.onBeforeCompile;
+waterMat.onBeforeCompile=shader=>{waterCompile(shader);shader.fragmentShader=shader.fragmentShader.replace('gl_FragColor = vec4( outgoingLight, diffuseColor.a );','float lakeFresnel=pow(1.-max(dot(normal,normalize(vViewPosition)),0.),4.); outgoingLight=mix(outgoingLight,vec3(.43,.61,.66)*(1.-uNight*.65),lakeFresnel*.35);\ngl_FragColor = vec4( outgoingLight, diffuseColor.a );');};
+// Merge small procedural car parts at construction time to reduce draw calls.
+function merged(parts){const positions=[],normals=[];for(let i=0;i<parts.length;i++){const p=parts[i],g=p.g.index?p.g.toNonIndexed():p.g.clone();dummy.position.set(p.x,p.y,p.z);dummy.rotation.set(p.rx||0,p.ry||0,p.rz||0);dummy.scale.set(p.sx||1,p.sy||1,p.sz||1);dummy.updateMatrix();g.applyMatrix4(dummy.matrix);positions.push(...g.attributes.position.array);normals.push(...g.attributes.normal.array);g.dispose();}const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(positions,3));g.setAttribute('normal',new T.Float32BufferAttribute(normals,3));return g;}
+// Layered distant scenery: two mountain ranges west/south, a skyline ring east.
+const distantMats=[];
+function addDistantMaterial(color,nightColor,nightMix){const m=new T.MeshBasicMaterial({color,fog:true});distantMats.push({mat:m,base:new T.Color(color),night:new T.Color(nightColor),mix:nightMix});return m;}
+function mountainLayer(radius,spread,minH,maxH,count,color,startAngle,endAngle,nightColor,nightMix){
+ const cone=new T.ConeGeometry(1,1,6,1),parts=[];
+ for(let i=0;i<count;i++){
+  const a=lerp(startAngle,endAngle,i/(count-1))+rand(-.045,.045),r=radius+rand(-spread,spread),h=rand(minH,maxH),w=rand(minH*1.5,maxH*1.9);
+  parts.push({g:cone,x:Math.sin(a)*r,y:h/2-24,z:Math.cos(a)*r,sx:w,sy:h,sz:w*rand(.5,.8),ry:rand(0,TAU)});
+ }
+ const material=addDistantMaterial(color,nightColor,nightMix),mesh=new T.Mesh(merged(parts),material);mesh.castShadow=false;mesh.receiveShadow=false;scene.add(mesh);return mesh;
+}
+// Seoul is ringed by mountains: three overlapping ranges close the horizon in every direction.
+mountainLayer(1790,150,110,330,62,0x93a7a3,0,TAU,0x203544,.85);
+mountainLayer(1510,110,70,230,66,0x6b8480,0,TAU,0x172a37,.9);
+mountainLayer(1280,80,35,125,58,0x55706c,0,TAU,0x142632,.95);
+// Metres throughout: 4.0–4.8 m vehicles; a 1.75 m humanoid at scale 1.
+function roundedBox(w,h,d,r=.12){
+ const g=new T.BoxGeometry(w,h,d,4,4,6),p=g.attributes.position,n=g.attributes.normal,v=new T.Vector3(),q=new T.Vector3();
+ for(let i=0;i<p.count;i++){v.fromBufferAttribute(p,i);q.set(clamp(v.x,-w/2+r,w/2-r),clamp(v.y,-h/2+r,h/2-r),clamp(v.z,-d/2+r,d/2-r));v.sub(q).normalize();n.setXYZ(i,v.x,v.y,v.z);q.addScaledVector(v,r);p.setXYZ(i,q.x,q.y,q.z);}return g;
+}
+const tireMat=mat(0x141b20,{roughness:.96}),glassMat=mat(0x7d9ea7,{metalness:.85,roughness:.16,envMapIntensity:1.2}),headMat=mat(0xffefc6,{emissive:0xffd595,emissiveIntensity:.8}),tailMat=mat(0xb44b45,{emissive:0xff4033,emissiveIntensity:1.1}),chromeMat=mat(0xabb9bd,{metalness:.85,roughness:.25});
+const glowTexture=new T.CanvasTexture(glowCanvas),glowMaterial=new T.SpriteMaterial({map:glowTexture,color:0xffe2ad,transparent:true,blending:T.AdditiveBlending,depthWrite:false,opacity:.55});
+function glow(parent,x,y,z,size,color=0xffdda0){const m=glowMaterial.clone();m.color.setHex(color);const sprite=new T.Sprite(m);sprite.position.set(x,y,z);sprite.scale.set(size,size,1);parent.add(sprite);return sprite;}
+// Neon haze over Myeongdong's shopping street.
+for(const pos of [[450,10,-430],[455,24,-410],[560,15,1080]])glow(scene,...pos,6,0x99ffd0);
+const vehicleSpecs=[{name:'轿车',length:4.5,width:1.8,height:1.43},{name:'掀背车',length:4.05,width:1.76,height:1.5},{name:'越野车',length:4.8,width:1.94,height:1.76},{name:'汉江出租车',length:4.5,width:1.8,height:1.48}];
+const wheelGeo=new T.CylinderGeometry(.33,.33,.22,14);wheelGeo.rotateZ(PI/2);
+const rimGeo=merged([{g:new T.CylinderGeometry(.18,.18,.235,10),x:0,y:0,z:0,rz:PI/2},{g:box,x:0,y:0,z:0,sx:.25,sy:.055,sz:.53},{g:box,x:0,y:0,z:0,sx:.25,sy:.53,sz:.055}]);
+const vehicleGeometry=vehicleSpecs.map(spec=>{
+ const l=spec.length,w=spec.width,h=spec.height;
+ return {body:merged([{g:roundedBox(w,.56,l,.18),x:0,y:.65,z:0},{g:roundedBox(w*.92,.19,l*.3,.09),x:0,y:.96,z:l*.29},{g:roundedBox(w*.86,.15,l*.48,.07),x:0,y:h,z:-.2}]),glass:merged([{g:roundedBox(w*.84,h-.91,l*.46,.12),x:0,y:(h+.91)/2,z:-.2}]),head:merged([-1,1].map(side=>({g:box,x:side*w*.33,y:.8,z:l/2,sx:.43,sy:.15,sz:.05}))),tail:merged([-1,1].map(side=>({g:box,x:side*w*.35,y:.8,z:-l/2,sx:.34,sy:.13,sz:.05}))),trim:merged([-1,1].flatMap(x=>[-1,1].map(z=>({g:new T.TorusGeometry(.38,.055,5,14,PI),x:x*w*.51,y:.34,z:z*l*.3,ry:PI/2}))))};
+});
+const carColors=[0xd8c6a7,0x99b5a9,0x426c80,0xa45648,0xd1d7dc,0x45506c,0x55847c],cars=[];
+function makeCar(x,z,yaw,parked,route,index=0,type=cars.length%4,role='traffic'){
+ const root=new T.Group(),body=new T.Group(),spec=vehicleSpecs[type],geo=vehicleGeometry[type];root.add(body);scene.add(root);
+ const taxiPaint=cars.length%2?0xd99a35:0xc7cdd1;
+ const paint=mat(type===3?taxiPaint:carColors[cars.length%carColors.length],{metalness:.55,roughness:.28,envMapIntensity:1.1});
+ meshAt(geo.body,paint,0,0,0,1,1,1,0,body);const glass=meshAt(geo.glass,glassMat,0,0,0,1,1,1,0,body);glass.castShadow=false;meshAt(geo.trim,paint,0,0,0,1,1,1,0,body);
+ const details=[{g:box,x:0,y:.42,z:spec.length/2,sx:spec.width*.85,sy:.12,sz:.08},{g:box,x:0,y:.42,z:-spec.length/2,sx:spec.width*.85,sy:.12,sz:.08},{g:box,x:0,y:spec.height-.22,z:-.2,sx:spec.width*.86,sy:spec.height-.9,sz:.06}];
+ meshAt(merged(details),chromeMat,0,0,0,1,1,1,0,body);
+ meshAt(geo.head,headMat,0,0,0,1,1,1,0,body);meshAt(geo.tail,tailMat,0,0,0,1,1,1,0,body);for(const side of [-1,1])glow(body,side*spec.width*.33,.8,spec.length/2+.05,1.25);
+ if(type===3){meshAt(roundedBox(spec.width*.97,.16,spec.length*.8,.06),mat(0xd7d9d3),0,.85,0,1,1,1,0,body);meshAt(roundedBox(.58,.2,.32,.05),mat(0xfff2c8,{emissive:0xffc95e,emissiveIntensity:.55}),0,spec.height+.17,-.2,1,1,1,0,body);}
+ const wheels=[];for(const side of [-1,1])for(const end of [-1,1]){const pivot=new T.Group();pivot.position.set(side*spec.width*.51,.34,end*spec.length*.3);root.add(pivot);const wheel=new T.Group();pivot.add(wheel);wheels.push({pivot,wheel,front:end>0});}
+ const car={root,body,wheels,spec,type,role,x,z,yaw,speed:0,vx:0,vz:0,parked,route,index,cruise:rand(8,13),steer:0,paint,health:100,collisionTimer:0,driver:!parked,active:true,spin:0,roll:0,occupant:null,stuck:0};
+ root.position.set(x,surfaceHeight(x,z),z);root.rotation.y=yaw;cars.push(car);return car;
+}
+// Seoul traffic circuits: two downtown blocks, a Gangnam block, a cross-river loop
+// over the two central bridges, and a western loop serving Yeouido.
+const trafficRoutes=[
+ [[-700,-800],[360,-800],[360,-640],[-700,-640]],
+ [[360,-640],[760,-640],[760,-430],[360,-430]],
+ [[-130,1060],[560,1060],[560,900],[-130,900]],
+ [[-130,-40],[560,-40],[560,900],[-130,900]],
+ [[-780,-40],[-130,-40],[-130,900],[-780,900]]
+];
+for(let i=0;i<12;i++){
+ const route=trafficRoutes[i%trafficRoutes.length],seg=Math.floor(i/trafficRoutes.length)%route.length,t=.18+((i*.19)%0.58);
+ const a=route[seg],b=route[(seg+1)%route.length];
+ makeCar(lerp(a[0],b[0],t),lerp(a[1],b[1],t),Math.atan2(b[0]-a[0],b[1]-a[1]),false,route,(seg+1)%route.length,i%5===0?3:i%4);
+}
+makeCar(470,-452,PI/2,true,null);makeCar(330,-452,PI/2,true,null);
+makeCar(-900,400,0,true,null);makeCar(-160,1104,0,true,null);
+makeCar(600,874,PI/2,true,null);makeCar(880,-718,PI/2,true,null);
+makeCar(-812,-300,0,true,null);makeCar(-700,-665,PI/2,true,null);
+// Every actor uses the same articulated skeleton. NPC part matrices are instanced.
+const sphereGeo=new T.SphereGeometry(1,10,8),capsuleGeo=merged([{g:new T.CylinderGeometry(.5,.5,.5,10),x:0,y:0,z:0},{g:sphereGeo,x:0,y:.25,z:0,sx:.5,sy:.25,sz:.5},{g:sphereGeo,x:0,y:-.25,z:0,sx:.5,sy:.25,sz:.5}]);
+const torsoGeo=new T.LatheGeometry([new T.Vector2(.16,-.25),new T.Vector2(.19,-.2),new T.Vector2(.21,.03),new T.Vector2(.245,.19),new T.Vector2(.18,.25)],10);
+const rigGeometries=[sphereGeo,capsuleGeo,torsoGeo,roundedBox(.22,.12,.33,.05),box];
+const paletteMaterials=new Map();function actorMaterial(color){if(!paletteMaterials.has(color))paletteMaterials.set(color,mat(color,{roughness:.82}));return paletteMaterials.get(color);}
+function makeRig(clothes=0x517b84,skin=0xcf9d78,height=1){
+ const root=new T.Group(),torso=new T.Group(),parts=[];root.add(torso);torso.position.y=1.13;
+ function part(parent,kind,color,x,y,z,sx,sy,sz){const m=meshAt(rigGeometries[kind],actorMaterial(color),x,y,z,sx,sy,sz,0,parent);parts.push({mesh:m,kind,color,colorObject:new T.Color(color)});return m;}
+ function joint(parent,x,y,z){const g=new T.Group();g.position.set(x,y,z);parent.add(g);return g;}
+ part(torso,2,clothes,0,0,0,1,1,.67);part(root,0,0x30404a,0,.86,0,.2,.13,.13);
+ part(torso,1,skin,0,.32,0,.105,.14,.105);const head=joint(torso,0,.45,0);part(head,0,skin,0,0,.015,.14,.155,.135);part(head,0,0x293137,0,.1,-.018,.145,.07,.14);part(head,0,0x293137,0,.02,-.105,.14,.11,.045);
+ for(const side of [-1,1])part(head,0,0x25313a,side*.052,.02,.143,.016,.014,.009);
+ const arms=[],legs=[];
+ for(const side of [-1,1]){
+  const shoulder=joint(torso,side*.25,.21,0),elbow=joint(shoulder,0,-.28,0),hand=joint(elbow,0,-.25,0);
+  part(shoulder,1,clothes,0,-.13,0,.16,.32,.16);part(elbow,1,clothes,0,-.12,0,.13,.28,.13);part(elbow,0,clothes,0,0,0,.075,.075,.075);part(hand,0,skin,0,-.035,.005,.066,.08,.055);arms.push({upper:shoulder,lower:elbow,hand});
+  const hip=joint(root,side*.115,.86,0),knee=joint(hip,0,-.38,0);
+  part(hip,1,0x30404a,0,-.19,0,.19,.42,.19);part(knee,0,0x30404a,0,0,0,.09,.09,.09);part(knee,1,0x30404a,0,-.18,0,.15,.39,.15);const foot=joint(knee,0,-.41,.055);part(foot,3,0x404a4d,0,0,0,1,1,1);legs.push({upper:hip,lower:knee,foot,planted:false,plantX:0,plantZ:0});
+ }
+ const weapon=joint(arms[1].hand,0,-.075,0);
+ part(weapon,4,0x435666,0,-.08,.05,.055,.19,.07);const barrel=part(weapon,4,0x6a8791,0,-.16,.05,.085,.14,.11);
+ root.scale.setScalar(height);return {root,torso,head,arms,legs,parts,weapon,barrel,height,motion:{gait:0,phase:0,speed:0,weight:0,lean:0,grounded:true}};
+}
+const GAITS=[{name:'步行',speed:1.5,cycle:1.4,stance:.64},{name:'慢跑',speed:3.2,cycle:2.1,stance:.48},{name:'疾跑',speed:6.5,cycle:2.9,stance:.36}];
+function gaitValue(g,key){const lo=Math.min(1,Math.floor(g));return lerp(GAITS[lo][key],GAITS[lo+1][key],g-lo);}
+function advanceGait(r,distance,dt,gait,grounded=true){
+ const m=r.motion,blend=1-Math.exp(-dt*9),speed=dt>0?distance/dt:0;
+ m.gait=lerp(m.gait,gait,blend);m.weight=lerp(m.weight,speed>.04?1:0,blend);m.lean=lerp(m.lean,clamp((speed-m.speed)/Math.max(dt,.001)*.012,-.13,.18),blend);
+ m.speed=speed;m.grounded=grounded;if(grounded)m.phase=(m.phase+distance/gaitValue(m.gait,'cycle')*TAU)%TAU;
+}
+function poseRig(r,speed,phase,time,jumping=false,aim=false,attack=0,weapon=-1,fall=0){
+ const m=r.motion,g=m.gait,w=m.weight,run=clamp(g-1,0,1),jog=Math.min(g,1),wave=Math.sin(m.phase),bob=(1-Math.cos(m.phase*2))*.5*w*(.012+jog*.018+run*.025),breath=Math.sin(time*2.1)*.008;
+ r.head.rotation.set(Math.sin(time*.73)*.035*(1-w),Math.sin(time*.49)*.23*(1-w),0);
+ r.torso.position.set(Math.sin(time*.8)*.014*(1-w),1.13-jog*.045-run*.09+bob+breath,0);
+ r.torso.rotation.set((aim?.04:jog*.06+run*.22)*w+m.lean,-wave*w*(.045+jog*.055+run*.04),Math.sin(time*.8)*.018*(1-w));
+ for(let i=0;i<2;i++){
+  const sign=i===0?1:-1,leg=r.legs[i],arm=r.arms[i],q=(m.phase/TAU+i*.5)%1,duty=gaitValue(g,'stance'),cycle=gaitValue(g,'cycle'),reach=cycle*duty*.5;
+  let footZ,footY=.065;const stance=q<duty&&!jumping&&w>.08;
+  if(stance){
+   if(!leg.planted){const forward=reach*(1-2*q/duty)*r.height,side=sign*-.115*r.height;leg.plantX=r.root.position.x+Math.sin(r.root.rotation.y)*forward+Math.cos(r.root.rotation.y)*side;leg.plantZ=r.root.position.z+Math.cos(r.root.rotation.y)*forward-Math.sin(r.root.rotation.y)*side;}
+   const dx=leg.plantX-r.root.position.x,dz=leg.plantZ-r.root.position.z;footZ=(dx*Math.sin(r.root.rotation.y)+dz*Math.cos(r.root.rotation.y))/r.height;
+   const lateral=(dx*Math.cos(r.root.rotation.y)-dz*Math.sin(r.root.rotation.y))/r.height+sign*.115;leg.upper.rotation.z=clamp(lateral/.75,-.2,.2);
+   footY+=clamp((surfaceHeight(leg.plantX,leg.plantZ)-r.root.position.y)/r.height,-.12,.12);
+  }else{const t=clamp((q-duty)/(1-duty),0,1),smooth=t*t*(3-2*t);footZ=lerp(-reach,reach,smooth);footY+=Math.sin(t*PI)*(.07+jog*.1+run*.15)*w;leg.upper.rotation.z=0;}
+  leg.planted=stance;footZ*=w;
+  leg.upper.position.y=.86-jog*.065-run*.095+bob;const vertical=Math.max(.2,leg.upper.position.y-footY),distance=clamp(Math.hypot(footZ,vertical),.03,.788),knee=PI-Math.acos(clamp((.38*.38+.41*.41-distance*distance)/(2*.38*.41),-1,1)),hip=-Math.atan2(footZ,vertical)-Math.acos(clamp((.38*.38+distance*distance-.41*.41)/(2*.38*distance),-1,1));
+  leg.upper.rotation.x=hip;leg.lower.rotation.x=knee;
+  arm.upper.rotation.set(wave*sign*w*(.2+jog*.33+run*.34),0,sign*(.05+run*.08));arm.lower.rotation.x=-.12-jog*.7-run*.35-Math.max(0,wave*sign)*w*.18;
+  if(jumping){leg.planted=false;leg.upper.rotation.x=i===0?-.6:.15;leg.lower.rotation.x=.8;arm.upper.rotation.x=-.6;arm.lower.rotation.x=-.5;}
+  leg.foot.rotation.x=-(leg.upper.rotation.x+leg.lower.rotation.x);
+ }
+ if(aim){
+  if(weapon===2){
+   // Rifle: butt into the shoulder, right hand on the grip, left hand under the fore-end.
+   r.arms[1].upper.rotation.set(-1.34,-.12,-.14);r.arms[1].lower.rotation.x=-.42;
+   r.arms[0].upper.rotation.set(-1.26,.18,.62);r.arms[0].lower.rotation.x=-.92;r.arms[0].lower.rotation.z=-.35;
+   r.torso.rotation.y+=.1;
+  }else{
+   r.arms[1].upper.rotation.set(-1.25+armRecoil*2.4,0,-.18);r.arms[1].lower.rotation.x=-.32-armRecoil*1.5;
+   r.arms[0].upper.rotation.set(-1.13,0,-.32);r.arms[0].lower.rotation.x=-.55;
+  }
+ }
+ if(attack>0&&weapon===0){const swing=Math.sin(attack*PI);r.arms[1].upper.rotation.set(-1.72+swing*2.9,0,-.08-swing*.24);r.arms[1].lower.rotation.x=-.5+swing*.35;r.torso.rotation.y-=swing*.28;r.torso.rotation.x+=swing*.1;}
+ if(weapon===2&&!aim&&attack<=0){r.arms[0].upper.rotation.set(-.58+Math.sin(m.phase)*w*.1,.08,.42);r.arms[0].lower.rotation.x=-.52;}
+ r.weapon.visible=weapon>=0;r.weapon.rotation.x=0;r.barrel.scale.set(weapon===0?.45:1,weapon===2?3.7:weapon===0?5:1,weapon===0?.45:1);if(r!==playerRig)r.barrel.position.y=weapon===2?-.28:weapon===0?-.3:-.16;
+ if(r===playerRig)updateWeaponVisuals();
+ r.root.rotation.z=-fall*1.46;
+}
+function poseDriver(a,c){
+ const r=a.rig;r.motion.weight=0;r.weapon.visible=false;r.head.rotation.set(0,Math.sin(simTime*.6+a.index)*.07,0);r.torso.position.set(0,1.26/r.height-.605,0);r.torso.rotation.set(.06,c.steer*.1,0);r.root.rotation.z=0;
+ for(let i=0;i<2;i++){r.legs[i].planted=false;r.legs[i].upper.position.y=.56;r.legs[i].upper.rotation.set(-1.25,0,0);r.legs[i].lower.rotation.x=1.35;r.legs[i].foot.rotation.x=-.1;r.arms[i].upper.rotation.set(-.98,0,i?-.1:.1);r.arms[i].lower.rotation.x=-.63;}
+ const side=-c.spec.width*.23,forward=.05;r.root.position.set(c.x+Math.cos(c.yaw)*side+Math.sin(c.yaw)*forward,c.root.position.y+.05+c.spec.height-1.43,c.z-Math.sin(c.yaw)*side+Math.cos(c.yaw)*forward);r.root.rotation.y=c.yaw;
+}
+const playerRig=makeRig(),playerRoot=playerRig.root;scene.add(playerRoot);
+// Original low-poly weapon designs. Held models follow the right-hand joint; holstered ones sit on the body.
+const gunSteel=mat(0x2d3c44,{metalness:.72,roughness:.3}),gunPoly=mat(0x40545a,{metalness:.35,roughness:.55}),gunAccent=mat(0xc79a58,{metalness:.65,roughness:.32}),batonBody=mat(0x394b52,{metalness:.4,roughness:.45}),batonGrip=mat(0x7d5946,{roughness:.9});
+function wpart(parent,geo,material,x,y,z,rx=0,ry=0,rz=0,sx=1,sy=1,sz=1){const m=new T.Mesh(geo,material);m.position.set(x,y,z);m.rotation.set(rx,ry,rz);m.scale.set(sx,sy,sz);m.castShadow=true;parent.add(m);return m;}
+const cyl=(r1,r2,h,seg=8)=>new T.CylinderGeometry(r1,r2,h,seg);
+function buildBatonModel(){const g=new T.Group();wpart(g,cyl(.03,.034,.18,8),batonGrip,0,-.06,.01);wpart(g,cyl(.021,.026,.5,8),batonBody,0,-.4,.01);wpart(g,cyl(.03,.03,.035,8),gunAccent,0,-.66,.01);wpart(g,box,gunAccent,0,-.16,.02,0,0,0,.055,.03,.055);g.userData.muzzle=new T.Object3D();g.userData.muzzle.position.set(0,-.6,.01);g.add(g.userData.muzzle);return g;}
+function buildPistolModel(){const g=new T.Group();wpart(g,roundedBox(.058,.17,.075,.02),gunPoly,0,-.045,.03,.22);wpart(g,roundedBox(.062,.08,.235,.018),gunSteel,0,-.17,-.015);wpart(g,cyl(.012,.012,.17,8),gunSteel,0,-.3,-.015,.06);wpart(g,box,gunAccent,0,-.115,-.13,0,0,0,.045,.018,.09);wpart(g,box,gunSteel,0,-.105,.085,0,0,0,.022,.02,.03);g.userData.muzzle=new T.Object3D();g.userData.muzzle.position.set(0,-.39,-.015);g.add(g.userData.muzzle);return g;}
+function buildRifleModel(){const g=new T.Group();wpart(g,roundedBox(.07,.3,.085,.02),gunSteel,0,-.16,-.01);wpart(g,box,gunPoly,0,-.4,-.01,0,0,0,.06,.34,.075);wpart(g,cyl(.014,.014,.4,8),gunSteel,0,-.64,-.015);wpart(g,cyl(.026,.026,.16,8),gunPoly,0,-.55,-.015);wpart(g,box,gunPoly,0,-.58,.02,0,0,0,.032,.13,.04);wpart(g,box,gunAccent,0,-.2,.05,0,0,0,.085,.045,.14);wpart(g,box,gunSteel,0,-.25,-.1,0,0,0,.04,.14,.07);wpart(g,box,gunPoly,0,0,-.07,0,0,0,.05,.24,.06);wpart(g,cyl(.026,.026,.12,8),gunSteel,0,-.23,.055);wpart(g,box,gunAccent,0,-.23,.075,0,0,0,.012,.03,.012);g.userData.muzzle=new T.Object3D();g.userData.muzzle.position.set(0,-.85,-.015);g.add(g.userData.muzzle);return g;}
+const heldWeapons=[buildBatonModel(),buildPistolModel(),buildRifleModel()];
+if(playerRig.weapon.children.length){playerRig.weapon.children[0].visible=false;playerRig.weapon.children[1].visible=false;}
+for(const model of heldWeapons){model.visible=false;playerRig.weapon.add(model);}
+const holsterBaton=new T.Group(),holsterPistol=new T.Group(),holsterRifle=new T.Group();
+holsterBaton.position.set(-.2,.92,-.02);holsterBaton.rotation.z=.22;wpart(holsterBaton,cyl(.021,.026,.5,8),batonBody,0,-.24,0);wpart(holsterBaton,cyl(.03,.034,.15,8),batonGrip,0,0,0);playerRoot.add(holsterBaton);
+holsterPistol.position.set(.205,.95,.03);holsterPistol.rotation.set(.1,0,-.3);wpart(holsterPistol,roundedBox(.055,.15,.07,.02),gunSteel,0,-.09,0);wpart(holsterPistol,box,gunPoly,0,-.01,.04,0,0,0,.05,.08,.03);playerRoot.add(holsterPistol);
+holsterRifle.position.set(.02,1.2,-.16);holsterRifle.rotation.set(0,0,.5);wpart(holsterRifle,roundedBox(.07,.32,.08,.02),gunSteel,0,.05,0);wpart(holsterRifle,cyl(.014,.014,.42,8),gunSteel,0,.42,0);wpart(holsterRifle,box,gunPoly,0,-.2,0,0,0,0,.06,.25,.07);playerRoot.add(holsterRifle);
+const holsterModels=[holsterBaton,holsterPistol,holsterRifle];
+// Muzzle flash: one shared point light and additive sprite keep it cheap.
+const muzzleLight=new T.PointLight(0xffb968,0,16,2);scene.add(muzzleLight);
+const muzzleSprite=glow(scene,0,0,0,1.2,0xffcf82);muzzleSprite.visible=false;let muzzleFlashTime=0;
+const muzzleWorld=new T.Vector3();
+function updateWeaponVisuals(){
+ const drawn=!holstered&&selectedWeapon>=0&&!player.car&&!player.dead&&playerRoot.visible;
+ for(let i=0;i<3;i++){const owned=weapons[i].owned,hol=owned&&(!drawn||i!==selectedWeapon);holsterModels[i].visible=hol;heldWeapons[i].visible=drawn&&i===selectedWeapon;if(heldWeapons[i].visible)playerRig.weapon.visible=true;}
+}
+const player={x:-40,z:-770,y:0,yaw:PI,vy:0,grounded:true,speed:0,phase:0,car:null,health:100,armor:60,dead:0,lastHurt:-100,stamina:100,staminaDelay:0,exhausted:false,gait:1,walkMode:false,hitReact:0,fallPeak:0,motionSpeed:0,moveX:0,moveZ:1};player.y=surfaceHeight(player.x,player.z);playerRoot.position.set(player.x,player.y,player.z);
+const crews=[{name:'은빛단 · 银光团',color:0x27b5a3,css:'#27b5a3',x:450,z:-330,radius:100,anger:0},{name:'붉은매 · 赤鹰帮',color:0xd55649,css:'#d55649',x:-180,z:1010,radius:105,anger:0}];
+const actors=[],pedCount=40,combatCount=16,baseActorCount=pedCount+combatCount,trafficDriverCount=12,npcCapacity=baseActorCount+trafficDriverCount;
+const clothing=[0xb6a185,0x688d92,0xb77564,0x64789d,0x91a174,0xc1b9a7],skins=[0xd8ac88,0xba8564,0xe4bf9d,0x966c52];
+function actorAt(index,x,z,kind='civilian',crew=-1){
+ const a=actors[index]||{rig:makeRig(kind==='gang'?crews[crew].color:kind==='police'?0x365b92:clothing[index%6],skins[index%4],rand(.92,1.08)),index};
+ Object.assign(a,{x,z,homeX:x,homeZ:z,yaw:rand(0,TAU),phase:rand(0,TAU),speed:rand(.9,1.4),kind,crew,health:100,down:0,fall:0,cool:rand(.5,2),hostile:false,active:true,inCar:null,linger:0,panic:0,flinch:0,coverTimer:0,coverX:0,coverZ:0,coverSet:false,strafeDir:index%2?1:-1,strafeClock:rand(0,2)});actors[index]=a;return a;
+}
+for(let i=0;i<pedCount;i++){const near=i<20;const spot=near?{x:-360+i*15,z:-774+i%2*5}:[{x:-700,z:-776},{x:360,z:-616},{x:760,z:-616},{x:-130,z:-18},{x:560,z:1078},{x:-130,z:1078},{x:450,z:-406}][i%7];actorAt(i,spot.x+(i%3-1)*9,spot.z+(i%2?4:-4));}
+for(let i=0;i<10;i++){const crew=i<5?0:1,c=crews[crew];actorAt(pedCount+i,c.x+(i%5)*1.8,c.z+(i%2)*3,'gang',crew);}
+for(let i=50;i<baseActorCount;i++){const a=actorAt(i,0,0,'police');a.active=false;}
+for(let i=0;i<trafficDriverCount;i++){const c=cars[i],a=actorAt(baseActorCount+i,c.x,c.z);a.inCar=c;c.occupant=a;}
+const npcBatches=rigGeometries.map((g,kind)=>{const perActor=actors[0].rig.parts.filter(p=>p.kind===kind).length,geometry=g.clone();geometry.boundingSphere=new T.Sphere(new T.Vector3(),2100);const mesh=new T.InstancedMesh(geometry,mat(0xffffff),perActor*npcCapacity);mesh.instanceMatrix.setUsage(T.DynamicDrawUsage);mesh.castShadow=true;mesh.frustumCulled=true;scene.add(mesh);return {mesh,count:0};});
+function flushActors(){
+ for(const batch of npcBatches)batch.count=0;
+ for(const a of actors){if(!a.active||Math.hypot(a.x-player.x,a.z-player.z)>150)continue;const r=a.rig;if(a.inCar){if(!a.inCar.active||!a.inCar.root.visible)continue;poseDriver(a,a.inCar);}else{r.root.position.set(a.x,surfaceHeight(a.x,a.z),a.z);r.root.rotation.y=a.yaw;}r.root.updateMatrixWorld(true);
+  for(const p of r.parts){if(p.mesh.parent===r.weapon&&!r.weapon.visible)continue;const batch=npcBatches[p.kind],i=batch.count++;batch.mesh.setMatrixAt(i,p.mesh.matrixWorld);batch.mesh.setColorAt(i,p.colorObject);}
+ }
+ for(const b of npcBatches){b.mesh.count=b.count;b.mesh.instanceMatrix.needsUpdate=true;if(b.mesh.instanceColor)b.mesh.instanceColor.needsUpdate=true;}
+}
+const headlight=new T.SpotLight(0xffe2b2,0,75,.48,.65,1);headlight.castShadow=false;scene.add(headlight,headlight.target);
+const missions=[{name:'북궐 · 宫阙正门',x:0,z:-812,reward:680,limit:180},{name:'남산 · 首尔塔',x:0,z:-290,reward:960,limit:240},{name:'명동 · 明洞夜市',x:450,z:-430,reward:1280,limit:300},{name:'여의도 · 汝矣岛公园',x:-930,z:450,reward:1580,limit:300},{name:'강남 · 江南站',x:-130,z:1080,reward:1680,limit:240},{name:'한강공원 · 汉江公园',x:620,z:876,reward:1880,limit:300},{name:'광장시장 · 广藏市场',x:900,z:-612,reward:2080,limit:300}];
+const markedCar=makeCar(-100,1012,0,true,null,0,2);markedCar.paint.color.setHex(0xdaa85c);markedCar.marked=true;const garage={x:-520,z:12};
+sign('한강정비소',garage.x,4.7,garage.z+3,10,1.2,PI,true);
+const garageShell=mat(0x607f7e,{metalness:.25,roughness:.65});meshAt(box,garageShell,garage.x,4.1,garage.z+8,13,.35,13);for(const side of [-1,1]){meshAt(box,garageShell,garage.x+side*6,1.9,garage.z+8,.4,4,13);addCollider(garage.x+side*6,garage.z+8,.4,13,4.3);}meshAt(box,garageShell,garage.x,1.9,garage.z+14.5,12,4,.35);addCollider(garage.x,garage.z+14.5,12,.35,4.3);
+missions.push({type:'clear',name:'街区委托 · 清扫江南街口',x:crews[1].x,z:crews[1].z,crew:1,reward:1500,limit:240,desc:'은빛단 · 银光团委托：击倒江南街口的 5 名 붉은매 · 赤鹰帮成员。M 可切换委托。'},{type:'steal',name:'街区委托 · 回收金色越野车',x:markedCar.x,z:markedCar.z,reward:1800,limit:300,desc:'붉은매 · 赤鹰帮委托：接管金色越野车，驶入 한강정비소 并停稳。'},{type:'escape',name:'街区委托 · 隐入首尔夜色',x:garage.x,z:garage.z,reward:1600,limit:240,desc:'进入光柱接下 은빛단 · 银光团委托，触发两级警戒，再甩开巡警。'});
+let missionStage=0;
+let missionIndex=0,missionTime=missions[0].limit,missionCooldown=0,money=2400,completed=0;
+const marker=new T.Group();scene.add(marker);const beamMat=new T.MeshBasicMaterial({color:0xa0ffd1,transparent:true,opacity:.18,depthWrite:false,blending:T.AdditiveBlending,side:T.DoubleSide}),beam=new T.Mesh(new T.CylinderGeometry(2.1,3.7,38,16,1,true),beamMat);beam.position.y=19;marker.add(beam);const beamOuter=new T.Mesh(new T.CylinderGeometry(4,5,38,16,1,true),new T.MeshBasicMaterial({color:0x8effd1,transparent:true,opacity:.055,depthWrite:false,blending:T.AdditiveBlending,side:T.DoubleSide}));beamOuter.position.y=19;marker.add(beamOuter);const ring=new T.Mesh(new T.TorusGeometry(4.5,.12,6,36),new T.MeshBasicMaterial({color:0xb8ffdc}));ring.rotation.x=PI/2;ring.position.y=.2;marker.add(ring);const gem=new T.Mesh(new T.OctahedronGeometry(1.35),new T.MeshBasicMaterial({color:0xd4ffe3,wireframe:true}));gem.position.y=7;marker.add(gem);
+function positionMarker(){const m=missions[missionIndex];marker.position.set(m.x,groundHeight(m.x,m.z),m.z);$('missionName').textContent=m.name;$('missionTag').textContent=(m.type?'街区委托 / ':'城市采风 / ')+String(missionIndex+1).padStart(2,'0');}positionMarker();
+let toastTime=0;
+function toast(text,duration=4){$('toast').textContent=text;$('toast').classList.add('show');toastTime=duration;}
+// Original weapons and deterministic pools; projectiles never allocate per shot.
+const weapons=[{name:'巡枝 · 短棍',damage:38,rate:.52,range:2.4,mag:0,reserve:0,capacity:0,owned:false},{name:'微隼 · 手枪',damage:32,rate:.26,range:130,mag:12,reserve:60,capacity:12,owned:false},{name:'折光 · 步枪',damage:24,rate:.105,range:210,mag:24,reserve:120,capacity:24,owned:false}];
+function drawWeaponIcon(canvas,index,active){
+ const c=canvas.getContext('2d'),s=canvas.width;c.clearRect(0,0,s,s);c.save();c.translate(s/2,s/2);c.lineCap='round';c.lineJoin='round';const col=active?'#eafff4':'#9db8b1',accent=active?'#ffcf8a':'#6f8983';
+ c.strokeStyle=col;c.fillStyle=col;
+ if(index===0){c.rotate(-.65);c.fillStyle='#7d5946';c.fillRect(-4,-s*.02,8,s*.18);c.fillStyle=col;c.fillRect(-3,-s*.34,6,s*.3);c.fillStyle=accent;c.fillRect(-5,-s*.38,10,s*.045);}
+ else if(index===1){c.fillRect(-s*.2,-s*.16,s*.36,s*.1);c.fillStyle=accent;c.fillRect(-s*.2,-s*.17,s*.08,s*.12);c.fillStyle=col;c.save();c.translate(-s*.07,s*.0);c.rotate(.28);c.fillRect(-s*.06,0,s*.12,s*.22);c.restore();c.fillRect(-s*.23,-s*.14,s*.05,s*.05);}
+ else{c.fillRect(-s*.3,-s*.09,s*.46,s*.1);c.fillRect(s*.1,-s*.075,s*.22,s*.045);c.fillStyle=accent;c.fillRect(-s*.11,-s*.045,s*.06,s*.13);c.fillStyle=col;c.fillRect(-s*.27,-s*.03,s*.1,s*.13);c.fillRect(-s*.02,-s*.16,s*.1,s*.05);}
+ c.restore();
+}
+const slotElements=[];
+for(let i=0;i<3;i++){const slot=document.createElement('div');slot.className='slot';const cv=document.createElement('canvas');cv.width=88;cv.height=88;slot.appendChild(cv);const tag=document.createElement('small');tag.textContent=String(i+1);slot.appendChild(tag);$('weaponSlots').appendChild(slot);slotElements.push({slot,cv});}
+function refreshWeaponSlots(){for(let i=0;i<3;i++){const active=!holstered&&selectedWeapon===i;slotElements[i].slot.classList.toggle('active',active);slotElements[i].slot.style.opacity=weapons[i].owned?(active?'1':'.72'):'.34';drawWeaponIcon(slotElements[i].cv,i,active);}}
+let selectedWeapon=-1,holstered=true,aiming=false,firing=false,shotClock=0,reloadTime=0,attackTime=0,hitTime=0,heat=0,lastCrime=-100,lastSeen=-100,heatDecay=0,spawnClock=0;
+let jumpBuffer=0,coyoteTime=0,triggerLatch=false,camShake=0,camShakeTime=0,recoilPitch=0,recoilYaw=0,armRecoil=0,meleeHitDone=false,shotSpread=0,hitMarkerTime=0;
+const pickups=[],shotPool=[],shotVector=new T.Vector3(),shotOrigin=new T.Vector3(),shotEnd=new T.Vector3(),shotRay=new T.Ray(),cameraDirection=new T.Vector3(),hitOffset=new T.Vector3(),hitCenter=new T.Vector3(),hitEndpoint=new T.Vector3();
+const pickupMaterial=mat(0xf3c776,{emissive:0xe9a24c,emissiveIntensity:1.5,metalness:.4,roughness:.3});
+function addPickup(x,z,kind){const root=new T.Group();root.position.set(x,groundHeight(x,z)+.25,z);scene.add(root);meshAt(new T.TorusGeometry(.5,.045,5,16),pickupMaterial,0,.05,0,1,1,1,0,root).rotation.x=PI/2;const item=meshAt(kind==='armor'?new T.OctahedronGeometry(.27):roundedBox(.13,.13,kind===2?.8:.43,.05),pickupMaterial,0,.7,0,1,1,1,0,root);glow(root,0,.6,0,1.6,0xffcd80);pickups.push({x,z,kind,root,item,cooldown:0});}
+addPickup(-40,-760,0);addPickup(-26,-754,1);addPickup(-10,-762,2);addPickup(430,-390,'armor');addPickup(-880,420,1);addPickup(120,-300,2);addPickup(880,-660,'armor');addPickup(-180,1020,1);
+for(let i=0;i<48;i++){const positions=new Float32Array(6),g=new T.BufferGeometry();g.setAttribute('position',new T.BufferAttribute(positions,3));const material=new T.LineBasicMaterial({color:0xffd8a0,transparent:true,opacity:0,depthWrite:false,blending:T.AdditiveBlending});const line=new T.Line(g,material);line.frustumCulled=false;line.visible=false;scene.add(line);const flash=glow(scene,0,0,0,.5);flash.visible=false;shotPool.push({line,flash,life:0});}
+let shotCursor=0;
+function tracer(from,to,enemy=false){const p=shotPool[shotCursor++%shotPool.length],v=p.line.geometry.attributes.position;v.setXYZ(0,from.x,from.y,from.z);v.setXYZ(1,to.x,to.y,to.z);v.needsUpdate=true;p.line.material.color.setHex(enemy?0xff9674:0xffe1ac);p.line.material.opacity=.85;p.line.visible=true;p.life=.095;p.flash.position.copy(from);p.flash.visible=true;}
+// Pooled shell casings: one instanced draw, fixed step physics.
+const shellMesh=new T.InstancedMesh(box,mat(0xd6a24d,{metalness:.72,roughness:.3}),36);shellMesh.instanceMatrix.setUsage(T.DynamicDrawUsage);shellMesh.frustumCulled=false;shellMesh.count=0;scene.add(shellMesh);
+const shells=Array.from({length:36},()=>({x:0,y:-100,z:0,vx:0,vy:0,vz:0,rx:0,ry:0,rz:0,life:0,total:1}));let shellCursor=0;
+function ejectShell(pos,rightX,rightZ){const s=shells[shellCursor++%shells.length];s.x=pos.x+rightX*.08;s.y=pos.y+.02;s.z=pos.z+rightZ*.08;s.vx=rightX*rand(1.4,2.6);s.vz=rightZ*rand(1.4,2.6);s.vy=rand(1.2,2.2);s.rx=rand(0,TAU);s.ry=rand(0,TAU);s.rz=rand(0,TAU);s.life=s.total=rand(.9,1.4);}
+function updateShells(dt){let count=0;for(const s of shells){if(s.life<=0)continue;s.life-=dt;s.vy-=17*dt;s.x+=s.vx*dt;s.y+=s.vy*dt;s.z+=s.vz*dt;const floor=surfaceHeight(s.x,s.z)+.035;if(s.y<floor){s.y=floor;s.vy*=-.32;s.vx*=.62;s.vz*=.62;}s.rx+=dt*7;s.rz+=dt*9;if(s.life>0){dummy.position.set(s.x,s.y,s.z);dummy.rotation.set(s.rx,s.ry,s.rz);dummy.scale.setScalar(clamp(s.life*3,0,1));dummy.updateMatrix();shellMesh.setMatrixAt(count++,dummy.matrix);}}shellMesh.count=count;if(count)shellMesh.instanceMatrix.needsUpdate=true;}
+// Pooled impact sparks and fading surface decals.
+const sparkCount=150,sparkPositions=new Float32Array(sparkCount*3),sparkColors=new Float32Array(sparkCount*3),sparkStates=Array.from({length:sparkCount},()=>({x:0,y:-999,z:0,vx:0,vy:0,vz:0,life:0,total:1}));let sparkCursor=0;
+for(let i=0;i<sparkCount;i++){sparkPositions[i*3+1]=-999;}
+const sparkGeo=new T.BufferGeometry();sparkGeo.setAttribute('position',new T.BufferAttribute(sparkPositions,3));sparkGeo.setAttribute('color',new T.BufferAttribute(sparkColors,3));const sparkPoints=new T.Points(sparkGeo,new T.PointsMaterial({size:.085,vertexColors:true,transparent:true,opacity:.95,depthWrite:false,blending:T.AdditiveBlending}));sparkPoints.frustumCulled=false;scene.add(sparkPoints);
+function emitSparks(x,y,z,count,hot=true){for(let i=0;i<count;i++){const idx=sparkCursor++%sparkCount,s=sparkStates[idx],ang=rand(0,TAU),up=rand(.2,1.9);s.x=x;s.y=y;s.z=z;s.vx=Math.sin(ang)*rand(.6,3);s.vz=Math.cos(ang)*rand(.6,3);s.vy=up;s.life=s.total=rand(.18,.52);const c=hot?[1,rand(.55,.85),.25]:[.55,.5,.42];sparkColors[idx*3]=c[0];sparkColors[idx*3+1]=c[1];sparkColors[idx*3+2]=c[2];sparkPositions[idx*3]=x;sparkPositions[idx*3+1]=y;sparkPositions[idx*3+2]=z;}}
+function updateSparks(dt){let dirty=false;for(let i=0;i<sparkCount;i++){const s=sparkStates[i];if(s.life<=0){if(sparkPositions[i*3+1]>-900){sparkPositions[i*3+1]=-999;dirty=true;}continue;}s.life-=dt;s.vy-=11*dt;s.x+=s.vx*dt;s.y+=s.vy*dt;s.z+=s.vz*dt;s.vx*=.96;s.vz*=.96;if(s.y<surfaceHeight(s.x,s.z)+.02){s.y=surfaceHeight(s.x,s.z)+.02;s.vy*=-.25;s.vx*=.6;s.vz*=.6;}sparkPositions[i*3]=s.x;sparkPositions[i*3+1]=s.y;sparkPositions[i*3+2]=s.z;const fade=s.life/s.total;sparkColors[i*3]*=.985;sparkColors[i*3+1]*=.985;sparkColors[i*3+2]*=.985;if(fade<=.01)s.life=0;dirty=true;}if(dirty){sparkGeo.attributes.position.needsUpdate=true;sparkGeo.attributes.color.needsUpdate=true;}}
+const decalCanvas=document.createElement('canvas');decalCanvas.width=decalCanvas.height=64;const decalCtx=decalCanvas.getContext('2d'),decalGrad=decalCtx.createRadialGradient(32,32,2,32,32,30);decalGrad.addColorStop(0,'rgba(28,24,20,.85)');decalGrad.addColorStop(.35,'rgba(48,42,34,.55)');decalGrad.addColorStop(1,'rgba(40,36,30,0)');decalCtx.fillStyle=decalGrad;decalCtx.fillRect(0,0,64,64);
+const decalTexture=new T.CanvasTexture(decalCanvas),decalGeo=new T.PlaneGeometry(.3,.3),decals=[];
+for(let i=0;i<18;i++){const m=new T.Mesh(decalGeo,new T.MeshBasicMaterial({map:decalTexture,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2,opacity:0}));m.visible=false;scene.add(m);decals.push({mesh:m,life:0});}let decalCursor=0;
+function spawnDecal(x,y,z,normalX,normalY,normalZ,tint=0x8a7b68){const d=decals[decalCursor++%decals.length],m=d.mesh;m.position.set(x+normalX*.025,y+normalY*.025,z+normalZ*.025);m.lookAt(m.position.x+normalX,m.position.y+normalY,m.position.z+normalZ);m.rotateZ(rand(0,TAU));const sc=rand(.65,1.25);m.scale.set(sc,sc,sc);m.material.color.setHex(tint);m.material.opacity=.62;m.visible=true;d.life=7;}
+function updateDecals(dt){for(const d of decals){if(d.life<=0)continue;d.life-=dt;d.mesh.material.opacity=clamp(d.life/2.2,0,.62);if(d.life<=0)d.mesh.visible=false;}}
+function showHitMarker(){hitMarkerTime=.18;$('hitmark').classList.add('show');}
+let audio=null;
+function startAudio(){try{if(!audio){const Context=window.AudioContext||window.webkitAudioContext;if(!Context)return;const context=new Context(),osc=context.createOscillator(),gain=context.createGain(),filter=context.createBiquadFilter();osc.type='sawtooth';filter.type='lowpass';filter.frequency.value=180;gain.gain.value=0;osc.connect(filter);filter.connect(gain);gain.connect(context.destination);osc.start();audio={context,osc,gain,filter};}audio.context.resume().catch(()=>{});}catch(_){}}
+let noiseBuffer=null;
+function ensureNoise(){if(!audio)return null;if(noiseBuffer)return noiseBuffer;const c=audio.context;noiseBuffer=c.createBuffer(1,Math.floor(c.sampleRate*.6),c.sampleRate);const data=noiseBuffer.getChannelData(0);for(let i=0;i<data.length;i++)data[i]=Math.random()*2-1;return noiseBuffer;}
+function noiseHit(duration,gain,filterType,frequency,q=1,delay=0){if(!audio)return;const c=audio.context,t=c.currentTime+delay,buffer=ensureNoise();if(!buffer)return;const src=c.createBufferSource(),filter=c.createBiquadFilter(),g=c.createGain();src.buffer=buffer;filter.type=filterType;filter.frequency.setValueAtTime(frequency,t);filter.Q.value=q;g.gain.setValueAtTime(gain,t);g.gain.exponentialRampToValueAtTime(.0006,t+duration);src.connect(filter);filter.connect(g);g.connect(c.destination);src.start(t);src.stop(t+duration+.03);}
+function tone(type,from,to,duration,gain,delay=0){if(!audio)return;const c=audio.context,t=c.currentTime+delay,o=c.createOscillator(),g=c.createGain();o.type=type;o.frequency.setValueAtTime(from,t);o.frequency.exponentialRampToValueAtTime(Math.max(20,to),t+duration);g.gain.setValueAtTime(gain,t);g.gain.exponentialRampToValueAtTime(.0006,t+duration);o.connect(g);g.connect(c.destination);o.start(t);o.stop(t+duration+.03);o.onended=()=>{o.disconnect();g.disconnect();};}
+function soundShot(){tone('triangle',170,45,.08,.04);noiseHit(.07,.05,'lowpass',900,1);}
+function soundWeapon(index){if(!audio)return;if(index===0){noiseHit(.22,.055,'bandpass',620,1.4);tone('sine',180,90,.18,.02);}else if(index===1){noiseHit(.11,.16,'bandpass',1250,1.1);noiseHit(.05,.1,'highpass',2600,1);tone('sine',150,52,.13,.09);}else{noiseHit(.07,.12,'bandpass',1900,1.2);noiseHit(.035,.07,'highpass',3400,1);tone('sine',120,48,.07,.07);}}
+function soundReload(){noiseHit(.035,.07,'bandpass',2200,2,0);noiseHit(.045,.09,'bandpass',1200,1.5,.22);noiseHit(.03,.06,'bandpass',3000,2,.42);tone('square',140,90,.03,.02,.22);}
+function soundImpact(impact){if(!audio)return;const g=clamp(impact/18,.15,1);noiseHit(.12,.06*g,'lowpass',420,1);tone('triangle',260,70,.1,.05*g);}
+function selectWeapon(index){if(!canControl())return;if(!weapons[index]||!weapons[index].owned){toast('先收集金色发光补给：汉江步道有三种原创武器。',3);return;}selectedWeapon=index;holstered=false;reloadTime=0;refreshHUD();}
+function cycleWeapon(direction){if(!canControl())return;let index=selectedWeapon;for(let n=0;n<weapons.length;n++){index=(index+direction+weapons.length)%weapons.length;if(weapons[index].owned){selectWeapon(index);return;}}}
+function reload(){if(!canControl())return;const w=weapons[selectedWeapon];if(w&&w.capacity&&w.mag<w.capacity&&w.reserve>0&&!reloadTime&&!holstered&&!player.car){reloadTime=selectedWeapon===2?1.9:1.3;soundReload();}}
+function raiseHeat(amount){heat=clamp(heat+amount,0,5);lastCrime=simTime;heatDecay=0;}
+function hurtPlayer(amount,bypassArmor=false){if(player.dead||!Number.isFinite(amount)||amount<=0)return;player.hitReact=.45;const absorbed=bypassArmor?0:Math.min(player.armor,amount*.7);player.armor-=absorbed;player.health=Math.max(0,player.health-(amount-absorbed));player.lastHurt=simTime;$('damage').style.opacity=.35;if(player.health<=0){player.dead=4;firing=aiming=false;reloadTime=0;clearInput();const penalty=Math.min(money,Math.max(150,Math.round(money*.08)));money-=penalty;$('downscreen').classList.add('visible');$('respawnText').textContent='医疗转运中 · 费用 ¥ '+penalty;if(document.pointerLockElement)document.exitPointerLock();}}
+const hospitals=[{x:-690,z:-330},{x:300,z:990}];
+const clinicMaterial=mat(0xb8c8bf,{roughness:.72});
+for(const h of hospitals){
+ meshAt(box,clinicMaterial,h.x,7.5,h.z+15,14,15,12);addCollider(h.x,h.z+15,14,12,15);
+ const windows=[];for(let row=0;row<3;row++)for(let col=-2;col<=2;col++)windows.push({g:box,x:col*2.4,y:6+row*3.1,z:8.95,sx:1.5,sy:1.8,sz:.12});meshAt(merged(windows),glassMat,h.x,0,h.z);
+ sign('한강의료원',h.x,4,h.z+8.85,9,1.3,PI,true);meshAt(box,mat(0xc5eee0,{emissive:0x8adfce,emissiveIntensity:.5}),h.x,2.4,h.z+8.8,.32,1.3,.15);meshAt(box,mat(0xc5eee0),h.x,2.4,h.z+8.8,1.3,.32,.15);
+}
+function respawn(){let hospital=hospitals[0];for(const h of hospitals)if(Math.hypot(h.x-player.x,h.z-player.z)<Math.hypot(hospital.x-player.x,hospital.z-player.z))hospital=h;if(player.car){player.car.speed=player.car.vx=player.car.vz=0;player.car.parked=true;player.car=null;}player.x=hospital.x;player.z=hospital.z;player.y=surfaceHeight(player.x,player.z);player.health=100;player.armor=30;player.stamina=100;player.exhausted=false;player.hitReact=0;player.motionSpeed=0;player.fallPeak=player.y;player.vy=0;player.grounded=true;player.speed=0;player.dead=0;holstered=true;heat=0;playerRoot.visible=true;for(const crew of crews)crew.anger=0;for(const a of actors){a.hostile=false;a.linger=0;if(a.inCar&&a.inCar.role!=='traffic'){a.inCar.occupant=null;a.inCar=null;a.x=a.homeX;a.z=a.homeZ;}if(a.kind==='police')a.active=false;}for(const c of pursuitCars){c.occupant=null;c.active=false;c.root.visible=false;c.speed=c.vx=c.vz=0;}playerRoot.rotation.z=0;Object.assign(playerRig.motion,{speed:0,weight:0,lean:0,phase:0});for(const leg of playerRig.legs)leg.planted=false;camTarget.set(player.x,player.y+1.3,player.z);lookTarget.copy(camTarget);camera.position.set(player.x+5,player.y+3,player.z);$('downscreen').classList.remove('visible');toast('已在最近的医疗站恢复 · 收起武器可避免挑衅街区',4);}
+// Ray / box slab intersection includes height, so upper floors do not block sky shots.
+let rayQueryId=0;
+function solidRayDistance(origin,direction,maxDistance,padding=0){
+ let nearest=maxDistance;const stamp=++rayQueryId,ex=origin.x+direction.x*maxDistance,ez=origin.z+direction.z*maxDistance,x0=clamp(Math.floor((Math.min(origin.x,ex)-padding+1350)/100),0,26),x1=clamp(Math.floor((Math.max(origin.x,ex)+padding+1350)/100),0,26),z0=clamp(Math.floor((Math.min(origin.z,ez)-padding+1350)/100),0,26),z1=clamp(Math.floor((Math.max(origin.z,ez)+padding+1350)/100),0,26);
+ for(let iz=z0;iz<=z1;iz++)for(let ix=x0;ix<=x1;ix++)for(const b of bins[iz*27+ix]){
+  if(b.rayStamp===stamp)continue;b.rayStamp=stamp;let low=0,high=nearest;
+  for(let axis=0;axis<3;axis++){const o=axis===0?origin.x:axis===1?origin.y:origin.z,d=axis===0?direction.x:axis===1?direction.y:direction.z,min=(axis===0?b.minX:axis===1?b.minY:b.minZ)-padding,max=(axis===0?b.maxX:axis===1?b.height:b.maxZ)+padding;
+   if(Math.abs(d)<.00001){if(o<min||o>max){low=Infinity;break;}}else{let a=(min-o)/d,c=(max-o)/d;if(a>c){const tmp=a;a=c;c=tmp;}low=Math.max(low,a);high=Math.min(high,c);if(low>high)break;}
+  }if(low<=high)nearest=Math.min(nearest,Math.max(0,low));
+  const oc=obbBins[iz*27+ix];
+  for(let oi=0;oi<oc.length;oi++){const b=oc[oi];if(b.rayStamp===stamp)continue;b.rayStamp=stamp;const ox=origin.x-b.x,oz=origin.z-b.z,lo=[ox*b.cos-oz*b.sin,origin.y,ox*b.sin+oz*b.cos],ld=[direction.x*b.cos-direction.z*b.sin,direction.y,direction.x*b.sin+direction.z*b.cos];let low=0,high=nearest;
+   for(let axis=0;axis<3;axis++){const min=(axis===0?-b.hw:axis===1?b.minY:-b.hd)-padding,max=(axis===0?b.hw:axis===1?b.height:b.hd)+padding;
+    if(Math.abs(ld[axis])<.00001){if(lo[axis]<min||lo[axis]>max){low=Infinity;break;}}else{let a=(min-lo[axis])/ld[axis],c=(max-lo[axis])/ld[axis];if(a>c){const tmp=a;a=c;c=tmp;}low=Math.max(low,a);high=Math.min(high,c);if(low>high)break;}
+   }if(low<=high)nearest=Math.min(nearest,Math.max(0,low));
+  }
+ }return nearest;
+}
+function visibleBetween(ax,ay,az,bx,by,bz){shotOrigin.set(ax,ay,az);shotVector.set(bx-ax,by-ay,bz-az);const distance=shotVector.length();if(distance<.01)return true;shotVector.multiplyScalar(1/distance);return solidRayDistance(shotOrigin,shotVector,distance)>=distance-.3;}
+const missionDefeated=new Set(),hitZones=[[1.58,.23],[1.08,.34],[.43,.29]];
+function hitActor(a,damage,dirX=0,dirZ=0,headshot=false){if(!a.active||a.down)return;a.health-=damage;a.panic=12;a.flinch=.42;a.lastHit=simTime;if(a.kind==='gang'){crews[a.crew].anger=40;for(const other of actors)if(other.crew===a.crew&&other.kind==='gang')other.hostile=true;}if(a.kind==='police')raiseHeat(.7);else if(a.kind==='civilian')raiseHeat(.65);
+ // Bullets shove on foot; no gore, just a clear physical flinch.
+ const dl=Math.hypot(dirX,dirZ);if(dl>1e-4&&!a.inCar){const kb=headshot?.24:.42,nx=a.x+dirX/dl*kb,nz=a.z+dirZ/dl*kb;if(!blocked(nx,nz,.3)){a.x=nx;a.z=nz;}}
+ if(!a.inCar&&a.kind!=='civilian'){let cover=null,best=18;for(const c of cars){if(!c.active)continue;const d=Math.hypot(c.x-a.x,c.z-a.z);if(d<best){best=d;cover=c;}}if(cover){const nx=cover.x-player.x,nz=cover.z-player.z,l=Math.hypot(nx,nz)||1,off=cover.spec.length*.52+1.1,cx=cover.x+nx/l*off,cz=cover.z+nz/l*off;if(!blocked(cx,cz,.32)&&!isWater(cx,cz,.2)){a.coverX=cx;a.coverZ=cz;a.coverTimer=rand(1.8,3.4);a.coverSet=true;}}}
+ if(a.health<=0){a.down=22;a.fall=0;a.hostile=false;a.coverTimer=0;if(a.kind==='gang')missionDefeated.add(a.index);}hitTime=.18;showHitMarker();}
+const actorRayInfo={distance:0,head:false};
+function actorRayDistance(a,origin,direction,limit){
+ const scale=a.rig.height,base=surfaceHeight(a.x,a.z);let distance=limit,head=false;
+ for(let zi=0;zi<hitZones.length;zi++){const zone=hitZones[zi];hitCenter.set(a.x,base+zone[0]*scale,a.z);hitOffset.subVectors(hitCenter,origin);const along=hitOffset.dot(direction),radius=zone[1]*scale,across=hitOffset.dot(hitOffset)-along*along;if(along>0&&across<radius*radius){const hit=Math.max(0,along-Math.sqrt(radius*radius-across));if(hit<distance){distance=hit;head=zi===0;}}}
+ actorRayInfo.distance=distance;actorRayInfo.head=head;return distance;
+}
+function vehicleRayDistance(c,origin,direction,limit){
+ const sn=Math.sin(c.yaw),co=Math.cos(c.yaw),dx=origin.x-c.x,dz=origin.z-c.z;
+ const o=[dx*co-dz*sn,origin.y-c.root.position.y,dx*sn+dz*co],d=[direction.x*co-direction.z*sn,direction.y,direction.x*sn+direction.z*co],min=[-c.spec.width/2,.2,-c.spec.length/2],max=[c.spec.width/2,c.spec.height+.05,c.spec.length/2];let low=0,high=limit;
+ for(let i=0;i<3;i++){if(Math.abs(d[i])<.00001){if(o[i]<min[i]||o[i]>max[i])return limit;}else{let a=(min[i]-o[i])/d[i],b=(max[i]-o[i])/d[i];if(a>b){const v=a;a=b;b=v;}low=Math.max(low,a);high=Math.min(high,b);if(low>high)return limit;}}return low<=high?low:limit;
+}
+function fireWeapon(){
+ if(!canControl())return;const w=weapons[selectedWeapon];if(!w||holstered||player.car||player.dead||shotClock>0||reloadTime)return;
+ // Pistol and baton are semi-automatic: one press, one shot. Rifle holds full-auto.
+ if(selectedWeapon!==2){if(!triggerPressed)return;triggerPressed=false;}
+ if(w.capacity&&w.mag===0){reload();return;}shotClock=w.rate;attackTime=w.rate;
+ if(selectedWeapon===0){meleeHitDone=false;addShotSpread(.08);soundWeapon(0);return;}
+ w.mag--;
+ // Spread grows with movement, firing and hip-fire; aiming tightens the cone.
+ const moving=clamp(player.motionSpeed/6.5,0,1),spread=(aiming?.0018:.0075)+moving*(aiming?.0045:.013)+shotSpread*(aiming?.014:.026);
+ camera.getWorldDirection(cameraDirection);cameraDirection.x+=(Math.random()*2-1)*spread;cameraDirection.y+=(Math.random()*2-1)*spread*.75;cameraDirection.z+=(Math.random()*2-1)*spread;cameraDirection.normalize();
+ const origin=camera.position;let distance=solidRayDistance(origin,cameraDirection,w.range),target=null,carTarget=null,targetHead=false;
+ shotRay.set(origin,cameraDirection);
+ for(const a of actors){if(!a.active||a.down||a.inCar)continue;const hit=actorRayDistance(a,origin,cameraDirection,distance);if(hit<distance){distance=hit;target=a;carTarget=null;targetHead=actorRayInfo.head;}}
+ for(const c of cars){if(!c.active||c===player.car)continue;const hit=vehicleRayDistance(c,origin,cameraDirection,distance);if(hit<distance){distance=hit;target=null;carTarget=c;targetHead=false;}}
+ const endpoint=hitEndpoint.copy(origin).addScaledVector(cameraDirection,distance);
+ const anchor=heldWeapons[selectedWeapon].userData.muzzle;anchor.getWorldPosition(shotOrigin);shotVector.subVectors(endpoint,shotOrigin);const length=shotVector.length();if(length<.00001)return;shotVector.multiplyScalar(1/length);const clear=solidRayDistance(shotOrigin,shotVector,length);shotEnd.copy(shotOrigin).addScaledVector(shotVector,clear);tracer(shotOrigin,shotEnd);
+ // Muzzle light, flash sprite, brass and recoil.
+ muzzleLight.position.copy(shotOrigin);muzzleLight.intensity=selectedWeapon===2?2.2:2.8;muzzleSprite.position.copy(shotOrigin);muzzleSprite.material.opacity=.95;muzzleSprite.material.color.setHex(0xffca7a);muzzleSprite.scale.setScalar(rand(1,1.8));muzzleSprite.visible=true;muzzleFlashTime=.07;
+ const rightX=Math.cos(camYaw),rightZ=-Math.sin(camYaw);ejectShell(shotOrigin,rightX,rightZ);
+ recoilPitch=clamp(recoilPitch+(selectedWeapon===2?.0065:.013),0,.075);recoilYaw+=(Math.random()-.5)*.006;armRecoil=selectedWeapon===2?.5:.72;camShake=Math.max(camShake,selectedWeapon===2?.028:.04);camShakeTime=.14;addShotSpread(selectedWeapon===2?.06:.16);soundWeapon(selectedWeapon);
+ if(clear>=length-.4){
+  if(target){const falloff=clamp(1-Math.max(0,distance-9)/w.range*.55,.35,1),damage=w.damage*falloff*(targetHead?1.8:1);hitActor(target,damage,shotVector.x,shotVector.z,targetHead);emitSparks(shotEnd.x,shotEnd.y,shotEnd.z,4,false);soundImpact(8);}
+  else if(carTarget){carTarget.health=Math.max(0,carTarget.health-w.damage*.4);carTarget.speed*=.92;hitTime=.1;showHitMarker();emitSparks(shotEnd.x,shotEnd.y,shotEnd.z,8,true);soundImpact(10);if(carTarget.role==='police')raiseHeat(.5);}
+ }else{
+  // Surface hit: sparks plus a dust decal oriented to the plane we struck.
+  const ground=Math.abs(shotEnd.y-surfaceHeight(shotEnd.x,shotEnd.z))<.22;const nx=ground?0:-shotVector.x,nz=ground?0:-shotVector.z,ny=ground?1:0;
+  emitSparks(shotEnd.x,shotEnd.y,shotEnd.z,ground?5:9,!ground);spawnDecal(shotEnd.x,shotEnd.y,shotEnd.z,nx,ny,nz,ground?0x6e6656:0x7d7468);
+ }
+ for(const a of actors)if(a.active&&!a.down&&Math.hypot(a.x-player.x,a.z-player.z)<130&&(a.kind==='civilian'||a.kind==='police')){raiseHeat(.2);break;}
+}
+function addShotSpread(amount){shotSpread=clamp(shotSpread+amount,0,1.2);}
+const pursuitCars=[];
+for(let i=0;i<5;i++){const c=makeCar(0,0,0,true,null,0,i<3?0:2,i<3?'police':'gang');c.active=false;c.root.visible=false;c.team=i<3?-1:i-3;c.paint.color.setHex(i<3?0xd3e3e7:crews[c.team].color);if(i<3){c.lights=[glow(c.body,-.35,1.65,-.2,1.5,0x4a8fff),glow(c.body,.35,1.65,-.2,1.5,0xff5252)];meshAt(box,chromeMat,0,1.57,-.2,1,.12,.28,0,c.body);for(const side of [-1,1])meshAt(box,mat(0x2f5d9e),side*c.spec.width*.505,.68,-.1,.035,.24,c.spec.length*.8,0,c.body);}pursuitCars.push(c);}
+// All vehicle wheels use two shared draws, including steering and rolling transforms.
+const wheelInstances=[wheelGeo,rimGeo].map((geometry,i)=>{const g=geometry.clone();g.boundingSphere=new T.Sphere(new T.Vector3(),2100);const mesh=new T.InstancedMesh(g,i===0?tireMat:chromeMat,128);mesh.instanceMatrix.setUsage(T.DynamicDrawUsage);mesh.castShadow=true;mesh.frustumCulled=true;scene.add(mesh);return mesh;});
+function updateVehicleWheels(){let count=0;for(const c of cars){if(!c.active||!c.root.visible||Math.hypot(c.root.position.x-playerRender.x,c.root.position.z-playerRender.z)>150)continue;c.root.updateMatrixWorld(true);for(const w of c.wheels){for(const mesh of wheelInstances)mesh.setMatrixAt(count,w.wheel.matrixWorld);count++;}}for(const mesh of wheelInstances){mesh.count=count;mesh.instanceMatrix.needsUpdate=true;}}
+// One shared draw for soft contact shadows; no individual shadow textures/materials.
+const contactCanvas=document.createElement('canvas');contactCanvas.width=contactCanvas.height=32;const contactCtx=contactCanvas.getContext('2d'),contactGradient=contactCtx.createRadialGradient(16,16,2,16,16,16);contactGradient.addColorStop(0,'rgba(5,17,22,.43)');contactGradient.addColorStop(.5,'rgba(5,17,22,.22)');contactGradient.addColorStop(1,'rgba(5,17,22,0)');contactCtx.fillStyle=contactGradient;contactCtx.fillRect(0,0,32,32);
+const contactGeometry=new T.PlaneGeometry(1,1);contactGeometry.rotateX(-PI/2);const contactShadows=new T.InstancedMesh(contactGeometry,new T.MeshBasicMaterial({map:new T.CanvasTexture(contactCanvas),transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1}),npcCapacity+cars.length+1);contactShadows.instanceMatrix.setUsage(T.DynamicDrawUsage);contactShadows.frustumCulled=false;scene.add(contactShadows);
+function addContactShadow(count,x,z,w,d,yaw,air){const floor=surfaceHeight(x,z);dummy.position.set(x,floor+.035,z);dummy.rotation.set(0,yaw,0);dummy.scale.set(w/(1+air*.12),1,d/(1+air*.12));dummy.updateMatrix();contactShadows.setMatrixAt(count,dummy.matrix);return count+1;}
+function updateContactShadows(){
+ let count=0;
+ if(!player.car&&playerRoot.visible)count=addContactShadow(count,playerRender.x,playerRender.z,.9,.85,playerRender.yaw,Math.max(0,playerRender.y-surfaceHeight(playerRender.x,playerRender.z)));
+ for(const a of actors)if(a.active&&!a.inCar&&Math.hypot(a.x-player.x,a.z-player.z)<120)count=addContactShadow(count,a.x,a.z,a.down?1.8:.85,.8,a.yaw,0);
+ for(const c of cars)if(c.active&&c.root.visible&&Math.hypot(c.root.position.x-playerRender.x,c.root.position.z-playerRender.z)<150)count=addContactShadow(count,c.root.position.x,c.root.position.z,c.spec.width*1.3,c.spec.length*1.12,c.yaw,0);
+ contactShadows.count=count;contactShadows.instanceMatrix.needsUpdate=true;
+}
+// Candidate positions are built once; occupied positions are checked only on spawn.
+const roadSpawnPoints=[];
+for(const r of roads)for(let j=0;j<r.points.length-1;j++){const a=r.points[j],b=r.points[j+1],dx=b[0]-a[0],dz=b[1]-a[1],length=Math.hypot(dx,dz);if(length<.01)continue;for(let t=12;t<length;t+=30){const x=a[0]+dx*t/length+dz/length*1.75,z=a[1]+dz*t/length-dx/length*1.75;if(!blocked(x,z,2.6))roadSpawnPoints.push({x,z,yaw:Math.atan2(dx,dz)});}}
+function roadSpawn(distance=100){let best=null,error=Infinity;for(const p of roadSpawnPoints){const e=Math.abs(Math.hypot(p.x-player.x,p.z-player.z)-distance);if(e>=error)continue;let occupied=false;for(const c of cars)if(c.active&&Math.hypot(c.x-p.x,c.z-p.z)<5){occupied=true;break;}if(!occupied){best=p;error=e;}}return best;}
+function spawnPursuit(role,team=-1){const car=pursuitCars.find(c=>!c.active&&c.role===role&&(role!=='gang'||c.team===team));if(!car)return;const p=roadSpawn(95);if(!p)return;let driver;if(role==='police')driver=actors.find(a=>a.kind==='police'&&!a.active);else driver=actors.find(a=>a.kind==='gang'&&a.crew===team&&a.active&&!a.down&&!a.inCar);if(!driver)return;Object.assign(car,p,{active:true,health:100,speed:5,vx:Math.sin(p.yaw)*5,vz:Math.cos(p.yaw)*5,driver:true,parked:false,stuck:0,navTime:0,navNode:-1,navGoal:-1});car.root.position.set(car.x,surfaceHeight(car.x,car.z),car.z);car.root.rotation.y=car.yaw;car.root.visible=true;driver.active=true;driver.health=100;driver.down=0;driver.hostile=true;driver.inCar=car;car.occupant=driver;driver.x=p.x;driver.z=p.z;}
+function safePosition(x,z,r=.3,car=null){
+ const valid=(px,pz)=>car?!carBlocked(px,pz,car.yaw,car):!blocked(px,pz,r);
+ if(Number.isFinite(x)&&Number.isFinite(z)&&valid(x,z))return {x,z};
+ if(!Number.isFinite(x)||!Number.isFinite(z)){x=-40;z=-770;}
+ for(let radius=2;radius<=320;radius+=2){const steps=Math.max(12,Math.ceil(radius*TAU/3));for(let i=0;i<steps;i++){const angle=i*TAU/steps,px=x+Math.sin(angle)*radius,pz=z+Math.cos(angle)*radius;if(valid(px,pz))return {x:px,z:pz};}}
+ throw new Error('无法找到可通行的出生位置');
+}
+function exitPosition(c){
+ for(let ring=0;ring<4;ring++)for(let i=0;i<8;i++){const a=c.yaw+PI/2+i*PI/4,x=c.x+Math.sin(a)*(2.8+ring),z=c.z+Math.cos(a)*(2.8+ring);if(blocked(x,z,.3))continue;let occupied=false;for(const other of cars)if(other!==c&&other.active&&Math.hypot(x-other.x,z-other.z)<2.7){occupied=true;break;}if(!occupied)return {x,z};}return null;
+}
+function dismount(c){const a=c.occupant;if(!a)return;const p=exitPosition(c);if(!p)return;Object.assign(a,p);a.inCar=null;a.hostile=a.kind!=='civilian';c.occupant=null;c.driver=false;c.parked=true;c.speed=c.vx=c.vz=0;}
+function validateSpawns(){
+ for(const c of cars){const p=safePosition(c.x,c.z,1.2,c);c.x=p.x;c.z=p.z;c.root.position.set(c.x,surfaceHeight(c.x,c.z),c.z);if(c.occupant){c.occupant.x=c.x;c.occupant.z=c.z;}}
+ for(const a of actors){if(a.inCar)continue;const p=safePosition(a.x,a.z);a.x=a.homeX=p.x;a.z=a.homeZ=p.z;}
+ for(const p of pickups){const safe=safePosition(p.x,p.z,.55);p.x=safe.x;p.z=safe.z;p.root.position.set(p.x,surfaceHeight(p.x,p.z)+.06,p.z);}
+ for(const h of hospitals)Object.assign(h,safePosition(h.x,h.z,.35));const p=safePosition(player.x,player.z);player.x=p.x;player.z=p.z;player.y=surfaceHeight(p.x,p.z);player.fallPeak=player.y;playerRoot.position.set(player.x,player.y,player.z);
+ for(const m of missions){if(m.type==='steal'){m.x=markedCar.x;m.z=markedCar.z;}else Object.assign(m,safePosition(m.x,m.z,.35));}positionMarker();
+}
+function updateActors(dt,time){
+ const armed=!holstered&&selectedWeapon>=0&&!player.car;
+ for(const c of crews)c.anger=Math.max(0,c.anger-dt);
+ for(const a of actors){if(!a.active)continue;if(a.inCar){a.x=a.inCar.x;a.z=a.inCar.z;continue;}const distance=Math.hypot(a.x-player.x,a.z-player.z);if(distance>150){if(a.kind==='police'&&heat===0)a.active=false;continue;}if(distance>120&&(stepCount&3)!==0)continue;
+  if(a.down>0){advanceGait(a.rig,0,dt,0);a.down-=dt;a.fall=Math.max(0,Math.min(1,a.fall+dt*2.7,a.down/1.4));poseRig(a.rig,0,a.phase,time,false,false,0,-1,a.fall);if(a.down<=0){a.health=100;a.fall=0;a.panic=4;}continue;}
+  a.cool-=dt;a.panic=Math.max(0,a.panic-dt);a.flinch=Math.max(0,a.flinch-dt);a.coverTimer=Math.max(0,a.coverTimer-dt);if(a.coverTimer<=0)a.coverSet=false;a.strafeClock-=dt;if(a.strafeClock<=0){a.strafeDir*=-1;a.strafeClock=rand(1.1,2.7);}const oldX=a.x,oldZ=a.z;let speed=0,gait=0,tx=a.x,tz=a.z;
+  if(a.kind==='gang'){const c=crews[a.crew];if(armed&&distance<24&&Math.hypot(player.x-c.x,player.z-c.z)<c.radius)a.linger+=dt;else a.linger=Math.max(0,a.linger-dt*2);if(a.linger>4)c.anger=30;a.hostile=c.anger>0;if(a.linger>2&&a.linger<2+dt)toast(c.name+'：收起武器，离开我们的街口。',3);}
+  if(a.kind==='police')a.hostile=heat>0;
+  const visible=a.hostile&&distance<110&&visibleBetween(a.x,groundHeight(a.x,a.z)+1.5,a.z,player.x,player.y+1.15,player.z);
+  if(a.kind==='police'&&visible){lastSeen=time;heatDecay=0;}
+  if(a.hostile&&!player.dead){
+   gait=1;
+   if(a.coverSet&&a.coverTimer>0){tx=a.coverX;tz=a.coverZ;speed=Math.hypot(tx-a.x,tz-a.z)>1.4?GAITS[2].speed*.85:0;}
+   else{tx=player.x;tz=player.z;speed=distance>17||!visible?GAITS[1].speed:0;if(visible&&distance>7&&distance<34){const ang=Math.atan2(player.x-a.x,player.z-a.z),strafe=a.strafeDir*5;tx+=Math.cos(ang)*strafe;tz-=Math.sin(ang)*strafe;speed=Math.max(speed,GAITS[0].speed);}}
+   if(a.flinch>0)speed*=.25;
+   a.yaw=approachAngle(a.yaw,Math.atan2(tx-a.x,tz-a.z),dt*(a.flinch>0?4:8));
+   if(visible&&distance<75&&a.cool<=0&&a.flinch<=0){a.cool=rand(.75,1.6);shotOrigin.set(a.x,groundHeight(a.x,a.z)+1.35,a.z);shotEnd.set(player.x+rand(-.8,.8),player.y+1.1,player.z+rand(-.8,.8));tracer(shotOrigin,shotEnd,true);if(rnd()<clamp(.72-distance*.007,.12,.65)){if(player.car)player.car.health=Math.max(0,player.car.health-3);hurtPlayer(a.kind==='police'?7:5);}}
+  }
+  else if(a.kind==='civilian'){const scared=a.panic>0||(heat>0&&distance<30);const phase=time*.13+a.index;tx=scared?a.x+(a.x-player.x):a.homeX+Math.sin(phase)*3;tz=scared?a.z+(a.z-player.z):a.homeZ+Math.cos(phase)*12;gait=scared?2:0;speed=GAITS[gait].speed;if(scared&&Math.hypot(tx-a.x,tz-a.z)<.01){tx=a.x+Math.sin(a.yaw)*10;tz=a.z+Math.cos(a.yaw)*10;}}
+  else{tx=a.homeX+Math.sin(time*.25+a.index)*2;tz=a.homeZ+Math.cos(time*.2+a.index)*2;speed=Math.hypot(tx-a.x,tz-a.z)>.8?GAITS[0].speed:0;}
+  const dx=tx-a.x,dz=tz-a.z,len=Math.hypot(dx,dz);if(speed&&len>.2){a.yaw=approachAngle(a.yaw,Math.atan2(dx,dz),dt*6);const step=Math.min(len,speed*dt),substeps=Math.max(1,Math.ceil(step/.4));for(let k=0;k<substeps;k++){const nx=a.x+dx/len*step/substeps,nz=a.z+dz/len*step/substeps;if(isWater(nx,nz,.25))break;const r=resolveCircle(nx,nz,.28);a.x=r.x;a.z=r.z;if(r.hit)break;}}
+  for(const c of cars){if(!c.active)continue;if(carCirclePush(a.x,a.z,.3,c)){a.x+=circlePush.nx*(circlePush.depth+.01);a.z+=circlePush.nz*(circlePush.depth+.01);}}
+  a.rig.root.position.set(a.x,surfaceHeight(a.x,a.z),a.z);a.rig.root.rotation.y=a.yaw;const moved=Math.hypot(a.x-oldX,a.z-oldZ);advanceGait(a.rig,moved,dt,gait);a.phase=a.rig.motion.phase;poseRig(a.rig,dt>0?moved/dt:0,a.phase,time,false,a.hostile&&speed<.1,0,a.hostile?1:-1,0);
+  if(a.coverSet&&a.coverTimer>0&&Math.hypot(a.x-a.coverX,a.z-a.coverZ)<2.2){a.rig.torso.position.y-=.36;a.rig.head.position.y-=.05;}
+  if(a.flinch>0){const f=a.flinch/.42;a.rig.torso.rotation.x-=f*.85;a.rig.torso.rotation.z+=Math.sin(simTime*37+a.index)*f*.22;a.rig.head.rotation.x-=f*.4;}
+ }
+ flushActors();
+}
+function updateCombat(dt){
+ shotClock=Math.max(0,shotClock-dt);attackTime=Math.max(0,attackTime-dt);hitTime=Math.max(0,hitTime-dt);
+ camShakeTime=Math.max(0,camShakeTime-dt);camShake*=Math.exp(-dt*7);
+ recoilPitch=lerp(recoilPitch,0,1-Math.exp(-dt*(aiming?8:12)));recoilYaw*=Math.exp(-dt*10);armRecoil=lerp(armRecoil,0,1-Math.exp(-dt*13));
+ shotSpread=Math.max(0,shotSpread-dt*(aiming?2.1:1.6));
+ muzzleFlashTime-=dt;if(muzzleFlashTime<=0){muzzleLight.intensity=0;muzzleSprite.visible=false;}
+ if(hitMarkerTime>0){hitMarkerTime-=dt;if(hitMarkerTime<=0)$('hitmark').classList.remove('show');}
+ updateShells(dt);updateSparks(dt);updateDecals(dt);
+ // Baton damage lands inside the visible swing window, with knockback.
+ if(selectedWeapon===0&&attackTime>0&&!meleeHitDone&&attackTime<.36&&attackTime>.14&&!holstered&&!player.car&&!player.dead){
+  const reach=weapons[0].range;let best=null,bestDistance=reach;
+  for(const a of actors){if(!a.active||a.down||a.inCar)continue;const dx=a.x-player.x,dz=a.z-player.z,d=Math.hypot(dx,dz);if(d<bestDistance&&Math.cos(Math.atan2(dx,dz)-player.yaw)>.2&&visibleBetween(player.x,player.y+1,player.z,a.x,groundHeight(a.x,a.z)+1,a.z)){bestDistance=d;best=a;}}
+  if(best){hitActor(best,weapons[0].damage,Math.sin(player.yaw),Math.cos(player.yaw),false);emitSparks(best.x,groundHeight(best.x,best.z)+1.1,best.z,3,false);soundImpact(10);}
+  meleeHitDone=true;
+ }
+ if(player.dead){player.dead-=dt;if(player.dead<=0)respawn();}else{if(firing)fireWeapon();if(reloadTime>0){reloadTime-=dt;if(reloadTime<=0){const w=weapons[selectedWeapon];if(w){const count=Math.min(w.capacity-w.mag,w.reserve);w.mag+=count;w.reserve-=count;soundReload();}}}if(simTime-player.lastHurt>12&&simTime-lastCrime>10)player.health=Math.min(100,player.health+dt*3);}
+ for(const p of shotPool)if(p.life>0){p.life-=dt;p.line.material.opacity=Math.max(0,p.life*9);p.line.visible=p.life>0;p.flash.visible=p.life>.065;}
+ for(const p of pickups){p.cooldown=Math.max(0,p.cooldown-dt);p.root.visible=p.cooldown===0;p.item.rotation.y=simTime*1.4;p.item.position.y=.75+Math.sin(simTime*2)*.15;if(p.cooldown===0&&!player.car&&!player.dead&&Math.hypot(p.x-player.x,p.z-player.z)<1.5){p.cooldown=45;if(p.kind==='armor'){player.armor=100;toast('护甲补充至 100',2);}else{const w=weapons[p.kind],first=!w.owned;w.owned=true;w.reserve=Math.min(240,w.reserve+(first?0:w.capacity*3));if(first)selectWeapon(p.kind);toast('已拾取 '+w.name+' · H 收起 / 1–3 切换',3);}}}
+ if(heat>0){spawnClock-=dt;if(spawnClock<=0){let active=0;for(const c of pursuitCars)if(c.active&&c.role==='police'&&c!==player.car)active++;if(active<Math.min(3,Math.ceil(heat)))spawnPursuit('police');spawnClock=5;}if(simTime-lastSeen>12&&simTime-lastCrime>12){heatDecay+=dt;if(heatDecay>8){heat=Math.max(0,heat-1);heatDecay=0;if(heat===0)toast('警戒解除 · 城市恢复平静',3);}}}
+ for(let team=0;team<crews.length;team++)if(crews[team].anger>0&&player.car)spawnPursuit('gang',team);
+ for(const c of pursuitCars)if(c.active&&c!==player.car){if((c.role==='police'?heat===0:crews[c.team].anger<=0)&&Math.hypot(c.x-player.x,c.z-player.z)>80){if(c.occupant){c.occupant.inCar=null;c.occupant.active=c.role!=='police';c.occupant.x=c.occupant.homeX;c.occupant.z=c.occupant.homeZ;c.occupant=null;}c.active=false;c.root.visible=false;}}
+ $('damage').style.opacity=simTime-player.lastHurt<.3?.35:0;document.documentElement.classList.toggle('aiming',aiming&&!holstered&&!player.car);document.documentElement.classList.toggle('armed',!holstered&&selectedWeapon>=0&&!player.car&&!player.dead);document.documentElement.classList.toggle('hit',hitTime>0);
+ if(audio){const c=player.car,t=audio.context.currentTime;audio.osc.frequency.setTargetAtTime(c?45+Math.abs(c.speed)*5:35,t,.1);audio.filter.frequency.setTargetAtTime(c?180+Math.abs(c.speed)*14:180,t,.1);audio.gain.gain.setTargetAtTime(c&&!paused?.018:0,t,.12);}
+}
+// A cached, canvas-drawn map of the actual playable world.
+const mapCanvas=document.createElement('canvas');mapCanvas.width=1024;mapCanvas.height=1024;const mg=mapCanvas.getContext('2d'),mapScale=1024/2700;
+mg.fillStyle='#29494b';mg.fillRect(0,0,1024,1024);mg.translate(512,512);mg.scale(mapScale,mapScale);mg.fillStyle='#375c53';for(let i=0;i<hillDefs.length;i++){const h=hillDefs[i];mg.beginPath();mg.arc(h[0],h[1],h[2],0,TAU);mg.fill();}mg.fillStyle='#326e7b';mg.beginPath();for(let x=-1250;x<=1250;x+=25){const z=riverNorth(x);if(x===-1250)mg.moveTo(x,z);else mg.lineTo(x,z);}for(let x=1250;x>=-1250;x-=25)mg.lineTo(x,riverSouth(x));mg.closePath();mg.fill();mg.fillStyle='#4c7468';mg.beginPath();mg.ellipse(island.x,island.z,island.rx,island.rz,0,0,TAU);mg.fill();mg.fillStyle='#46665b';mg.fillRect(-315,-1105,650,285);mg.fillStyle='#5d6b60';mg.fillRect(806,-652,188,80);mg.fillStyle='#53716c';for(let i=0;i<colliders.length;i++){const b=colliders[i];mg.fillRect(b.minX,b.minZ,b.maxX-b.minX,b.maxZ-b.minZ);}mg.lineCap='round';for(let i=0;i<roads.length;i++){const r=roads[i];mg.strokeStyle='#94aaa1';mg.lineWidth=r.width*.65;mg.beginPath();for(let j=0;j<r.points.length;j++){const p=r.points[j];if(j===0)mg.moveTo(p[0],p[1]);else mg.lineTo(p[0],p[1]);}mg.stroke();}mg.strokeStyle='#a8b699';mg.lineWidth=10;for(let i=0;i<paths.length;i++){const p=paths[i];mg.beginPath();mg.moveTo(p.a[0],p.a[1]);mg.lineTo(p.b[0],p.b[1]);mg.stroke();}
+const mini=$('minimap'),ctx=mini.getContext('2d'),mapSize=360;
+let camYaw=0,camPitch=.12,zoom=5.5,lookDelay=0,started=false,paused=false,simTime=0,minutes=17*60+20,night=0,sunAnchorX=null,sunAnchorZ=null;
+const keys=Object.create(null),touch={x:0,y:0,sprint:false,brake:false},joy={id:-1,cx:0,cy:0},look={id:-1,x:0,y:0};let nearestCar=null,nearDistance=999,nearestCarAt=-Infinity,uiTick=0,impactCooldown=0,bobEnabled=false,shoulderBlend=0;let fpsVisible=false,fpsAccum=0,fpsCount=0;
+const camState={yaw:0,pitch:.12,dist:5.5,velYaw:0,velPitch:0,velDist:0};
+let lookSens=1,aimSens=.65,invertPitch=1;
+function drawMap(){
+ const px=player.x,pz=player.z,range=player.car?250:175,k=mapSize/(range*2),angle=camYaw+PI;
+ ctx.clearRect(0,0,mapSize,mapSize);ctx.save();ctx.beginPath();ctx.arc(180,180,177,0,TAU);ctx.clip();ctx.fillStyle='#203d43';ctx.fillRect(0,0,360,360);ctx.translate(180,180);ctx.rotate(angle);ctx.scale(k,k);ctx.translate(-px,-pz);ctx.drawImage(mapCanvas,-1350,-1350,2700,2700);
+ for(const crew of crews){ctx.fillStyle=crew.css+'33';ctx.strokeStyle=crew.css+'99';ctx.lineWidth=1.5/k;ctx.beginPath();ctx.arc(crew.x,crew.z,crew.radius,0,TAU);ctx.fill();ctx.stroke();}
+ const dot=(x,z,color,r=3)=>{ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,z,r/k,0,TAU);ctx.fill();};
+ for(const c of cars){if(!c.active||c===player.car)continue;if(c.role==='police')dot(c.x,c.z,Math.floor(simTime*5)%2?'#ff6464':'#6ba7ff',4);else dot(c.x,c.z,c.marked?'#ffc776':c.role==='gang'?'#ef7661':'#b1c0b6',2);}
+ for(const a of actors){if(!a.active||a.down||a.inCar)continue;if(a.kind==='police')dot(a.x,a.z,Math.floor(simTime*5)%2?'#ff6464':'#6ba7ff',3);else if(a.kind==='gang')dot(a.x,a.z,a.hostile?'#ff635b':crews[a.crew].css,3);}
+ for(const p of pickups)if(p.cooldown<=0){ctx.fillStyle='#ffd38b';ctx.fillRect(p.x-3/k,p.z-3/k,6/k,6/k);}
+ for(const h of hospitals){ctx.strokeStyle='#e4fff0';ctx.lineWidth=2/k;ctx.beginPath();ctx.moveTo(h.x-4/k,h.z);ctx.lineTo(h.x+4/k,h.z);ctx.moveTo(h.x,h.z-4/k);ctx.lineTo(h.x,h.z+4/k);ctx.stroke();}
+ const m=missions[missionIndex];ctx.strokeStyle='#b7ffcb8a';ctx.setLineDash([5/k,5/k]);ctx.lineWidth=1.5/k;ctx.beginPath();ctx.moveTo(px,pz);ctx.lineTo(m.x,m.z);ctx.stroke();ctx.setLineDash([]);ctx.restore();
+ const dx=(m.x-px)*k,dz=(m.z-pz)*k,ca=Math.cos(angle),sa=Math.sin(angle);let mx=ca*dx-sa*dz,mz=sa*dx+ca*dz;const dist=Math.hypot(mx,mz);if(dist>155){mx*=155/dist;mz*=155/dist;}ctx.fillStyle='#b8ffd0';ctx.beginPath();ctx.arc(180+mx,180+mz,6,0,TAU);ctx.fill();ctx.strokeStyle='#b8ffd055';ctx.lineWidth=2;ctx.beginPath();ctx.arc(180+mx,180+mz,11+Math.sin(simTime*3)*2,0,TAU);ctx.stroke();
+ ctx.save();ctx.translate(180,180);ctx.rotate(camYaw-player.yaw);ctx.fillStyle='#fff0cb';ctx.beginPath();ctx.moveTo(0,-10);ctx.lineTo(7,7);ctx.lineTo(0,4);ctx.lineTo(-7,7);ctx.closePath();ctx.fill();ctx.restore();ctx.fillStyle='#d7ebde';ctx.font='13px system-ui';ctx.textAlign='center';ctx.fillText('N',180+Math.sin(angle)*155,185-Math.cos(angle)*155);
+}
+function areaName(x,z){
+ if(onIsland(x,z))return '여의도 · 汝矣岛';
+ if(pointInRiver(x,z)){const b=causewayAt(x,z);return b?b.name+' · 汉江大桥':'한강 · 汉江';}
+ if(z>=riverSouth(x)){
+  if(z<950&&z-riverSouth(x)<70)return '한강공원 · 汉江公园';
+  if(Math.hypot(x+130,z-1080)<120)return '강남역 · 江南站';
+  if(Math.abs(z-1060)<55)return '테헤란로 · 德黑兰路';
+  if(Math.abs(z-900)<50)return '봉은사로 · 奉恩寺路';
+  if(Math.abs(x+130)<55)return '강남대로 · 江南大路';
+  return '강남 · 江南';
+ }
+ if(z>-10&&z<riverNorth(x)+30)return '한강공원 · 汉江公园';
+ if(inPalace(x,z,30))return '북궐 · 北阙';
+ if(Math.hypot(x,z+340)<250)return '남산 · 南山';
+ if(x>250&&x<600&&z>-620&&z<-120)return '명동 · 明洞';
+ if(Math.hypot(x-900,z+612)<110)return '광장시장 · 广藏市场';
+ let best=70,name='도심 · 市中心';
+ for(let i=0;i<roads.length;i++){const r=roads[i];for(let j=0;j<r.points.length-1;j++){const a=r.points[j],b=r.points[j+1],d=segmentDistance(x,z,a[0],a[1],b[0],b[1]);if(d<best){best=d;name=r.name;}}}
+ return name;
+}
+const domCache=new Map();
+function setText(id,val){const k=id;if(domCache.get(k)===val)return;domCache.set(k,val);$(id).textContent=val;}
+function setStyle(id,prop,val){const k=id+prop;if(domCache.get(k)===val)return;domCache.set(k,val);$(id).style[prop]=val;}
+function setHtml(id,val){const k=id+'h';if(domCache.get(k)===val)return;domCache.set(k,val);$(id).innerHTML=val;}
+function refreshHUD(){
+ const c=player.car,m=missions[missionIndex],distance=Math.hypot(m.x-player.x,m.z-player.z),w=weapons[selectedWeapon];
+ setText('area',areaName(player.x,player.z));const turf=crews.find(g=>Math.hypot(g.x-player.x,g.z-player.z)<g.radius);const region=onIsland(player.x,player.z)?'여의도 / 汝矣岛':player.z>riverNorth(player.x)&&player.z<riverSouth(player.x)?'한강 / 汉江':player.z>=riverSouth(player.x)?'강남 / 江南':player.z<-820?'북악 / 北岳':'도심 / 市中心';setText('district',turf?turf.name+' 地盘 · '+(turf.anger>0?'敌对':'保持克制'):region);
+ setText('clock',String(Math.floor(minutes/60)%24).padStart(2,'0')+':'+String(Math.floor(minutes)%60).padStart(2,'0'));setText('speed',String(Math.round(Math.abs(c?c.speed:player.speed)*3.6)));setText('mode',c?c.spec.name+' · 车况 '+Math.ceil(c.health)+'%':GAITS[player.gait].name+' · 首尔夜行者');
+ setStyle('staminaBar','transform','scaleX('+(player.stamina/100)+')');setText('staminaText','体力 '+Math.ceil(player.stamina)+'%'+(player.exhausted?' · 休息':''));$('stamina').classList.toggle('low',player.stamina<25);$('staminaMeter').setAttribute('aria-valuenow',Math.round(player.stamina));
+ setText('countdown',missionCooldown>0?'已完成':String(Math.floor(Math.ceil(missionTime)/60)).padStart(2,'0')+':'+String(Math.ceil(missionTime)%60).padStart(2,'0'));setText('reward','+ ¥ '+m.reward+' · '+(distance>=1000?(distance/1000).toFixed(2)+' km':Math.round(distance)+' m'));setStyle('missionProgress','transform','scaleX('+clamp(missionTime/m.limit,0,1)+')');setStyle('missionProgress','background',missionTime<30?'#ffb76d':'#a5f0cb');setText('money','¥ '+money.toLocaleString('zh-CN'));
+ setStyle('healthBar','width',player.health+'%');setStyle('armorBar','width',player.armor+'%');setText('vitalsText','生命 '+Math.ceil(player.health)+' · 护甲 '+Math.ceil(player.armor));const stars=Math.ceil(heat);setText('heat',stars?'★'.repeat(stars)+'☆'.repeat(5-stars):'');$('heat').classList.toggle('searching',simTime-lastSeen>12);$('heat').setAttribute('aria-label','警戒 '+stars+' / 5');
+ setText('weaponName',holstered||!w?'徒手 · 武器已收起':w.name);setText('ammo',reloadTime>0?'换弹中…':w&&!holstered?(w.capacity?w.mag+' / '+w.reserve:'近身武器'):'—');setText('weaponHint',c?'F 下车 · 空格手刹':holstered?'Q/E 或 1–3 装备 · 滚轮变焦':'Q/E 或 1–3 武器 · 滚轮变焦 · H 收起');
+ if(c){setHtml('interaction','<kbd>F</kbd>下车 · 空格手刹 · S 制动 / 倒车');$('interaction').classList.add('visible');}else if(nearestCar&&nearDistance<5.5){setHtml('interaction','<kbd>F</kbd>'+(nearestCar.driver?'拉出驾驶员并接管':'驾驶')+' · '+nearestCar.spec.name);$('interaction').classList.add('visible');}else $('interaction').classList.remove('visible');setText('touchEnter',c?'下车':'上车');refreshWeaponSlots();drawMap();
+}
+let triggerPressed=false;
+function clearInput(){firing=aiming=false;triggerPressed=false;jumpBuffer=0;if(audio)audio.gain.gain.setTargetAtTime(0,audio.context.currentTime,.05);for(const k in keys)keys[k]=false;touch.x=0;touch.y=0;touch.sprint=false;touch.brake=false;if(joy.id!==-1&&joystick.hasPointerCapture(joy.id))joystick.releasePointerCapture(joy.id);joy.id=-1;look.id=-1;$('stick').style.transform='translate(0px,0px)';if($('touchSprint').releaseControl)$('touchSprint').releaseControl();if($('touchBrake').releaseControl)$('touchBrake').releaseControl();}
+function jump(){if(started&&!paused&&!player.car&&!player.dead)jumpBuffer=.14;}
+function enterExit(){
+ if(!started||paused||player.dead)return;
+ if(player.car){const c=player.car;if(Math.abs(c.speed)>6){toast('车速降至 22 km/h 以下即可下车。',2);return;}const exit=exitPosition(c);if(!exit){toast('车旁空间不足，请挪到开阔处。',2);return;}player.x=exit.x;player.z=exit.z;player.motionSpeed=player.speed=0;for(const leg of playerRig.legs)leg.planted=false;c.speed=c.vx=c.vz=0;c.parked=true;c.driver=false;player.car=null;playerRoot.visible=true;player.y=surfaceHeight(player.x,player.z);player.yaw=c.yaw;player.vy=0;player.grounded=true;
+ }else{findNearestCar(true);if(!nearestCar||nearDistance>5.5){toast('靠近任意车辆后按 F，包括正在行驶的车辆。',3);return;}const c=nearestCar;
+  if(c.occupant){const driver=c.occupant,p=exitPosition(c);if(!p){toast('驾驶员侧没有安全空间，请等车辆驶入开阔处。',3);return;}driver.inCar=null;driver.active=true;driver.x=driver.homeX=p.x;driver.z=driver.homeZ=p.z;driver.down=0;driver.fall=0;driver.health=100;driver.panic=15;driver.yaw=Math.atan2(driver.x-player.x,driver.z-player.z);for(const leg of driver.rig.legs)leg.planted=false;c.occupant=null;raiseHeat(c.role==='police'?1.5:.8);if(c.role==='gang')crews[c.team].anger=40;toast('已拉出驾驶员并接管车辆 · 城市警戒上升',3);}
+  player.car=c;c.parked=true;c.driver=false;c.speed=clamp(c.speed,-8,20);c.vx=Math.sin(c.yaw)*c.speed;c.vz=Math.cos(c.yaw)*c.speed;player.x=c.x;player.z=c.z;player.y=c.root.position.y;playerRoot.visible=false;camYaw=c.yaw;lookDelay=0;firing=aiming=false;reloadTime=0;
+ }refreshHUD();
+}
+function findNearestCar(force=false){if(!force&&simTime-nearestCarAt<.18)return;nearestCarAt=simTime;nearestCar=null;nearDistance=Infinity;for(const c of cars){if(!c.active)continue;const d=Math.hypot(c.x-player.x,c.z-player.z);if(d<nearDistance){nearDistance=d;nearestCar=c;}}}
+function canControl(){return started&&!paused&&!player.dead;}
+function toggleGait(){if(!canControl())return;player.walkMode=!player.walkMode;$('touchGait').textContent=player.walkMode?'行走 ✓':'奔跑 ✓';$('touchGait').setAttribute('aria-pressed',player.walkMode);toast(player.walkMode?'行走模式 · Shift / 疾跑按钮可临时加速':'奔跑模式 · 摇杆小推仍可步行',2);}
+function toggleBob(){if(!canControl())return;bobEnabled=!bobEnabled;$('bobToggle').textContent='镜头起伏：'+(bobEnabled?'开':'关')+' · B';$('bobToggle').setAttribute('aria-pressed',bobEnabled);}
+window.addEventListener('keydown',e=>{
+ if(e.code==='Backquote'){fpsVisible=!fpsVisible;$('fps').classList.toggle('show',fpsVisible);return;}
+ if(!started){if(e.code==='Enter'&&!e.repeat)startGame();return;}if(!canControl())return;
+ if(e.code==='Space'||e.code.startsWith('Arrow')||e.code==='CapsLock')e.preventDefault();keys[e.code]=true;if(e.repeat)return;
+ if(e.code==='Space')jump();if(e.code==='KeyF')enterExit();if(e.code==='KeyR')reload();if(e.code==='KeyH'){holstered=!holstered;aiming=firing=false;reloadTime=0;}
+ if(e.code==='KeyC'||e.code==='CapsLock')toggleGait();if(e.code==='KeyB')toggleBob();if(e.code==='KeyQ')cycleWeapon(-1);if(e.code==='KeyE')cycleWeapon(1);
+ if(/^Digit[1-3]$/.test(e.code))selectWeapon(Number(e.code.slice(-1))-1);if(e.code==='KeyM')nextMission();if(e.code==='KeyO')toggleSettings();
+});
+window.addEventListener('keyup',e=>{keys[e.code]=false;});
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+function requestGamePointerLock(){if(!canvas.requestPointerLock)return;try{const result=canvas.requestPointerLock();if(result&&result.catch)result.catch(()=>toast('视角锁定未获浏览器许可 · 可按住拖动环顾',3));}catch(_){toast('可按住鼠标拖动环顾',2);}}
+canvas.addEventListener('pointerdown',e=>{
+ if(!canControl())return;startAudio();
+ if(e.pointerType!=='touch'&&!coarse&&document.pointerLockElement!==canvas){requestGamePointerLock();look.id=e.pointerId;look.x=e.clientX;look.y=e.clientY;return;}
+ if(e.pointerType==='touch'){if(e.clientX<innerWidth*.4)return;firing=true;triggerPressed=true;}else{if(e.button===0){firing=true;triggerPressed=true;}if(e.button===2)aiming=true;}
+ if(document.pointerLockElement===canvas)return;look.id=e.pointerId;look.x=e.clientX;look.y=e.clientY;canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove',e=>{if(!canControl())return;let dx=0,dy=0;if(document.pointerLockElement===canvas){dx=e.movementX;dy=e.movementY;}else if(look.id===e.pointerId){dx=e.clientX-look.x;dy=e.clientY-look.y;look.x=e.clientX;look.y=e.clientY;}else return;const sens=lookSens*(aiming?aimSens:1);camYaw=(camYaw-dx*.0038*sens)%TAU;camPitch=clamp(camPitch+dy*.0029*sens*invertPitch,-.62,1.05);lookDelay=3;});
+function endLook(e){if(look.id===e.pointerId)look.id=-1;if(e.button===0){firing=false;triggerPressed=false;}if(e.button===2)aiming=false;}
+canvas.addEventListener('pointerup',endLook);canvas.addEventListener('pointercancel',endLook);canvas.addEventListener('lostpointercapture',endLook);window.addEventListener('pointerup',endLook);
+document.addEventListener('pointerlockchange',()=>{const locked=document.pointerLockElement===canvas;document.documentElement.classList.toggle('locked',locked);if(!locked)clearInput();else look.id=-1;});
+canvas.addEventListener('wheel',e=>{e.preventDefault();if(canControl())zoom=clamp(zoom+e.deltaY*.008,3,15);},{passive:false});
+const joystick=$('joystick');joystick.addEventListener('pointerdown',e=>{e.preventDefault();if(!canControl()||joy.id!==-1)return;const r=joystick.getBoundingClientRect();joy.id=e.pointerId;joy.cx=r.left+r.width/2;joy.cy=r.top+r.height/2;joystick.setPointerCapture(e.pointerId);moveJoy(e);});
+function moveJoy(e){if(e.pointerId!==joy.id||!canControl())return;let x=e.clientX-joy.cx,y=e.clientY-joy.cy;const d=Math.hypot(x,y),max=40;if(d>max){x*=max/d;y*=max/d;}touch.x=x/max;touch.y=-y/max;$('stick').style.transform='translate('+x+'px,'+y+'px)';}
+joystick.addEventListener('pointermove',moveJoy);function endJoy(e){if(e.pointerId===joy.id){joy.id=-1;touch.x=touch.y=0;$('stick').style.transform='translate(0px,0px)';}}joystick.addEventListener('pointerup',endJoy);joystick.addEventListener('pointercancel',endJoy);joystick.addEventListener('lostpointercapture',endJoy);
+function touchHold(id,key){const el=$(id);let pointer=-1;el.addEventListener('pointerdown',e=>{e.preventDefault();if(!canControl()||pointer!==-1)return;pointer=e.pointerId;el.setPointerCapture(pointer);touch[key]=true;el.classList.add('held');});el.releaseControl=()=>{if(pointer!==-1&&el.hasPointerCapture(pointer))el.releasePointerCapture(pointer);pointer=-1;touch[key]=false;el.classList.remove('held');};const release=e=>{if(pointer!==e.pointerId)return;el.releaseControl();};el.addEventListener('pointerup',release);el.addEventListener('pointercancel',release);el.addEventListener('lostpointercapture',release);}
+touchHold('touchSprint','sprint');touchHold('touchBrake','brake');$('touchEnter').addEventListener('pointerdown',e=>{e.preventDefault();enterExit();});$('touchJump').addEventListener('pointerdown',e=>{e.preventDefault();jump();});$('touchGait').addEventListener('click',toggleGait);$('bobToggle').addEventListener('click',toggleBob);$('qualityToggle').addEventListener('click',()=>{const order=['auto','高','中','低'];const i=order.indexOf(quality.mode);quality.mode=order[(i+1)%order.length];if(quality.mode==='auto')quality.level=2;applyQuality();});
+const settingsPanel=$('settingsPanel');
+function toggleSettings(){const open=settingsPanel.classList.toggle('open');$('settingsBtn').setAttribute('aria-expanded',open);}
+$('settingsBtn').addEventListener('click',toggleSettings);
+$('sensRange').addEventListener('input',e=>{lookSens=Number(e.target.value);$('sensValue').textContent=lookSens.toFixed(2)+'×';});
+$('aimSensRange').addEventListener('input',e=>{aimSens=Number(e.target.value);$('aimSensValue').textContent=aimSens.toFixed(2)+'×';});
+$('pitchRange').addEventListener('input',e=>{invertPitch=Number(e.target.value)?-1:1;$('invertValue').textContent=invertPitch===1?'标准':'反转';});
+window.addEventListener('blur',()=>{clearInput();paused=true;document.documentElement.classList.add('paused');});window.addEventListener('focus',()=>{paused=false;document.documentElement.classList.remove('paused');});document.addEventListener('visibilitychange',()=>{paused=document.hidden;if(paused)clearInput();document.documentElement.classList.toggle('paused',paused);});
+function startGame(){startAudio();if(started)return;started=true;paused=false;document.documentElement.classList.add('playing');$('intro').classList.add('hidden');canvas.focus();clearInput();camYaw=PI;camPitch=.12;camState.yaw=PI;camState.pitch=.12;camState.dist=zoom;camState.velYaw=camState.velPitch=camState.velDist=0;camTarget.set(player.x,player.y+1.3,player.z);lookTarget.copy(camTarget);camera.position.set(player.x,player.y+2.8,player.z+5.5);toast('薄荷光柱是首尔地标任务；金色光点是武器。M 切换委托，F 驾驶任意车辆。',7);refreshHUD();}
+$('start').addEventListener('click',startGame);
+function updateStamina(dt,sprinting){
+ if(sprinting){player.stamina=Math.max(0,player.stamina-dt*20);player.staminaDelay=.8;if(player.stamina===0)player.exhausted=true;}
+ else{player.staminaDelay=Math.max(0,player.staminaDelay-dt);if(player.staminaDelay===0)player.stamina=Math.min(100,player.stamina+dt*17);}
+ if(!keys.ShiftLeft&&!keys.ShiftRight&&!touch.sprint&&player.stamina>=25)player.exhausted=false;
+}
+function playerMotion(dt){
+ let f=(keys.KeyW||keys.ArrowUp?1:0)-(keys.KeyS||keys.ArrowDown?1:0)+touch.y,s=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0)+touch.x;const len=Math.hypot(f,s),moving=len>.12;
+ if(len>1){f/=len;s/=len;}const aim=aiming&&!holstered,analog=joy.id!==-1||Math.hypot(touch.x,touch.y)>.01,wantsSprint=!!(keys.ShiftLeft||keys.ShiftRight||touch.sprint),sprinting=moving&&!aim&&wantsSprint&&!player.exhausted&&player.stamina>0;
+ player.gait=sprinting?2:aim||player.walkMode||analog&&len<.55?0:1;
+ const targetSpeed=moving?GAITS[player.gait].speed:0;player.motionSpeed=lerp(player.motionSpeed,targetSpeed,1-Math.exp(-dt*(moving?26:30)));if(player.motionSpeed<.015)player.motionSpeed=0;
+ const oldX=player.x,oldZ=player.z,wasGrounded=player.grounded;
+ if(moving){const dx=Math.sin(camYaw)*f-Math.cos(camYaw)*s,dz=Math.cos(camYaw)*f+Math.sin(camYaw)*s,magnitude=Math.hypot(dx,dz);if(magnitude>1e-6){player.moveX=dx/magnitude;player.moveZ=dz/magnitude;}player.yaw=approachAngle(player.yaw,aim?camYaw:Math.atan2(dx,dz),dt*24);}else if(aim||firing)player.yaw=approachAngle(player.yaw,camYaw,dt*26);
+ // Sub-step and resolve penetration so the body slides around walls instead of stopping dead.
+ const vx=player.moveX*player.motionSpeed*dt,vz=player.moveZ*player.motionSpeed*dt;
+ const stepLength=Math.hypot(vx,vz);
+ if(stepLength>1e-6){const substeps=Math.min(5,Math.max(1,Math.ceil(stepLength/.32))),sx=vx/substeps,sz=vz/substeps;for(let i=0;i<substeps;i++){const nx=player.x+sx,nz=player.z+sz;if(Math.abs(nx)>WORLD-.3||Math.abs(nz)>WORLD-.3||isWater(nx,nz,.28))break;const hit=resolveCircle(nx,nz,.28);player.x=hit.x;player.z=hit.z;if(hit.hit&&Math.abs(hit.nx*sx+hit.nz*sz)>stepLength*.7)break;}}
+ // Every car is a solid oriented box on foot; stand on the near side and it pushes you clear.
+ for(const c of cars){if(!c.active||!c.root.visible)continue;if(carCirclePush(player.x,player.z,.34,c)){const push=circlePush,px0=player.x,pz0=player.z;let nx=player.x+push.nx*(push.depth+.01),nz=player.z+push.nz*(push.depth+.01);const fixed=resolveCircle(nx,nz,.28);nx=fixed.x;nz=fixed.z;if(!isWater(nx,nz,.26)&&Math.abs(nx)<WORLD-.3&&Math.abs(nz)<WORLD-.3){player.x=nx;player.z=nz;}else{player.x=px0;player.z=pz0;}if(Math.abs(c.speed)>4&&simTime-player.lastHurt>.7)hurtPlayer(Math.abs(c.speed)*1.3);}}
+ const moved=Math.hypot(player.x-oldX,player.z-oldZ);player.speed=dt>0?moved/dt:0;updateStamina(dt,sprinting&&moved>.001);
+ const floor=surfaceHeight(player.x,player.z);coyoteTime=player.grounded?.1:Math.max(0,coyoteTime-dt);jumpBuffer=Math.max(0,jumpBuffer-dt);
+ if((player.grounded||coyoteTime>0)&&jumpBuffer>0){player.vy=6.1;jumpBuffer=0;coyoteTime=0;player.fallPeak=player.y;player.grounded=false;}
+ if(player.grounded&&player.y-floor>.38){player.grounded=false;player.vy=0;player.fallPeak=player.y;}
+ if(!player.grounded){player.fallPeak=Math.max(player.fallPeak,player.y);player.vy-=18*dt;player.y+=player.vy*dt;if(player.y<=floor){const drop=player.fallPeak-floor;player.y=floor;player.vy=0;player.grounded=true;if(drop>3.5)hurtPlayer(Math.min(100,(drop-3.5)*13),true);}}else{player.y=floor;player.fallPeak=floor;}
+ playerRoot.position.set(player.x,player.y,player.z);playerRoot.rotation.y=player.yaw;
+ advanceGait(playerRig,moved,dt,player.gait,player.grounded&&wasGrounded);player.phase=playerRig.motion.phase;
+ poseRig(playerRig,player.speed,player.phase,simTime,!player.grounded,aim||firing,attackTime/.52,holstered?-1:selectedWeapon);
+ player.hitReact=Math.max(0,player.hitReact-dt);if(player.hitReact>0){const kick=Math.sin(player.hitReact/.45*PI)*.16;playerRig.torso.rotation.x-=kick;playerRig.torso.rotation.z+=kick*.55;}if(aim)playerRig.torso.rotation.x+=camPitch*.6;
+}
+function carBlocked(x,z,yaw,c){const span=c.spec.length*.31;return blocked(x,z,c.spec.width*.51)||blocked(x+Math.sin(yaw)*span,z+Math.cos(yaw)*span,c.spec.width*.5)||blocked(x-Math.sin(yaw)*span,z-Math.cos(yaw)*span,c.spec.width*.5);}
+function carWater(x,z,yaw,c){const sn=Math.sin(yaw),co=Math.cos(yaw),span=c.spec.length*.31,r=c.spec.width*.48;return isWater(x,z,r)||isWater(x+sn*span,z+co*span,r)||isWater(x-sn*span,z-co*span,r);}
+function carDamage(c,impact){if(c.collisionTimer>0)return;c.collisionTimer=.45;c.health=Math.max(0,c.health-Math.max(0,impact-1)*1.6);if(c===player.car&&impact>8)hurtPlayer((impact-7)*.7);}
+// Resolve the three-circle car hull against static AABBs and OBBs; returns the correction normal too.
+const carResolve={x:0,z:0,nx:0,nz:0,hit:false};
+function carStaticResolve(c,x,z,yaw){
+ let nx=0,nz=0,hit=false;const sn=Math.sin(yaw),co=Math.cos(yaw),span=c.spec.length*.31,radius=c.spec.width*.51;
+ for(let iter=0;iter<2;iter++){
+  let moved=false;
+  for(let k=-1;k<=1;k++){
+   let sx=x+sn*span*k,sz=z+co*span*k;
+   const ix=clamp(Math.floor((sx+1350)/100),1,25),iz=clamp(Math.floor((sz+1350)/100),1,25);
+   for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
+    const cell=bins[(iz+dz)*27+ix+dx];
+    for(let i=0;i<cell.length;i++){const b=cell[i];if(aabbPush(sx,sz,radius,b)){const d=circlePush.depth+.004;x+=circlePush.nx*d;z+=circlePush.nz*d;sx+=circlePush.nx*d;sz+=circlePush.nz*d;nx+=circlePush.nx;nz+=circlePush.nz;hit=true;moved=true;}}
+    const oc=obbBins[(iz+dz)*27+ix+dx];
+    for(let i=0;i<oc.length;i++){const b=oc[i];if(obbPush(sx,sz,radius,b)){const d=circlePush.depth+.004;x+=circlePush.nx*d;z+=circlePush.nz*d;sx+=circlePush.nx*d;sz+=circlePush.nz*d;nx+=circlePush.nx;nz+=circlePush.nz;hit=true;moved=true;}}
+   }
+  }
+  if(!moved)break;
+ }
+ const len=Math.hypot(nx,nz);carResolve.x=x;carResolve.z=z;carResolve.hit=hit;carResolve.nx=hit&&len>1e-4?nx/len:0;carResolve.nz=hit&&len>1e-4?nz/len:0;return carResolve;
+}
+function moveCar(c,dt,throttle,steer,handbrake=false){
+ c.collisionTimer=Math.max(0,c.collisionTimer-dt);const oldYaw=c.yaw,oldSpeed=c.speed;
+ // Steering reaches full lock in roughly a tenth of a second; throttle is much sharper than before.
+ c.steer=lerp(c.steer,steer,1-Math.exp(-dt*17));
+ const speedAbs=Math.abs(c.speed),acceleration=throttle>0?(c.speed<-.5?25:12.5*(1-speedAbs/48)):(c.speed>.5?26:7.5);
+ c.speed+=throttle*acceleration*dt;if(!throttle)c.speed*=Math.exp(-dt*.32);c.speed=clamp(c.speed,-9,36);if(handbrake)c.speed*=Math.exp(-dt*.85);if(c.health<=0)c.speed*=Math.exp(-dt*2);
+ // Speed-sensitive lock: easy parking control, calmer at top speed.
+ const steerAngle=c.steer*.62/(1+speedAbs*.034);c.yaw-=Math.tan(steerAngle)*c.speed/2.62*dt*(handbrake?1.7:1);
+ const sn=Math.sin(c.yaw),co=Math.cos(c.yaw),gripRate=handbrake?2.1:(speedAbs<7?17:10.5),grip=1-Math.exp(-dt*gripRate);
+ c.vx=lerp(c.vx,sn*c.speed,grip);c.vz=lerp(c.vz,co*c.speed,grip);
+ // Cap every integration step at 0.45 m so thin walls and rails cannot be tunnelled.
+ const travel=Math.hypot(c.vx,c.vz)*dt,substeps=Math.min(6,Math.max(1,Math.ceil(travel/.45))),h=dt/substeps;
+ const detailed=c===player.car||Math.hypot(c.x-player.x,c.z-player.z)<150;
+ for(let s=0;s<substeps;s++){
+  const nx=c.x+c.vx*h,nz=c.z+c.vz*h;
+  if(Math.abs(nx)>WORLD-1.5||Math.abs(nz)>WORLD-1.5){c.vx*=-.3;c.vz*=-.3;c.speed*=.45;c.stuck+=dt/substeps;continue;}
+  if(carWater(nx,nz,c.yaw,c)){c.vx*=-.22;c.vz*=-.22;c.speed*=.4;c.stuck+=dt/substeps;continue;}
+  if(detailed){const res=carStaticResolve(c,nx,nz,c.yaw);
+   if(res.hit){
+    const vn=c.vx*res.nx+c.vz*res.nz;
+    if(vn<0){const impact=-vn;c.vx-=res.nx*vn*1.22;c.vz-=res.nz*vn*1.22;c.vx*=.86;c.vz*=.86;carDamage(c,impact);if(c===player.car&&impact>3){camShake=clamp(impact*.03,.08,.6);camShakeTime=.32;}if(impact>5)soundImpact(impact);}
+    c.x=res.x;c.z=res.z;c.stuck+=dt/substeps;
+   }else{c.x=nx;c.z=nz;c.stuck=Math.max(0,c.stuck-dt/substeps*.6);}
+  }else if(carBlocked(nx,nz,c.yaw,c)){c.vx*=.35;c.vz*=.35;c.stuck+=dt/substeps;}
+  else{c.x=nx;c.z=nz;}
+  c.speed=c.vx*sn+c.vz*co;
+ }
+ for(const o of cars){if(o===c||!o.active)continue;const dx=c.x-o.x,dz=c.z-o.z,d=Math.hypot(dx,dz),limit=(c.spec.length+o.spec.length)*.32;if(d>limit||d<.01)continue;const nx=dx/d,nz=dz/d,relative=(c.vx-o.vx)*nx+(c.vz-o.vz)*nz;if(relative<0){const impulse=-relative*.58;c.vx+=nx*impulse;c.vz+=nz*impulse;o.vx-=nx*impulse;o.vz-=nz*impulse;c.speed=c.vx*Math.sin(c.yaw)+c.vz*Math.cos(c.yaw);o.speed=o.vx*Math.sin(o.yaw)+o.vz*Math.cos(o.yaw);carDamage(c,-relative);carDamage(o,-relative);if(c===player.car&&-relative>4){camShake=clamp(-relative*.025,.06,.5);camShakeTime=.28;}if(c===player.car&&o.role==='police'&&c.collisionTimer===.45)raiseHeat(.25);}const push=(limit-d)*.5,px=c.x+nx*push,pz=c.z+nz*push;if(!carBlocked(px,pz,c.yaw,c)){c.x=px;c.z=pz;}}
+ if(c===player.car&&Math.abs(c.speed)>4)for(const a of actors){if(!a.active||a.down||a.inCar)continue;if(segmentDistance(a.x,a.z,c.x-sn*c.spec.length*.4,c.z-co*c.spec.length*.4,c.x+sn*c.spec.length*.4,c.z+co*c.spec.length*.4)<c.spec.width*.55)hitActor(a,100);}
+ c.roll=lerp(c.roll,-c.steer*clamp(c.speed/24,-1,1)*.085,dt*10);c.body.rotation.z=c.roll;c.body.rotation.x=clamp((c.speed-oldSpeed)*-.012,-.04,.04);c.spin=(c.spin+c.speed*dt/.33)%TAU;
+ for(const w of c.wheels){w.pivot.rotation.y=w.front?-steerAngle:0;w.wheel.rotation.x=c.spin;}
+ c.root.position.set(c.x,surfaceHeight(c.x,c.z),c.z);c.root.rotation.y=c.yaw;c.root.visible=c.active&&Math.hypot(c.x-player.x,c.z-player.z)<650;
+ if(c.lights)for(let i=0;i<c.lights.length;i++)c.lights[i].material.opacity=(Math.floor(simTime*7)+i)%2?.9:.08;
+}
+function carMotion(dt){updateStamina(dt,false);player.motionSpeed=0;const c=player.car,throttle=clamp((keys.KeyW||keys.ArrowUp?1:0)-(keys.KeyS||keys.ArrowDown?1:0)+touch.y,-1,1),steer=clamp((keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0)+touch.x,-1,1);moveCar(c,dt,throttle,steer,keys.Space||touch.brake);player.x=c.x;player.z=c.z;player.y=c.root.position.y;player.yaw=c.yaw;if(lookDelay<=0&&Math.abs(c.speed)>1.5)camYaw=approachAngle(camYaw,c.yaw,dt*2.4);if(c.health<=0&&impactCooldown<=0){toast('车辆损坏 · F 下车寻找另一辆车',3);impactCooldown=5;}}
+// A small road graph makes pursuit cars navigate intersections instead of walls.
+const roadNodes=[],roadSegments=[];
+function roadNode(x,z){let index=roadNodes.findIndex(p=>Math.hypot(p.x-x,p.z-z)<.5);if(index<0){index=roadNodes.length;roadNodes.push({x,z,links:[]});}return index;}
+for(const r of roads)for(let i=0;i<r.points.length-1;i++){const a=r.points[i],b=r.points[i+1];roadSegments.push({a,b,cuts:[0,1]});}
+for(let i=0;i<roadSegments.length;i++)for(let j=i+1;j<roadSegments.length;j++){const a=roadSegments[i],b=roadSegments[j],dx=a.b[0]-a.a[0],dz=a.b[1]-a.a[1],ex=b.b[0]-b.a[0],ez=b.b[1]-b.a[1],den=dx*ez-dz*ex;if(Math.abs(den)<.001)continue;const qx=b.a[0]-a.a[0],qz=b.a[1]-a.a[1],t=(qx*ez-qz*ex)/den,u=(qx*dz-qz*dx)/den;if(t>=0&&t<=1&&u>=0&&u<=1){a.cuts.push(t);b.cuts.push(u);}}
+for(const segment of roadSegments){segment.cuts.sort((a,b)=>a-b);let previous=-1;for(const t of segment.cuts){const index=roadNode(lerp(segment.a[0],segment.b[0],t),lerp(segment.a[1],segment.b[1],t));if(previous>=0&&previous!==index){const distance=Math.hypot(roadNodes[index].x-roadNodes[previous].x,roadNodes[index].z-roadNodes[previous].z);roadNodes[previous].links.push({index,distance});roadNodes[index].links.push({index:previous,distance});}previous=index;}}
+// Small immutable graph: all-pairs next hops computed once, no runtime Dijkstra.
+const navCount=roadNodes.length,navDistances=new Float32Array(navCount*navCount),navNext=new Int16Array(navCount*navCount);navDistances.fill(Infinity);navNext.fill(-1);
+for(let i=0;i<navCount;i++){navDistances[i*navCount+i]=0;navNext[i*navCount+i]=i;for(const edge of roadNodes[i].links){navDistances[i*navCount+edge.index]=edge.distance;navNext[i*navCount+edge.index]=edge.index;}}
+for(let k=0;k<navCount;k++)for(let i=0;i<navCount;i++)for(let j=0;j<navCount;j++){const candidate=navDistances[i*navCount+k]+navDistances[k*navCount+j],index=i*navCount+j;if(candidate<navDistances[index]){navDistances[index]=candidate;navNext[index]=navNext[i*navCount+k];}}
+function nearestRoadNode(x,z){let nearest=-1,best=Infinity;for(let i=0;i<navCount;i++){const p=roadNodes[i],d=(p.x-x)**2+(p.z-z)**2;if(d<best){best=d;nearest=i;}}return nearest;}
+function pursuitRoute(c){const goal=nearestRoadNode(player.x,player.z);if(c.navGoal!==goal||c.navNode<0||c.navNode===undefined){c.navGoal=goal;c.navNode=nearestRoadNode(c.x,c.z);}c.navTime=2;}
+
+function trafficMotion(dt){for(const c of cars){if(!c.active||c===player.car)continue;if(c.parked){c.root.visible=Math.hypot(c.x-player.x,c.z-player.z)<650;continue;}if(Math.hypot(c.x-player.x,c.z-player.z)>700){c.root.visible=false;continue;}
+ let tx,tz,wanted=c.cruise;
+ if(c.role==='police'||c.role==='gang'){
+  const distance=Math.hypot(c.x-player.x,c.z-player.z);if(c.role==='police'&&distance<125&&visibleBetween(c.x,c.root.position.y+1.4,c.z,player.x,player.y+1,player.z)){lastSeen=simTime;heatDecay=0;}
+  if((distance<21&&!player.car)||c.stuck>4||c.health<10){dismount(c);continue;}
+  c.navTime=(c.navTime||0)-dt;if(c.navTime<=0)pursuitRoute(c);
+  let node=roadNodes[c.navNode];if(node&&c.navNode!==c.navGoal&&Math.hypot(node.x-c.x,node.z-c.z)<13){const next=navNext[c.navNode*navCount+c.navGoal];if(next>=0)c.navNode=next;node=roadNodes[c.navNode];}tx=node?node.x:player.x;tz=node?node.z:player.z;
+  if(distance<45&&visibleBetween(c.x,c.root.position.y+1,c.z,player.x,player.y+1,player.z)){tx=player.x;tz=player.z;}wanted=distance<15?7:22;
+ }else{if(!c.route||c.route.length===0)continue;c.index%=c.route.length;const p=c.route[c.index];tx=p[0];tz=p[1];if(Math.hypot(tx-c.x,tz-c.z)<8)c.index=(c.index+1)%c.route.length;}
+ const turn=angleDelta(c.yaw,Math.atan2(tx-c.x,tz-c.z));wanted*=clamp(1-Math.abs(turn)*.65,.18,1);
+ if(c.role==='traffic')for(const o of cars){if(o===c||!o.active)continue;const dx=o.x-c.x,dz=o.z-c.z,along=dx*Math.sin(c.yaw)+dz*Math.cos(c.yaw),across=dx*Math.cos(c.yaw)-dz*Math.sin(c.yaw);if(along>0&&along<10&&Math.abs(across)<2)wanted=0;}
+ moveCar(c,dt,clamp((wanted-c.speed)*.5,-1,1),clamp(-turn*1.9,-1,1));if(c.occupant){c.occupant.x=c.x;c.occupant.z=c.z;}
+ }}
+
+const dayTop=new T.Color(0x589fbd),sunsetTop=new T.Color(0x4b6379),nightTop=new T.Color(0x061726),dayHorizon=new T.Color(0xdcd6b8),sunsetHorizon=new T.Color(0xffae74),nightHorizon=new T.Color(0x142d3d),warmSun=new T.Color(0xffb369),daySun=new T.Color(0xfff2d4);
+function updateLighting(dt){const elevation=Math.sin((minutes/1440-.25)*TAU),day=clamp((elevation+.12)/.5,0,1),sunset=clamp(1-Math.abs(elevation)/.38,0,1);night=1-clamp((elevation+.18)/.32,0,1);skyUniforms.top.value.copy(dayTop).lerp(sunsetTop,sunset).lerp(nightTop,night);skyUniforms.horizon.value.copy(dayHorizon).lerp(sunsetHorizon,sunset).lerp(nightHorizon,night);skyUniforms.night.value=night;skyUniforms.sunDir.value.set(-.86,elevation,-.3).normalize();scene.fog.color.copy(skyUniforms.horizon.value).lerp(skyUniforms.top.value,.15);hemi.intensity=.45+day*.65;hemi.color.setRGB(lerp(.39,.77,day),lerp(.57,.87,day),lerp(.72,.95,day));sun.color.copy(daySun).lerp(warmSun,sunset);sun.intensity=.16+day*1.9;renderer.toneMappingExposure=.94+day*.14+sunset*.1;hemi.groundColor.setRGB(lerp(.18,.4,day)+sunset*.08,lerp(.22,.43,day)+sunset*.04,lerp(.24,.34,day));const px=started?playerRender.x:0,pz=started?playerRender.z:0,py=started?playerRender.y:0;const texel=130/sun.shadow.mapSize.x;if(sunAnchorX===null||Math.hypot(px-sunAnchorX,pz-sunAnchorZ)>4){sunAnchorX=Math.round(px/texel)*texel;sunAnchorZ=Math.round(pz/texel)*texel;}sun.position.set(sunAnchorX-190,py+240+elevation*90,sunAnchorZ-100);sun.target.position.set(sunAnchorX,py,sunAnchorZ);for(let i=0;i<buildingMats.length;i++)buildingMats[i].emissiveIntensity=.04+night*1.7;lampGlow.emissiveIntensity=.04+night*3;poolMat.opacity=night*.5;headMat.emissiveIntensity=.4+night*2;for(let i=0;i<neonMats.length;i++)neonMats[i].emissiveIntensity=.55+night*1.5;waterNight.value=night;waterMat.color.setRGB(lerp(.25,.1,night),lerp(.53,.24,night),lerp(.54,.29,night));
+ skyUniforms.time.value=renderTime;skyUniforms.moonDir.value.set(-skyUniforms.sunDir.value.x*.7,.58,-skyUniforms.sunDir.value.z*.7).normalize();
+ waterSun.value.copy(skyUniforms.sunDir.value);waterSunColor.value.copy(sun.color).multiplyScalar(1-night*.82);waterSkyHorizon.value.copy(skyUniforms.horizon.value);waterSkyTop.value.copy(skyUniforms.top.value);
+ for(const d of distantMats)d.mat.color.copy(d.base).lerp(scene.fog.color,.2).lerp(d.night,night*d.mix);
+ foamMat.opacity=.1+Math.sin(renderTime*1.35)*.035+night*.02;
+ if(qualityLevel()===2&&night>.12){let first=null,second=null,b1=1e9,b2=1e9;for(const p of lampPoints){const dx=p.x-playerRender.x,dz=p.z-playerRender.z,dist=dx*dx+dz*dz;if(dist<b1){b2=b1;second=first;b1=dist;first=p;}else if(dist<b2){b2=dist;second=p;}}const pair=[first,second];for(let i=0;i<2;i++){const l=streetLights[i],p=pair[i];if(p&&Math.sqrt(i?b2:b1)<55){l.position.set(p.x,p.y,p.z);l.intensity=night*2.1;}else{l.intensity=0;}}}
+ else for(const l of streetLights)l.intensity=0;
+ if(player.car){const c=player.car,s=Math.sin(c.yaw),co=Math.cos(c.yaw);headlight.intensity=night*3;headlight.position.set(c.root.position.x+s*2,c.root.position.y+1.3,c.root.position.z+co*2);headlight.target.position.set(c.root.position.x+s*35,groundHeight(c.root.position.x,c.root.position.z),c.root.position.z+co*35);}else headlight.intensity=0;}
+function nextMission(){if(!started||paused||player.dead)return;missionIndex=(missionIndex+1)%missions.length;missionTime=missions[missionIndex].limit;missionCooldown=0;missionStage=0;missionDefeated.clear();const m=missions[missionIndex];if(m.type==='clear')for(const a of actors)if(a.kind==='gang'&&a.crew===m.crew){a.down=0;a.health=100;}positionMarker();toast('已选择：'+m.name+' · M 切换下一项',3);refreshHUD();}
+function updateMission(dt){
+ if(missionCooldown>0){missionCooldown-=dt;if(missionCooldown<=0)nextMission();return;}
+ missionTime-=dt;const m=missions[missionIndex];let done=false,desc=m.desc||'抵达薄荷光柱，收集城市印记。M 可切换地标或街区委托。';
+ if(m.type==='clear'){let count=0;for(const a of actors)if(a.kind==='gang'&&a.crew===m.crew&&missionDefeated.has(a.index))count++;desc='击倒江南街口的赤鹰帮成员：'+count+' / 5 · 建议先拾取步枪和护甲。';done=count>=5;}
+ else if(m.type==='steal'){if(player.car===markedCar&&missionStage===0){missionStage=1;m.x=garage.x;m.z=garage.z;positionMarker();toast('目标车已接管 · 驶入 한강정비소 并停稳',4);}if(!missionStage){m.x=markedCar.x;m.z=markedCar.z;marker.position.set(m.x,groundHeight(m.x,m.z),m.z);}else{m.x=garage.x;m.z=garage.z;desc='把金色越野车送回 한강정비소，车速降至 5 km/h 以下。';}done=missionStage===1&&player.car===markedCar&&Math.hypot(player.x-garage.x,player.z-garage.z)<9&&Math.abs(markedCar.speed)<1.4;if(markedCar.health===0){markedCar.health=100;toast('委托车已紧急维修，继续交付。',3);}}
+ else if(m.type==='escape'){if(!missionStage&&Math.hypot(player.x-m.x,player.z-m.z)<9){missionStage=1;raiseHeat(Math.max(0,2-heat));spawnClock=0;lastSeen=simTime;toast('委托开始 · 甩开巡警视线，等待警戒消退',4);}desc=missionStage?'离开巡警视线 12 秒后，警戒每 8 秒降低一级。':'进入 한강정비소 光柱接受逃脱委托；警戒将升至两级。';done=missionStage===1&&heat===0;}
+ else done=Math.hypot(player.x-m.x,player.z-m.z)<8&&Math.abs(player.y-groundHeight(m.x,m.z))<8;
+ $('missionDesc').textContent=desc;
+ if(done){money+=m.reward;completed++;missionCooldown=6;toast('委托完成 · '+m.name+' · + ¥ '+m.reward,5);$('missionDesc').textContent='已到账。下一站将在 6 秒后标记；M 可立即切换。';}
+ else if(missionTime<=0){missionTime=m.limit;missionStage=0;missionDefeated.clear();if(m.type==='steal'){m.x=markedCar.x;m.z=markedCar.z;positionMarker();}toast('时限已到 · 委托重新计时',3);}
+}
+// Clip the camera against nearby solid AABBs; no per-frame raycaster arrays.
+function cameraFraction(tx,ty,tz,cx,cy,cz){
+ tempV.set(tx,ty,tz);skyDirection.set(cx-tx,cy-ty,cz-tz);const distance=skyDirection.length();if(distance<.01)return 1;skyDirection.multiplyScalar(1/distance);
+ let hit=solidRayDistance(tempV,skyDirection,distance,.32);
+ const steps=Math.ceil(distance/.45);for(let i=1;i<=steps;i++){const d=distance*i/steps;if(d>=hit)break;const x=tx+skyDirection.x*d,y=ty+skyDirection.y*d,z=tz+skyDirection.z*d;if(y<Math.max(terrainHeight(x,z),surfaceHeight(x,z))+.28){hit=Math.max(0,d-.45);break;}}
+ return hit<distance?clamp((hit-.08)/distance,0,1):1;
+}
+const cameraAnchor=new T.Vector3();
+function updateCamera(dt){
+ if(!started){const t=renderTime*.02;camera.position.set(150+Math.sin(t)*35,42+Math.sin(t*.7)*6,230+Math.cos(t)*35);lookTarget.set(-60,14,-280);camera.lookAt(lookTarget);sky.position.copy(camera.position);return;}
+ const c=player.car,aim=aiming&&!holstered&&!c&&!player.dead;shoulderBlend=lerp(shoulderBlend,aim?1:0,1-Math.exp(-dt*10));
+ const px=playerRender.x,py=playerRender.y,pz=playerRender.z;
+ const targetDist=c?clamp(zoom+Math.abs(c.speed)*.09,3,15):lerp(zoom,clamp(zoom*.55,1.8,8),shoulderBlend);
+ // Look input is applied 1:1; only the boom length uses a stiff, well-damped spring.
+ camState.yaw=camYaw;camState.pitch=camPitch;
+ const h=Math.min(dt,.05),wn=17,k=wn*wn,dmp=1.9*wn;
+ camState.velDist+=(k*(targetDist-camState.dist)-dmp*camState.velDist)*h;camState.dist+=camState.velDist*h;
+ const y=py+(c?1.4:1.32),side=shoulderBlend*.65,vertical=(c?1.9:.8)+Math.sin(camState.pitch)*camState.dist;
+ cameraAnchor.set(px,y,pz);camWant.set(px-Math.sin(camState.yaw)*camState.dist*Math.cos(camState.pitch)+Math.cos(camState.yaw)*side,y+vertical,pz-Math.cos(camState.yaw)*camState.dist*Math.cos(camState.pitch)-Math.sin(camState.yaw)*side);
+ let fraction=cameraFraction(px,y,pz,camWant.x,camWant.y,camWant.z);camWant.lerpVectors(cameraAnchor,camWant,fraction);camera.position.copy(camWant);
+ const floor=Math.max(terrainHeight(camera.position.x,camera.position.z),surfaceHeight(camera.position.x,camera.position.z))+.3;camera.position.y=Math.max(camera.position.y,floor);
+ fraction=cameraFraction(px,y,pz,camera.position.x,camera.position.y,camera.position.z);camera.position.lerpVectors(cameraAnchor,camera.position,fraction);
+ const turn=c?-c.steer*clamp(Math.abs(c.speed)/24,0,1)*.55:0,heading=camState.yaw+turn,ahead=c?4+Math.abs(c.speed)*.32:3.5;
+ lookTarget.set(px+Math.sin(heading)*ahead,py+(c?1.6:1.8),pz+Math.cos(heading)*ahead);
+ tempV.set(px+Math.sin(camState.yaw)*35,py+1.4-Math.sin(camState.pitch)*35,pz+Math.cos(camState.yaw)*35);lookTarget.lerp(tempV,shoulderBlend);
+ const bob=bobEnabled&&!c&&player.grounded&&!player.dead?(Math.cos(player.phase*2)*.012+Math.sin(player.phase)*.005)*playerRig.motion.weight*(1+playerRig.motion.gait*.2)*(1-shoulderBlend*.85):0;
+ lookTarget.y+=bob;camera.lookAt(lookTarget);
+ if(recoilPitch||recoilYaw)camera.rotateX(recoilPitch),camera.rotateY(recoilYaw);
+ if(camShakeTime>0){const shake=camShake*(camShakeTime/.32);camera.position.x+=Math.sin(renderTime*71.3)*shake;camera.position.y+=Math.sin(renderTime*93.7)*shake*.7;camera.rotation.z+=Math.sin(renderTime*57.1)*shake*.035;}
+ sky.position.copy(camera.position);
+}
+function resize(){renderer.setPixelRatio(Math.min(devicePixelRatio||1,Q[qualityLevel()].ratio));renderer.setSize(innerWidth,innerHeight);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();}window.addEventListener('resize',resize);
+const FIXED_DT=1/60;
+const playerPrev={x:-40,z:-770,y:0,yaw:PI},playerRender={x:-40,z:-770,y:0,yaw:PI};
+let accumulator=0,renderTime=0,stepCount=0,lastTime=performance.now(),qualityAccum=0,qualityFrames=0,qualityClock=0,qualityLastSwitch=-10;
+function snapPlayer(){playerPrev.x=player.x;playerPrev.z=player.z;playerPrev.y=player.y;playerPrev.yaw=player.yaw;}
+function snapCars(){for(const c of cars){c.px=c.x;c.pz=c.z;c.py=surfaceHeight(c.x,c.z);c.pyaw=c.yaw;c.proll=c.roll;}}
+function fixedStep(dt){
+ stepCount++;
+ simTime+=dt;
+ if(started){minutes=(minutes+dt*1.7)%1440;lookDelay=Math.max(0,lookDelay-dt);impactCooldown=Math.max(0,impactCooldown-dt);
+  if(!player.dead){if(player.car)carMotion(dt);else playerMotion(dt);updateMission(dt);}else{poseRig(playerRig,0,0,simTime,false,false,0,-1,Math.min(1,(4-player.dead)*2));}
+  trafficMotion(dt);updateCombat(dt);if(toastTime>0){toastTime-=dt;if(toastTime<=0)$('toast').classList.remove('show');}
+ }else trafficMotion(dt);
+ updateActors(dt,simTime);
+}
+function renderFrame(alpha,dt){
+ playerRender.x=lerp(playerPrev.x,player.x,alpha);playerRender.z=lerp(playerPrev.z,player.z,alpha);playerRender.y=lerp(playerPrev.y,player.y,alpha);playerRender.yaw=playerPrev.yaw+angleDelta(playerPrev.yaw,player.yaw)*alpha;
+ if(!player.car&&playerRoot.visible){playerRoot.position.set(playerRender.x,playerRender.y,playerRender.z);playerRoot.rotation.y=playerRender.yaw;}
+ for(const c of cars){if(!c.active)continue;c.root.position.set(lerp(c.px,c.x,alpha),lerp(c.py,surfaceHeight(c.x,c.z),alpha),lerp(c.pz,c.z,alpha));c.root.rotation.y=c.pyaw+angleDelta(c.pyaw,c.yaw)*alpha;c.body.rotation.z=lerp(c.proll,c.roll,alpha);}
+ updateVehicleWheels();updateContactShadows();updateLighting();updateCamera(dt);updateGroundDetails();
+ const reticleGap=6+shotSpread*26+clamp(player.motionSpeed/6.5,0,1)*5+(firing?2:0);$('crosshair').style.setProperty('--spread',reticleGap.toFixed(1)+'px');
+}
+function frame(now){
+ requestAnimationFrame(frame);
+ const rawDt=Math.min((now-lastTime)/1000,.25);lastTime=now;
+ if(paused)return;
+ renderTime+=rawDt;waterTime.value=renderTime;
+ accumulator+=rawDt;let steps=0;
+ while(accumulator>=FIXED_DT&&steps<4){snapPlayer();snapCars();fixedStep(FIXED_DT);accumulator-=FIXED_DT;steps++;}
+ if(steps>=4)accumulator=0;
+ renderFrame(accumulator/FIXED_DT,rawDt);
+ gem.rotation.y=renderTime*.9;gem.position.y=7+Math.sin(renderTime*2)*.65;ring.scale.setScalar(1+Math.sin(renderTime*2)*.07);beamMat.opacity=.13+Math.sin(renderTime*1.5)*.035;
+ qualityAccum+=rawDt;qualityFrames++;if(qualityAccum>=1){const avg=qualityAccum/qualityFrames*1000;qualityAccum=0;qualityFrames=0;qualityClock+=1;if(quality.mode==='auto'&&qualityClock-qualityLastSwitch>1.5){if(avg>20&&quality.level>0){quality.level--;applyQuality();qualityLastSwitch=qualityClock;}else if(avg<13&&quality.level<2){quality.level++;applyQuality();qualityLastSwitch=qualityClock;}}}
+ uiTick+=rawDt;if(uiTick>.1){uiTick=0;if(started){if(!player.car)findNearestCar();refreshHUD();}}
+ if(fpsVisible){fpsAccum+=rawDt;fpsCount++;if(fpsAccum>=.25){$('fps').textContent=Math.round(fpsCount/fpsAccum)+' FPS · '+(fpsAccum/fpsCount*1000).toFixed(1)+' ms';fpsAccum=0;fpsCount=0;}}
+ renderer.render(scene,camera);
+}
+validateSpawns();snapPlayer();snapCars();updateActors(0,0);updateLighting();updateVehicleWheels();refreshHUD();$('start').disabled=false;$('start').innerHTML='启程，入夜 <span>↗</span>';requestAnimationFrame(frame);
+} catch(e){console.error(e);error.style.display='block';error.textContent='三维场景初始化失败：'+e.message+'。请使用支持 WebGL 的浏览器。';$('start').disabled=true;$('start').textContent='暂时无法启程';}
+})();
+</script>
+
