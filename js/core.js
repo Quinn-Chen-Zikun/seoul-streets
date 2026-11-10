@@ -76,9 +76,9 @@ window.SN = {};
     SN.canvas = SN.$("world");
     SN.quality = { mode: "auto", level: 2 };
     SN.Q = [
-      { ratio: 1, shadows: 0, map: 1024, far: 2200, fogNear: 420, fogFar: 1500 },
-      { ratio: 1.25, shadows: 1, map: 1536, far: 2800, fogNear: 520, fogFar: 1800 },
-      { ratio: 1.5, shadows: 1, map: 2048, far: 3500, fogNear: 650, fogFar: 2200 }
+      { ratio: 1, shadows: 0, map: 1024, far: 2200, fogNear: 650, fogFar: 1900 },
+      { ratio: 1.25, shadows: 1, map: 1536, far: 2800, fogNear: 780, fogFar: 2400 },
+      { ratio: 1.5, shadows: 1, map: 2048, far: 3500, fogNear: 900, fogFar: 3000 }
     ];
   });
 })(window.SN);

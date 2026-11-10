@@ -1042,7 +1042,7 @@
     for (const k in p)
       if (k !== "uvScale" && k !== "uvScaleY" && k !== "normalStrength" && k !== "shaderHook")
         opts[k] = p[k];
-    const m = SN.mat(SN.srgb(color), opts);
+    const m = SN.mat(color, opts);
     const ns = p.normalStrength === undefined ? 0.55 : p.normalStrength;
     m.normalScale.set(ns, ns);
     const sx = p.uvScale === undefined ? 0.3 : p.uvScale, sy = p.uvScaleY === undefined ? sx : p.uvScaleY;
@@ -1108,7 +1108,7 @@
       SN.dummy.updateMatrix();
       mesh.setMatrixAt(i, SN.dummy.matrix);
       if (p.color !== null && p.color !== undefined)
-        mesh.setColorAt(i, new SN.T.Color(p.color));
+        mesh.setColorAt(i, SN.tintColor.setHex(p.color).convertSRGBToLinear());
       const r = Math.hypot(p.sx, p.sy, p.sz);
       bounds.expandByPoint(v.set(p.x - r, p.y - r, p.z - r));
       bounds.expandByPoint(v.set(p.x + r, p.y + r, p.z + r));
@@ -1198,7 +1198,7 @@
       normals.set(a.normal.array, offset * 3);
       if (a.uv)
         uvs.set(a.uv.array, offset * 2);
-      tint.set(part.color === null || part.color === undefined ? 0xffffff : part.color);
+      tint.set(part.color === null || part.color === undefined ? 0xffffff : part.color).convertSRGBToLinear();
       for (let i = offset; i < offset + n; i++) {
         colors[i * 3] = tint.r;
         colors[i * 3 + 1] = tint.g;
@@ -1278,6 +1278,7 @@
   SN.registerInit(3, function initializeMaterials3() {
     SN.dummy = new SN.T.Object3D();
     SN.tempV = new SN.T.Vector3();
+    SN.tintColor = new SN.T.Color();
     SN.lookTarget = new SN.T.Vector3();
     SN.camTarget = new SN.T.Vector3();
     SN.camWant = new SN.T.Vector3();
@@ -1293,7 +1294,10 @@
     // key light, otherwise every standard material is lifted by a flat white ambient.
     SN.envMats = [];
     SN.mat = (color, extra) => {
-      const opts = Object.assign({ color, roughness: 0.85 }, extra);
+      const opts = Object.assign({ roughness: 0.85 }, extra);
+      // Every hex colour in the project is authored in sRGB. Material colours must
+      // be linear in r128, otherwise they render pale and desaturated after sRGB output.
+      opts.color = SN.srgb(color);
       if (opts.envMapIntensity === undefined)
         opts.envMapIntensity = (opts.metalness || 0) > 0.45 ? 0.9 : 0.3;
       const m = new SN.T.MeshStandardMaterial(opts);

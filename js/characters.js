@@ -11,7 +11,7 @@
   SN.clothMaterial = function clothMaterial(color) {
     if (!SN.clothPartMaterials.has(color)) {
       const m = new SN.T.MeshStandardMaterial({
-        color,
+        color: SN.srgb(color),
         map: SN.fabricSurface.map,
         normalMap: SN.fabricSurface.normalMap,
         roughnessMap: SN.fabricSurface.roughnessMap,
@@ -29,7 +29,7 @@
   SN.skinMaterial = function skinMaterial(color) {
     if (!SN.skinPartMaterials.has(color)) {
       const m = new SN.T.MeshStandardMaterial({
-        color,
+        color: SN.srgb(color),
         map: SN.skinSurface.map,
         normalMap: SN.skinSurface.normalMap,
         roughnessMap: SN.skinSurface.roughnessMap,
@@ -47,7 +47,7 @@
   SN.hairMaterial = function hairMaterial(color) {
     if (!SN.hairPartMaterials.has(color)) {
       const m = new SN.T.MeshStandardMaterial({
-        color,
+        color: SN.srgb(color),
         map: SN.hairSurface.map,
         normalMap: SN.hairSurface.normalMap,
         roughnessMap: SN.hairSurface.roughnessMap,
@@ -64,7 +64,7 @@
 
   SN.printPartMaterial = function printPartMaterial(color) {
     if (!SN.printPartMaterials.has(color))
-      SN.printPartMaterials.set(color, new SN.T.MeshStandardMaterial({ map: SN.printTexture, color, transparent: true, roughness: 0.88, side: SN.T.DoubleSide }));
+      SN.printPartMaterials.set(color, new SN.T.MeshStandardMaterial({ map: SN.printTexture, color: SN.srgb(color), transparent: true, roughness: 0.88, side: SN.T.DoubleSide }));
     return SN.printPartMaterials.get(color);
   };
 
@@ -553,7 +553,7 @@
           continue;
         const i = batch.count++;
         batch.mesh.setMatrixAt(i, p.mesh.matrixWorld);
-        batch.mesh.setColorAt(i, p.colorObject);
+        batch.mesh.setColorAt(i, SN.tintColor.copy(p.colorObject).convertSRGBToLinear());
       }
     }
     for (const b of SN.npcBatches) {

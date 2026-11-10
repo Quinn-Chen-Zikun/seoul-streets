@@ -1850,7 +1850,7 @@
       c.active = false;
       c.root.visible = false;
       c.team = police ? -1 : (i - 6) % SN.crews.length;
-      c.paint.color.setHex(police ? 0xd3e3e7 : SN.crews[c.team].color);
+      c.paint.color.setHex(police ? 0xd3e3e7 : SN.crews[c.team].color).convertSRGBToLinear();
       SN.pursuitCars.push(c);
     }
     SN.roadblocks = [];
@@ -1861,7 +1861,7 @@
       car.active = false;
       car.root.visible = false;
       car.roadblockCar = true;
-      car.paint.color.setHex(0xd3e3e7);
+      car.paint.color.setHex(0xd3e3e7).convertSRGBToLinear();
       const cones = new SN.T.Group();
       cones.visible = false;
       SN.scene.add(cones);

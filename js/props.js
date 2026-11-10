@@ -221,7 +221,7 @@
       SN.dummy.updateMatrix();
       SN.groundDetails.setMatrixAt(count, SN.dummy.matrix);
       const c = SN.groundDetails.instanceColor ? SN.groundDetails.instanceColor : null;
-      SN.groundDetails.setColorAt(count, new SN.T.Color().setHSL(0.26 + SN.rand(-0.03, 0.03), 0.5, SN.rand(0.14, 0.25)));
+      SN.groundDetails.setColorAt(count, SN.tintColor.setHSL(0.26 + SN.rand(-0.03, 0.03), 0.5, SN.rand(0.14, 0.25)).convertSRGBToLinear());
       count++;
     }
     SN.groundDetails.count = count;
@@ -316,7 +316,7 @@
     }
     // Promenade benches are generated along each bank path below, so they always sit on land.
     // Yeouido: a low green island carrying its own glass cluster.
-    SN.yeouidoMesh = SN.meshAt(new SN.T.CylinderGeometry(1, 1, 1, 40), SN.mat(SN.srgb(0x6f8a58)), SN.island.x, 0.05, SN.island.z, SN.island.rx, 1.75, SN.island.rz);
+    SN.yeouidoMesh = SN.meshAt(new SN.T.CylinderGeometry(1, 1, 1, 40), SN.mat(0x6f8a58), SN.island.x, 0.05, SN.island.z, SN.island.rx, 1.75, SN.island.rz);
     SN.yeouidoMesh.castShadow = false;
     for (let i = 0; i < 90; i++) {
       const a = SN.rnd() * SN.TAU, r = Math.sqrt(SN.rnd());

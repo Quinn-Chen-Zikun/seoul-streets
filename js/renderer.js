@@ -53,7 +53,7 @@
       SN.composer.addPass(SN.postSsaoPass);
     }
     if (SN.T.UnrealBloomPass) {
-      SN.postBloomPass = new SN.T.UnrealBloomPass(new SN.T.Vector2(width, height), 0.34, 0.55, 0.8);
+      SN.postBloomPass = new SN.T.UnrealBloomPass(new SN.T.Vector2(width, height), 0.22, 0.4, 0.84);
       SN.composer.addPass(SN.postBloomPass);
     }
     SN.postGradePass = new SN.T.ShaderPass(SN.GradeShader);
@@ -85,8 +85,8 @@
     }
     if (SN.postBloomPass) {
       SN.postBloomPass.enabled = SN.postActive;
-      SN.postBloomPass.strength = level >= 2 ? 0.3 : 0.2;
-      SN.postBloomPass.threshold = level >= 2 ? 0.85 : 0.92;
+      SN.postBloomPass.strength = level >= 2 ? 0.22 : 0.13;
+      SN.postBloomPass.threshold = level >= 2 ? 0.86 : 0.92;
     }
     if (SN.postGradePass)
       SN.postGradePass.enabled = SN.postActive;
@@ -231,14 +231,17 @@
     SN.skyUniforms.night.value = SN.night;
     SN.skyUniforms.sunDir.value.set(Math.cos(solarAngle), elevation, 0.22 * elevation).normalize();
     // Blue-grey aerial perspective, warmed only at the horizon near sunset.
-    SN.scene.fog.color.copy(SN.skyUniforms.horizon.value).lerp(SN.skyUniforms.top.value, 0.32).convertSRGBToLinear();
-    SN.scene.fog.color.lerp(SN.hazeLinear, 0.17 * (1 - SN.night * 0.75));
-    SN.hemi.intensity = 0.09 + day * 0.33 + sunset * 0.035;
-    SN.hemi.color.setRGB(SN.lerp(0.26, 0.6, day), SN.lerp(0.34, 0.73, day), SN.lerp(0.46, 0.86, day));
-    SN.hemi.groundColor.setRGB(SN.lerp(0.055, 0.28, day) + sunset * 0.045, SN.lerp(0.06, 0.255, day) + sunset * 0.025, SN.lerp(0.07, 0.215, day));
+    SN.scene.fog.color.copy(SN.skyUniforms.horizon.value).lerp(SN.skyUniforms.top.value, 0.4).convertSRGBToLinear();
+    SN.scene.fog.color.lerp(SN.hazeLinear, 0.1 * (1 - SN.night * 0.8));
+    // Ambient sky fill stays well under the key light; otherwise shadows flatten
+    // and every surface reads as the same pale grey.
+    SN.hemi.intensity = 0.08 + day * 0.3 + sunset * 0.05;
+    SN.hemi.color.setRGB(SN.lerp(0.26, 0.58, day), SN.lerp(0.34, 0.71, day), SN.lerp(0.46, 0.85, day));
+    SN.hemi.color.lerp(SN.warmSun, sunset * 0.3);
+    SN.hemi.groundColor.setRGB(SN.lerp(0.055, 0.27, day) + sunset * 0.045, SN.lerp(0.06, 0.245, day) + sunset * 0.025, SN.lerp(0.07, 0.205, day));
     SN.sun.color.copy(SN.daySun).lerp(SN.warmSun, sunset);
-    SN.sun.intensity = day * (0.2 + 2.2 * Math.sqrt(Math.max(0, elevation)));
-    SN.renderer.toneMappingExposure = 0.86 + day * 0.15 + sunset * 0.055;
+    SN.sun.intensity = day * (0.24 + 2.35 * Math.sqrt(Math.max(0, elevation))) + sunset * 0.55;
+    SN.renderer.toneMappingExposure = 0.9 + day * 0.13 + sunset * 0.05;
     const px = SN.started ? SN.playerRender.x : 0,
       pz = SN.started ? SN.playerRender.z : 0,
       py = SN.started ? SN.playerRender.y : 0;
@@ -414,7 +417,7 @@
     SN.scene = new SN.T.Scene();
     SN.headlight = new SN.T.SpotLight(0xffe6be, 0, 90, Math.PI / 5, 0.65, 1.2);
     SN.scene.add(SN.headlight, SN.headlight.target);
-    SN.scene.fog = new SN.T.Fog(0xc3c6bd, 650, 2200);
+    SN.scene.fog = new SN.T.Fog(0xbfd8ea, 900, 3000);
     SN.camera = new SN.T.PerspectiveCamera(65, innerWidth / innerHeight, 0.08, 3500);
     SN.hemi = new SN.T.HemisphereLight(0xc5dfef, 0x5f6854, 0.9);
     SN.scene.add(SN.hemi);
@@ -451,28 +454,34 @@
         tDiffuse: { value: null },
         uTime: { value: 0 },
         uResolution: { value: new SN.T.Vector2(1, 1) },
-        uGrain: { value: 0.02 },
-        uVignette: { value: 0.32 },
+        uGrain: { value: 0.012 },
+        uVignette: { value: 0.24 },
         uBlur: { value: 0 },
-        uContrast: { value: 0.08 },
-        uSaturation: { value: 0.94 }
+        uContrast: { value: 0.1 },
+        uSaturation: { value: 1.05 }
       },
       vertexShader: "varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}",
       fragmentShader: `uniform sampler2D tDiffuse;uniform float uTime,uGrain,uVignette,uBlur,uContrast,uSaturation;uniform vec2 uResolution;varying vec2 vUv;
 float filmHash(vec2 p){p=fract(p*vec2(443.897,441.423));p+=dot(p,p.yx+19.19);return fract(p.x*p.y);}
 vec3 motionSample(vec2 uv,float amount){vec3 sum=vec3(0.);float total=0.;for(int i=0;i<6;i++){float t=float(i)/5.;float w=1.-t*.62;sum+=texture2D(tDiffuse,uv-(uv-.5)*amount*.05*t).rgb*w;total+=w;}return sum/total;}
+// The scene pass is already ACES tone mapped by the renderer and written to the
+// composer target in linear space (render targets skip outputEncoding in r128).
+// Encode exactly once here with the same sRGB curve the renderer uses when post
+// is off, so 低画质 and 中/高画质 agree.
+vec3 linearToSRGB(vec3 c){c=max(c,vec3(0.));return mix(c*12.92,1.055*pow(c,vec3(1./2.4))-.055,step(vec3(.0031308),c));}
 void main(){
  vec3 c=uBlur>.001?motionSample(vUv,uBlur):texture2D(tDiffuse,vUv).rgb;
+ c=linearToSRGB(c);
+ // Contrast and saturation belong in display space, not in linear radiance.
  float lum=dot(c,vec3(.2126,.7152,.0722));
  c=mix(c,c*c*(3.-2.*c),uContrast);
- c=mix(vec3(lum),c,1.-uSaturation);
- c*=vec3(1.028,1.,.968);
- c=pow(max(c,vec3(0.)),vec3(1./2.2));
- float vig=smoothstep(1.18,.32,length(vUv-.5)*1.42);
+ c=mix(vec3(lum),c,uSaturation);
+ c*=vec3(1.018,1.,.982);
+ float vig=1.-smoothstep(.42,1.02,length(vUv-.5)*1.35);
  c*=mix(1.,vig,uVignette);
  float grain=filmHash(vUv*uResolution+fract(uTime)*97.3)*2.-1.;
- c+=grain*uGrain*(.55+.45*(1.-lum));
- gl_FragColor=vec4(c,1.);
+ c+=grain*uGrain*(.6+.4*(1.-lum));
+ gl_FragColor=vec4(clamp(c,0.,1.),1.);
 }`
     };
     // Depth-only AO keeps the frame cost low: the scene is rendered once, then twelve
@@ -617,8 +626,8 @@ void main(){
     // the shared glow sprite material is created.
     // Procedural sky and a generated reflection environment; no image assets.
     SN.skyUniforms = {
-      top: { value: new SN.T.Color(0x397b91) },
-      horizon: { value: new SN.T.Color(0xf8bc88) },
+      top: { value: new SN.T.Color(0x3a7cbf) },
+      horizon: { value: new SN.T.Color(0xbfd8ea) },
       night: { value: 0 },
       sunDir: { value: new SN.T.Vector3(-0.85, 0.2, -0.35) },
       moonDir: { value: new SN.T.Vector3(0.55, 0.42, 0.72) },
@@ -638,7 +647,7 @@ void main(){
  // Rayleigh-ish gradient: warm, bright horizon fading to a deeper ozone-blue zenith.
  vec3 c=mix(horizon,top,pow(h,.58));
  c+=vec3(.018,.04,.075)*pow(h,1.7)*(1.-night*.55);
- c=mix(c,horizon*1.015+vec3(.012,.016,.018),pow(1.-h,7.)*.4);
+ c=mix(c,horizon*1.01+vec3(.01,.02,.035),pow(1.-h,7.)*.22);
  vec3 sd=normalize(sunDir);float s=dot(d,sd),sunAmt=max(s,0.);
  // Mie forward scatter and a physically small solar disc.
  c+=vec3(1.,.6,.28)*pow(sunAmt,10.)*.38*(1.-night);
@@ -736,15 +745,15 @@ void main(){
   // Startup phase 49: keep this order relative to the other systems.
 
   SN.registerInit(49, function initializeRenderer49() {
-    SN.dayTop = new SN.T.Color(0x4b8cae);
-    SN.sunsetTop = new SN.T.Color(0x40586d);
-    SN.nightTop = new SN.T.Color(0x06121f);
-    SN.dayHorizon = new SN.T.Color(0xbcc7c6);
-    SN.sunsetHorizon = new SN.T.Color(0xdb9d73);
-    SN.nightHorizon = new SN.T.Color(0x173040);
-    SN.warmSun = new SN.T.Color(0xffae68);
-    SN.daySun = new SN.T.Color(0xfff1d6);
-    SN.hazeLinear = new SN.T.Color(0x93a6ad).convertSRGBToLinear();
+    SN.dayTop = new SN.T.Color(0x3a7cbf);
+    SN.sunsetTop = new SN.T.Color(0x4a5f7a);
+    SN.nightTop = new SN.T.Color(0x061426);
+    SN.dayHorizon = new SN.T.Color(0xbfd8ea);
+    SN.sunsetHorizon = new SN.T.Color(0xe0a071);
+    SN.nightHorizon = new SN.T.Color(0x152c40);
+    SN.warmSun = new SN.T.Color(0xffb066);
+    SN.daySun = new SN.T.Color(0xfff2d8);
+    SN.hazeLinear = new SN.T.Color(0x8fa8bb).convertSRGBToLinear();
     SN.fogTmp = new SN.T.Color();
     // T retains time preview controls; the shared solar clock continues from each.
     SN.timePresets = [

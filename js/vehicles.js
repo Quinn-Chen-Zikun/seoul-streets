@@ -33,7 +33,7 @@
       c.root.remove(wheel.pivot);
     c.wheels.length = 0;
     const color = type === 3 ? (c.serial % 2 ? 0xe99738 : 0xc7cdd1) : type === 6 ? 0x397d9d : type === 9 ? 0xd3e3e7 : type === 10 ? 0x225d5b : type === 11 ? 0x753e36 : SN.carColors[c.serial % SN.carColors.length];
-    c.paint.color.setHex(color);
+    c.paint.color.setHex(color).convertSRGBToLinear();
     SN.meshAt(geo.body, c.paint, 0, 0, 0, 1, 1, 1, 0, body);
     const glass = SN.meshAt(geo.glass, SN.glassMat, 0, 0, 0, 1, 1, 1, 0, body);
     glass.castShadow = false;

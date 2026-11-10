@@ -74,7 +74,7 @@
 
   SN.applyCostume = function applyCostume() {
     const wearing = SN.campaign.costume !== "street",
-      shade = SN.campaign.costume === "dawn" ? 0x424b50 : SN.campaign.costume === "ash" ? 0x343d40 : SN.campaign.costume === "rain" ? 0x2d3642 : SN.campaign.costume === "route" ? 0x383933 : 0x242b31;
+      shade = SN.campaign.costume === "dawn" ? 0x4e5359 : SN.campaign.costume === "ash" ? 0x41494c : SN.campaign.costume === "rain" ? 0x33465c : SN.campaign.costume === "route" ? 0x453f33 : 0x2f3b4a;
     for (const saved of SN.wardrobe.base) {
       const part = saved.part, hand = part.geoName === "handGrip" || part.geoName === "handOpen";
       part.mesh.material = wearing && (part.matType === "cloth" || hand) ? (hand ? SN.actorMaterial(0x171d22, 0.94) : SN.clothMaterial(shade)) : saved.material;
@@ -83,7 +83,7 @@
     for (const mesh of SN.wardrobe.extras)
       mesh.visible = wearing;
     if (SN.wardrobe.accent)
-      SN.wardrobe.accent.color.setHex(SN.campaign.costume === "dawn" ? 0x9b9c8c : SN.campaign.costume === "ash" ? 0x858e98 : SN.campaign.costume === "rain" ? 0x7c96a6 : SN.campaign.costume === "route" ? 0xb19e7c : 0x536e76);
+      SN.wardrobe.accent.color.setHex(SN.campaign.costume === "dawn" ? 0xb0a98f : SN.campaign.costume === "ash" ? 0x929aa2 : SN.campaign.costume === "rain" ? 0x7fa6bd : SN.campaign.costume === "route" ? 0xc0a474 : 0x629aa4).convertSRGBToLinear();
     SN.setText("costumeName", SN.costumeLabel(SN.campaign.costume) + " · K 切换");
     SN.updateWeaponVisuals();
   };
@@ -1737,9 +1737,9 @@
     SN.missionCar.active = false;
     SN.missionCar.root.visible = false;
     SN.missionCar.marked = true;
-    SN.missionCar.paint.color.setHex(0x957052);
+    SN.missionCar.paint.color.setHex(0x957052).convertSRGBToLinear();
     SN.loanCar = SN.makeCar(-66, -766, SN.PI / 2, true, null, 0, 3);
-    SN.loanCar.paint.color.setHex(0xb9a373);
+    SN.loanCar.paint.color.setHex(0xb9a373).convertSRGBToLinear();
     SN.marker = new SN.T.Group();
     SN.scene.add(SN.marker);
     SN.beamMat = new SN.T.MeshBasicMaterial({

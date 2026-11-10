@@ -546,7 +546,7 @@
         SN.dummy.scale.set(it.sx, it.sy, it.sz);
         SN.dummy.updateMatrix();
         mesh.setMatrixAt(i, SN.dummy.matrix);
-        mesh.setColorAt(i, it.tint);
+        mesh.setColorAt(i, SN.tintColor.copy(it.tint).convertSRGBToLinear());
       }
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor)
