@@ -1,17 +1,27 @@
 /* 剧情人物、任务、对话、换装与进度存档。 */
 "use strict";
 (function (SN) {
+  SN.costumeStyles = {
+    street: { outer: 0x137fba, inner: 0xffd259, pants: 0x365d83, accent: 0xffd259, shoe: 0x2f3a44, extras: [] },
+    night: { outer: 0x284b70, inner: 0x1d3049, pants: 0x23354d, accent: 0x56dbed, shoe: 0x23354d, extras: ["armor", "helmet", "coat"] },
+    rain: { outer: 0x2b9ac4, inner: 0xf7d764, pants: 0x33495c, accent: 0xffd75e, shoe: 0xefd35b, extras: ["hood", "coat"] },
+    ash: { outer: 0xe0e5dd, inner: 0x485764, pants: 0x586677, accent: 0xe68168, shoe: 0x384451, extras: ["armor"] },
+    route: { outer: 0xe58a39, inner: 0xffedc9, pants: 0x2c4b65, accent: 0xf8dc84, shoe: 0x51453d, extras: ["pack"] },
+    dawn: { outer: 0xf2dfb4, inner: 0xe8eee0, pants: 0x644956, accent: 0xda6955, shoe: 0xddd4bc, extras: ["scarf"] }
+  };
   SN.buildWardrobe = function buildWardrobe() {
     for (const part of SN.playerRig.parts)
       SN.wardrobe.base.push({ part, material: part.mesh.material, visible: part.mesh.visible });
-    const armor = SN.mat(0x262d32, { roughness: 0.95, metalness: 0.08 }),
-      cloth = SN.mat(0x171d23, { roughness: 1, side: SN.T.DoubleSide }),
+    const armor = SN.mat(0x425d78, { roughness: 0.95, metalness: 0.08 }),
+      cloth = SN.mat(0x344c66, { roughness: 1, side: SN.T.DoubleSide }),
       edge = SN.mat(0x737e7f, { roughness: 0.7 }),
       visor = SN.mat(0x536e76, { metalness: 0.45, roughness: 0.3, emissive: 0x29454b, emissiveIntensity: 0.2 });
     SN.wardrobe.accent = visor;
+    SN.wardrobe.materials = { armor, cloth, edge, visor };
     const add = (parent, geo, material, x, y, z, sx, sy, sz, rz = 0) => {
       const mesh = SN.meshAt(geo, material, x, y, z, sx, sy, sz, 0, parent);
       mesh.rotation.z = rz;
+      mesh.userData.lookRole = parent === SN.playerRig.head ? "helmet" : "armor";
       SN.wardrobe.extras.push(mesh);
       return mesh;
     };
@@ -63,28 +73,41 @@
         panel.castShadow = true;
         pivot.add(panel);
         chain.push(pivot);
-        if (i === 0)
+        if (i === 0) {
+          pivot.userData.lookRole = "coat";
           SN.wardrobe.extras.push(pivot);
+        }
         parent = pivot;
       }
       SN.wardrobe.chains.push(chain);
     }
+    const hood = add(SN.playerRig.torso, SN.rigGeo.sphere, cloth, 0, 0.42, -0.16, 0.18, 0.16, 0.16);
+    hood.userData.lookRole = "hood";
+    const pack = add(SN.playerRig.torso, SN.roundedBox(0.32, 0.42, 0.19, 0.04), armor, 0, 0.2, -0.25, 1, 1, 1);
+    pack.userData.lookRole = "pack";
+    const scarf = add(SN.playerRig.torso, SN.box, edge, 0, 0.44, 0, 0.3, 0.09, 0.2);
+    scarf.userData.lookRole = "scarf";
+    const tail = add(SN.playerRig.torso, SN.box, edge, -0.09, 0.25, 0.16, 0.1, 0.35, 0.035);
+    tail.userData.lookRole = "scarf";
     SN.applyCostume();
   };
 
   SN.applyCostume = function applyCostume() {
-    const wearing = SN.campaign.costume !== "street",
-      shade = SN.campaign.costume === "dawn" ? 0x424b50 : SN.campaign.costume === "ash" ? 0x343d40 : SN.campaign.costume === "rain" ? 0x2d3642 : SN.campaign.costume === "route" ? 0x383933 : 0x242b31;
+    const wearing = SN.campaign.costume !== "street", style = SN.costumeStyles[SN.campaign.costume] || SN.costumeStyles.street;
+    const helmet = style.extras.includes("helmet");
     for (const saved of SN.wardrobe.base) {
       const part = saved.part, hand = part.geoName === "handGrip" || part.geoName === "handOpen";
-      part.mesh.material = wearing && (part.matType === "cloth" || hand) ? (hand ? SN.actorMaterial(0x171d22, 0.94) : SN.clothMaterial(shade)) : saved.material;
-      part.mesh.visible = saved.visible && !(wearing && (part.matType === "hair" || part.matType === "eye" || part.matType === "glass" || part.geoName === "print"));
+      const tone = style[part.wardrobeTone];
+      part.mesh.material = wearing && hand ? SN.actorMaterial(0xe3dfcf, 0.94) : wearing && part.matType === "cloth" && tone !== undefined ? SN.clothMaterial(tone) : saved.material;
+      part.mesh.visible = saved.visible && !(helmet && (part.matType === "hair" || part.matType === "eye" || part.matType === "glass"));
     }
     for (const mesh of SN.wardrobe.extras)
-      mesh.visible = wearing;
-    if (SN.wardrobe.accent)
-      SN.wardrobe.accent.color.setHex(SN.campaign.costume === "dawn" ? 0x9b9c8c : SN.campaign.costume === "ash" ? 0x858e98 : SN.campaign.costume === "rain" ? 0x7c96a6 : SN.campaign.costume === "route" ? 0xb19e7c : 0x536e76);
+      mesh.visible = style.extras.includes(mesh.userData.lookRole);
+    if (SN.wardrobe.materials) for (const [key, material] of Object.entries(SN.wardrobe.materials))
+      material.color.copy(SN.srgb(key === "visor" || key === "edge" ? style.accent : style.outer));
     SN.setText("costumeName", SN.costumeLabel(SN.campaign.costume) + " · K 切换");
+    SN.applyCityLook();
+    if (SN.models && SN.models.applyPlayerOutfit) SN.models.applyPlayerOutfit();
     SN.updateWeaponVisuals();
   };
 
@@ -100,7 +123,7 @@
   };
 
   SN.cycleCostume = function cycleCostume() {
-    if (!SN.canControl())
+    if (!SN.canControl() && !(SN.pauseOpen && !SN.player.dead && !SN.arrestState))
       return;
     const index = SN.campaign.unlocks.indexOf(SN.campaign.costume);
     SN.campaign.costume = SN.campaign.unlocks[(index + 1) % SN.campaign.unlocks.length];
@@ -204,32 +227,37 @@
     const next = SN.storyMissions[SN.campaign.progress];
     for (let i = 0; i < SN.storyNpcs.length; i++) {
       const npc = SN.storyNpcs[i], c = npc.contact, d = Math.hypot(SN.player.x - c.x, SN.player.z - c.z), visible = d < 140;
-      npc.rig.root.visible = visible;
+      const modeled = !!npc.modelAgent;
+      npc.rig.root.visible = visible && !modeled;
       npc.tag.visible = npc.diamond.visible = visible;
       if (!visible)
         continue;
-      npc.rig.root.position.set(c.x, SN.groundUnder(c.x, c.z, 0.2), c.z);
-      npc.rig.root.rotation.y = d < 6 ? Math.atan2(SN.player.x - c.x, SN.player.z - c.z) : c.yaw;
-      SN.poseRig(npc.rig, 0, 0, time + i, false, false, 0, -1);
-      npc.rig.arms[0].lower.rotation.x = -0.25 - Math.sin(time * 0.7 + i) * 0.12;
-      npc.tag.position.set(c.x, npc.rig.root.position.y + 2.55, c.z);
-      npc.diamond.position.set(c.x, npc.rig.root.position.y + 2.05 + Math.sin(time * 2 + i) * 0.07, c.z);
+      const groundY = SN.groundUnder(c.x, c.z, 0.2);
+      if (!modeled) {
+        npc.rig.root.position.set(c.x, groundY, c.z);
+        npc.rig.root.rotation.y = d < 6 ? Math.atan2(SN.player.x - c.x, SN.player.z - c.z) : c.yaw;
+        SN.poseRig(npc.rig, 0, 0, time + i, false, false, 0, -1);
+        npc.rig.arms[0].lower.rotation.x = -0.25 - Math.sin(time * 0.7 + i) * 0.12;
+      }
+      npc.tag.position.set(c.x, groundY + 2.55, c.z);
+      npc.diamond.position.set(c.x, groundY + 2.05 + Math.sin(time * 2 + i) * 0.07, c.z);
       npc.diamond.rotation.y = time;
       npc.diamond.material.color.setHex(next && next.giver === c.id ? 0xffce85 : 0x85c9b9);
     }
     if (SN.taxiPassenger) {
       const a = SN.campaign.active, m = SN.missionDefinition(), o = SN.activeObjective(), r = SN.taxiPassenger.rig;
-      r.root.visible = !!(a && a.status === "running" && m.id === "taxi");
+      r.root.visible = !!(a && a.status === "running" && (m.id === "taxi" || m.id === "ferry"));
       if (r.root.visible) {
-        if (o.type === "taxiDrop" && a.taxi) {
+        if ((o.type === "taxiDrop" || o.type === "escape" || o.escortCar || m.id === "ferry" && a.step >= 2) && a.taxi) {
           SN.poseDriver(SN.taxiPassenger, a.taxi);
           r.root.position.x += Math.cos(a.taxi.yaw) * a.taxi.spec.width * 0.46;
           r.root.position.z -= Math.sin(a.taxi.yaw) * a.taxi.spec.width * 0.46;
         }
-        else {
+        else if (Number.isFinite(o.x) && Number.isFinite(o.z)) {
           r.root.position.set(o.x, SN.surfaceHeight(o.x, o.z), o.z);
           SN.poseRig(r, 0, 0, time, false, false, 0, -1);
         }
+        else r.root.visible = false;
       }
     }
     SN.updateCoat(time);
@@ -250,6 +278,7 @@
   };
 
   SN.validateCampaignLocations = function validateCampaignLocations() {
+    SN.validateStoryData();
     for (const m of [...SN.storyMissions, ...SN.sideJobs])
       for (const o of m.objectives) {
         if (o.siteAdjusted || o.contact || !Number.isFinite(o.x))
@@ -263,16 +292,15 @@
           }
       }
     for (const c of SN.contacts)
-      Object.assign(c, SN.safePosition(c.x, c.z, 0.42));
+      Object.assign(c, SN.safePosition(c.x, c.z, 0.42, null, "contact-" + c.id));
     for (const m of [...SN.storyMissions, ...SN.sideJobs])
       for (const o of m.objectives) {
         if (o.contact) {
           const c = SN.contacts.find(item => item.id === o.contact);
-          o.x = c.x;
-          o.z = c.z;
+          if (c) { o.x = c.x; o.z = c.z; }
         }
         else if (Number.isFinite(o.x) && o.type !== "tail" && o.type !== "chase")
-          Object.assign(o, SN.safePosition(o.x, o.z, 0.42));
+          Object.assign(o, SN.safePosition(o.x, o.z, 0.42, null, "objective-" + m.id + "-" + m.objectives.indexOf(o)));
       }
   };
   // ========================== Save / journal / dialogue ==========================
@@ -291,13 +319,13 @@
       kind: active.kind,
       index: active.index,
       step: active.step,
-      spawn: { x: active.spawn.x, z: active.spawn.z }
+      spawn: { x: active.spawn.x, z: active.spawn.z },
+      targetPosition: active.targetPosition || null
     };
   };
 
-  SN.saveCampaign = function saveCampaign() {
-    try {
-      localStorage.setItem("seoul-night-ledger-v3", JSON.stringify({
+  SN.campaignRecord = function campaignRecord() {
+    return {
         version: 3,
         progress: SN.campaign.progress,
         jobIndex: SN.campaign.jobIndex,
@@ -309,9 +337,22 @@
         costume: SN.campaign.costume,
         unlocks: SN.campaign.unlocks,
         weapons: SN.weapons.map(w => w.owned),
+        loadoutLost: !!SN.campaign.loadoutLost,
+        ammunition: SN.weapons.map(w => ({ mag: w.mag, reserve: w.reserve })),
         phoneCredit: SN.phoneCredit,
-        phoneMapped: SN.phoneMapped
-      }));
+        phoneMapped: SN.phoneMapped,
+        progression: SN.progression,
+        world: { minutes: SN.minutes, health: SN.player.health, armor: SN.player.armor,
+          weapon: SN.selectedWeapon, holstered: !!SN.holstered, walkMode: !!SN.player.walkMode },
+        schema: 5
+      };
+  };
+
+  SN.saveCampaign = function saveCampaign(storage = null) {
+    if (!storage || typeof storage.setItem !== "function") storage = null;
+    if (SN.devMode && !storage) return;
+    try {
+      (storage || localStorage).setItem("seoul-night-ledger-v3", JSON.stringify(SN.campaignRecord()));
       SN.campaign.storageOK = true;
     }
     catch (error) {
@@ -328,17 +369,24 @@
     const spawn = value.spawn;
     if (!spawn || !Number.isFinite(spawn.x) || !Number.isFinite(spawn.z) || Math.abs(spawn.x) > SN.WORLD - 10 || Math.abs(spawn.z) > SN.WORLD - 10)
       return null;
-    return { kind: value.kind, index: value.index, step: value.step, spawn: { x: spawn.x, z: spawn.z } };
+    const target = value.targetPosition;
+    return { kind: value.kind, index: value.index, step: value.step, spawn: { x: spawn.x, z: spawn.z },
+      targetPosition: target && [target.x, target.z].every(Number.isFinite) && Math.abs(target.x) < SN.WORLD && Math.abs(target.z) < SN.WORLD ? { x: target.x, z: target.z } : null };
   };
 
-  SN.loadCampaign = function loadCampaign() {
+  SN.loadCampaign = function loadCampaign(data, storage = null) {
+    if (SN.devMode && data === undefined && !storage) return;
     try {
-      const raw = localStorage.getItem("seoul-night-ledger-v3");
-      if (!raw)
-        return;
-      const data = JSON.parse(raw);
+      if (data === undefined) {
+        const raw = (storage || localStorage).getItem("seoul-night-ledger-v3");
+        if (!raw) return;
+        if (raw.length > 262144) { SN.campaign.storageOK = false; return; }
+        data = JSON.parse(raw);
+      }
       if (!data || data.version !== 3)
         return;
+      SN.hasSave = true;
+      SN.restoreProgression(data.progression);
       SN.campaign.progress = Number.isInteger(data.progress) ? SN.clamp(data.progress, 0, SN.storyMissions.length) : 0;
       SN.campaign.jobIndex = Number.isInteger(data.jobIndex) ? SN.clamp(data.jobIndex, 0, SN.sideJobs.length - 1) : 0;
       SN.campaign.jobWins = SN.sideJobs.map((job, i) => Array.isArray(data.jobWins) && Number.isFinite(data.jobWins[i]) ? SN.clamp(Math.floor(data.jobWins[i]), 0, 99999) : 0);
@@ -355,17 +403,41 @@
         SN.campaign.unlocks.push("route");
       if (SN.campaign.progress >= 7)
         SN.campaign.unlocks.push("dawn");
-      SN.campaign.costume = SN.campaign.unlocks.includes(data.costume) ? data.costume : "night";
-      SN.campaign.checkpoint = SN.validCheckpoint(data.checkpoint, SN.campaign.progress);
-      const resume = SN.validCheckpoint(data.active, SN.campaign.progress);
+      SN.campaign.costume = SN.campaign.unlocks.includes(data.costume) ? data.costume : "street";
+      const migrate = value => {
+        if (!value || typeof value !== "object") return null;
+        const checkpoint = { ...value };
+        if ((!data.schema || data.schema < 4) && checkpoint.kind === "story" && Number.isInteger(checkpoint.step) && checkpoint.step >= 0) {
+          if (checkpoint.index === 0) checkpoint.step = 0;
+          if (checkpoint.index === 3 && checkpoint.step >= 3) checkpoint.step += 2;
+        }
+        return SN.validCheckpoint(checkpoint, SN.campaign.progress);
+      };
+      SN.campaign.checkpoint = migrate(data.checkpoint);
+      const resume = migrate(data.active);
+      SN.campaign.active = null;
       if (resume)
         SN.campaign.active = Object.assign(resume, { status: "suspended", reason: "已载入检查点 · 在日志中继续", time: SN.missionDefinition(resume).limit });
       SN.weapons[0].owned = true;
       for (let i = 1; i < SN.weapons.length; i++)
-        SN.weapons[i].owned = i === 1 || !!(Array.isArray(data.weapons) && data.weapons[i]);
-      if (!SN.weapons[1].mag && !SN.weapons[1].reserve) {
-        SN.weapons[1].mag = SN.weapons[1].capacity;
-        SN.weapons[1].reserve = Math.max(16, SN.weapons[1].capacity * 2);
+        SN.weapons[i].owned = Array.isArray(data.weapons) ? !!data.weapons[i] : i === 1 && !data.loadoutLost;
+      SN.campaign.loadoutLost = !!data.loadoutLost;
+      for (let i = 1; i < SN.weapons.length; i++) {
+        const ammo = Array.isArray(data.ammunition) && data.ammunition[i], w = SN.weapons[i];
+        if (!w.owned) { w.mag = w.reserve = 0; continue; }
+        if (ammo && Number.isFinite(ammo.mag) && Number.isFinite(ammo.reserve)) {
+          w.mag = SN.clamp(Math.floor(ammo.mag), 0, w.capacity);
+          w.reserve = SN.clamp(Math.floor(ammo.reserve), 0, 240);
+        } else { w.mag = w.capacity; w.reserve = w.capacity * 2; }
+      }
+      SN.campaign.storageOK = true;
+      const world = data.world;
+      if (world && typeof world === "object") {
+        if (Number.isFinite(world.minutes)) SN.minutes = SN.clamp(world.minutes, 0, 1439.99);
+        if (Number.isFinite(world.health)) SN.player.health = SN.clamp(world.health, 1, 100);
+        if (Number.isFinite(world.armor)) SN.player.armor = SN.clamp(world.armor, 0, 100);
+        SN.selectedWeapon = world.weapon === -1 ? -1 : Number.isInteger(world.weapon) && SN.weapons[world.weapon] && SN.weapons[world.weapon].owned ? world.weapon : 0;
+        SN.holstered = world.holstered !== false; SN.player.walkMode = !!world.walkMode;
       }
     }
     catch (error) {
@@ -374,7 +446,7 @@
   };
 
   SN.rewardLabel = function rewardLabel(m) {
-    return "¥ " + m.reward + (m.unlock !== undefined ? " · 解锁 " + SN.weapons[m.unlock].name : "") + (m.costume ? " · " + SN.costumeLabel(m.costume) : "");
+    return "¥ " + m.reward + " · 声望 +" + (m.respect || 20) + (m.unlock !== undefined ? " · 解锁 " + SN.weapons[m.unlock].name : "") + (m.costume ? " · " + SN.costumeLabel(m.costume) : "");
   };
 
   SN.journalMarkup = function journalMarkup(m, index, story) {
@@ -382,7 +454,7 @@
       locked = story && index > SN.campaign.progress,
       active = SN.campaign.active && SN.campaign.active.kind === (story ? "story" : "side") && SN.campaign.active.index === index,
       giver = SN.contacts.find(c => c.id === m.giver);
-    return "<article class=\"journal-row " + (locked ? "locked " : active ? "active " : "") + "\"><b>" + (done ? "✓ " : locked ? "🔒 " : "◇ ") + m.title + "</b><p>" + (done ? m.outro : m.brief) + "</p><p>" + giver.name + " · " + SN.rewardLabel(m) + "</p><p>" + m.fail + "</p>" + (!story ? "<p>已完成 " + SN.campaign.jobWins[index] + " 次</p>" : "") + (!locked && !done ? "<button data-track=\"" + (story ? "story" : "side") + "\" data-index=\"" + index + "\">标记联系人</button>" : "") + "</article>";
+    return "<article class=\"journal-row " + (locked ? "locked " : active ? "active " : "") + "\"><b>" + (done ? "✓ " : locked ? "🔒 " : "◇ ") + m.title + "</b><p>" + (done ? m.outro : m.brief) + "</p><p>" + giver.name + " · " + SN.rewardLabel(m) + "</p><p>" + m.fail + "</p>" + (!story ? "<p>已完成 " + SN.campaign.jobWins[index] + " 次</p>" : "") + (!locked && !done ? "<button data-track=\"" + (story ? "story" : "side") + "\" data-index=\"" + index + "\">标记起点</button>" : "") + "</article>";
   };
 
   SN.renderJournal = function renderJournal() {
@@ -404,10 +476,11 @@
   };
 
   SN.toggleJournal = function toggleJournal(force) {
-    if (!SN.started || SN.player.dead)
+    if (force !== false && (!SN.started || SN.player.dead || SN.streetPanelOpen))
       return;
     SN.journalOpen = typeof force === "boolean" ? force : !SN.journalOpen;
     if (SN.journalOpen) {
+      if (SN.pauseOpen) SN.togglePause(false);
       SN.closeDialogue();
       SN.clearInput();
       if (document.pointerLockElement)
@@ -425,6 +498,7 @@
     const a = SN.campaign.active;
     if (!a)
       return;
+    SN.hideMissionResult();
     if (a.kind === "story")
       SN.campaign.checkpoint = SN.checkpointRecord(a);
     SN.cleanupEncounter();
@@ -465,7 +539,7 @@
       return null;
     if (SN.campaign.tracked === "side" && SN.sideJobs[SN.campaign.jobIndex].giver === contact.id)
       return { kind: "side", index: SN.campaign.jobIndex };
-    if (SN.storyMissions[SN.campaign.progress] && SN.storyMissions[SN.campaign.progress].giver === contact.id)
+    if (SN.storyMissions[SN.campaign.progress] && SN.storyMissions[SN.campaign.progress].giver === contact.id && Math.hypot(SN.player.x - SN.missionStart(SN.storyMissions[SN.campaign.progress]).x, SN.player.z - SN.missionStart(SN.storyMissions[SN.campaign.progress]).z) < 8)
       return { kind: "story", index: SN.campaign.progress };
     const index = SN.sideJobs.findIndex(m => m.giver === contact.id);
     return index >= 0 ? { kind: "side", index } : null;
@@ -490,7 +564,7 @@
     SN.setText("dialogueRole", d.contact.role);
     SN.setText("dialogueText", d.contact.lines[d.line]);
     SN.setText("dialogueCount", (d.line + 1) + " / " + d.contact.lines.length);
-    SN.$("dialogueOffer").innerHTML = last && m ? "<h3>" + m.title + "</h3><p>" + m.brief + "</p><p>" + m.objectives.map((o, i) => (i + 1) + ". " + o.text).join("<br>") + "</p><p class=\"accent\">" + SN.rewardLabel(m) + "</p><p>失败：" + m.fail + " 每个目标完成后保存检查点。</p>" : "";
+    SN.$("dialogueOffer").innerHTML = last && m ? "<h3>" + m.title + "</h3><p>" + m.brief + "</p><p>" + "首个目标：" + m.objectives[0].text + "</p><p class=\"accent\">" + SN.rewardLabel(m) + "</p><p>失败：" + m.fail + " 每个目标完成后保存检查点。</p>" : "";
     SN.setText("dialogueNext", last ? (m ? "接受任务 · E" : "结束对话 · E") : "继续 · E");
   };
 
@@ -528,6 +602,7 @@
       SN.interactPulse = true;
       return;
     }
+    if (SN.interactStreet()) return;
     if (SN.counterTarget) {
       SN.openShopMenu();
       return;
@@ -541,6 +616,7 @@
   };
 
   SN.beginCinematic = function beginCinematic(m, ending = false) {
+    if (SN.devMode) return;
     SN.clearInput();
     const giver = SN.contacts.find(c => c.id === m.giver),
       near = giver && Math.hypot(SN.player.x - giver.x, SN.player.z - giver.z) < 10,
@@ -588,17 +664,15 @@
   };
   // =========================== Objective state machine ===========================
 
-  SN.stageLoanCar = function stageLoanCar() {
+  SN.stageLoanCar = function stageLoanCar(type = 3) {
     if (SN.player.car)
       return;
-    const p = SN.safePosition(SN.player.x + 5, SN.player.z + 2, 1.2, SN.loanCar);
-    if (SN.loanCar.occupant) {
-      SN.loanCar.occupant.inCar = null;
-      SN.loanCar.occupant = null;
-    }
-    Object.assign(SN.loanCar, p, { yaw: SN.PI / 2, health: 100, parked: true, driver: false, active: true, speed: 0, vx: 0, vz: 0 });
-    SN.loanCar.root.position.set(p.x, SN.surfaceHeight(p.x, p.z), p.z);
-    SN.loanCar.root.visible = true;
+    if (!SN.vehicleSpecs[type]) type = 3;
+    const o = SN.activeObjective(), target = o && ["tail", "chase", "ambush"].includes(o.type) ? SN.missionCar : o;
+    const following = o && ["tail", "chase", "ambush"].includes(o.type);
+    SN.placeMissionVehicle(SN.loanCar, following ? target.x - Math.sin(target.yaw) * 35 : SN.player.x,
+      following ? target.z - Math.cos(target.yaw) * 35 : SN.player.z, type, target);
+
   };
 
   SN.startMission = function startMission(kind, index) {
@@ -607,6 +681,10 @@
     const m = (kind === "story" ? SN.storyMissions : SN.sideJobs)[index];
     if (!m || kind === "story" && index !== SN.campaign.progress)
       return;
+    if (!SN.canStartActivity(m)) return;
+    SN.finishStreetEvent(false, true);
+    SN.hideMissionResult();
+    SN.waypoint = null;
     const saved = kind === "story" ? SN.campaign.checkpoint : null, step = saved && saved.index === index ? saved.step : 0;
     SN.campaign.active = {
       kind,
@@ -614,7 +692,10 @@
       step,
       status: "running",
       spawn: saved && saved.index === index ? saved.spawn : { x: SN.player.x, z: SN.player.z },
-      time: m.limit
+      time: m.limit,
+      remaining: m.totalLimit || m.limit,
+      contractCar: null,
+      targetPosition: saved && saved.targetPosition || null
     };
     SN.campaign.tracked = kind;
     if (kind === "side")
@@ -625,6 +706,13 @@
   };
 
   SN.cleanupEncounter = function cleanupEncounter() {
+    const active = SN.campaign.active;
+    if (active && (active.status === "complete" || active.status === "failed")) {
+      active.contractCar = null;
+      active.taxi = null;
+    }
+    if (SN.escortActor) SN.escortActor.rig.root.visible = false;
+    for (const car of SN.convoyCars || []) { car.active = false; car.root.visible = false; }
     SN.missionDriver.active = false;
     SN.missionDriver.inCar = null;
     SN.missionCar.occupant = null;
@@ -646,8 +734,12 @@
   };
 
   SN.prepareObjective = function prepareObjective() {
-    SN.cleanupEncounter();
     const a = SN.campaign.active, m = SN.missionDefinition(), o = SN.activeObjective();
+    if (a && o && o.fromTarget) {
+      const target = a.targetPosition || a.spawn, pickup = SN.safePosition(target.x, target.z, 0.35);
+      o.x = pickup.x; o.z = pickup.z;
+    }
+    SN.cleanupEncounter();
     if (!a || !o)
       return;
     a.status = "running";
@@ -662,11 +754,14 @@
     a.departed = false;
     a.interact = false;
     a.defeated = 0;
-    a.time = o.seconds || m.limit;
+    a.remaining = Number.isFinite(a.remaining) ? a.remaining : (m.totalLimit || m.limit);
+    a.time = Math.min(o.seconds || m.limit, a.remaining);
+    SN.prepareStreetObjective(a, m, o);
     if (m.id === "race")
       a.time = Math.max(1, a.raceTime || m.limit);
     SN.interactPulse = false;
-    if (["tail", "chase"].includes(o.type)) {
+    if (["tail", "chase", "ambush"].includes(o.type)) {
+      SN.repairVehicle(SN.missionCar);
       Object.assign(SN.missionCar, {
         x: o.x,
         z: o.z,
@@ -680,20 +775,24 @@
         stuck: 0,
         index: 0,
         cruise: o.type === "tail" ? 9 : 15,
-        route: o.type === "tail" ? [[760, -430], [760, -640], [360, -640], [360, -430]] : [[-130, 1060], [560, 1060], [560, 900], [-130, 900]]
+        route: o.route || (o.type === "tail" ? [[760, -430], [760, -640], [360, -640], [360, -430]] : [[-130, 1060], [560, 1060], [560, 900], [-130, 900]])
       });
-      SN.missionCar.root.position.set(o.x, SN.surfaceHeight(o.x, o.z), o.z);
+      const firstTurn = SN.missionCar.route[0];
+      SN.placeMissionVehicle(SN.missionCar, o.x, o.z, undefined, { x: firstTurn[0], z: firstTurn[1] });
+      SN.resetVehicleGround(SN.missionCar);
+      SN.missionCar.route = SN.missionRoadCircuit(SN.missionCar.route);
       SN.missionCar.root.visible = true;
       SN.missionDriver.active = true;
       SN.missionDriver.inCar = SN.missionCar;
-      SN.missionDriver.x = o.x;
-      SN.missionDriver.z = o.z;
+      SN.missionDriver.x = SN.missionCar.x;
+      SN.missionDriver.z = SN.missionCar.z;
       SN.missionDriver.health = 100;
       SN.missionDriver.down = 0;
       SN.missionCar.occupant = SN.missionDriver;
       SN.stageLoanCar();
+      if (o.type === "ambush") SN.stageConvoy(o);
     }
-    if (["taxiPickup", "race"].includes(o.type) && a.step === 0)
+    if (o.type === "taxiPickup" && !SN.player.car || o.type === "race" && !SN.player.car)
       SN.stageLoanCar();
     if (o.type === "taxiDrop" && !a.taxi) {
       SN.stageLoanCar();
@@ -705,7 +804,10 @@
       SN.lastSeen = SN.simTime;
     }
     if (o.type === "fight" || o.type === "defend") {
+      if (o.melee) { SN.selectWeapon(0); SN.holstered = true; }
+      else { const w = SN.weapons[o.supply === undefined ? 1 : o.supply]; w.owned = true; }
       SN.player.armor = Math.max(SN.player.armor, 60);
+      SN.player.health = Math.max(SN.player.health, 75);
       for (const w of SN.weapons)
         if (w.owned) {
           w.mag = w.capacity;
@@ -719,8 +821,10 @@
 
   SN.retryCheckpoint = function retryCheckpoint() {
     const a = SN.campaign.active;
-    if (!a || SN.player.dead)
+    if (!a)
       return;
+    if (SN.arrestState && !SN.arrestState.done) SN.finishArrest();
+    SN.hideMissionResult();
     SN.cleanupEncounter();
     if (SN.player.car) {
       SN.player.car.speed = SN.player.car.vx = SN.player.car.vz = 0;
@@ -728,13 +832,14 @@
       SN.player.car = null;
     }
     if (SN.missionDefinition().id === "race") {
-      a.step = 0;
-      a.raceTime = 90;
-      const giver = SN.contacts.find(c => c.id === SN.missionDefinition().giver);
-      a.spawn = { x: giver.x, z: giver.z };
+      a.raceTime = SN.missionDefinition().limit;
     }
+    a.remaining = SN.missionDefinition().totalLimit || SN.missionDefinition().limit;
     a.taxi = null;
     a.raceCar = null;
+    a.contractCar = null;
+    SN.holstered = true;
+    SN.player.vault = null; SN.hurtSource = null; SN.slowMotion = 0;
     const p = SN.safePosition(a.spawn.x, a.spawn.z, 0.4);
     Object.assign(SN.player, p, {
       y: SN.groundUnder(p.x, p.z, 0.22),
@@ -748,8 +853,19 @@
       grounded: true
     });
     SN.playerRoot.visible = true;
+    SN.playerRoot.rotation.set(0, SN.player.yaw, 0);
     SN.playerRoot.position.set(SN.player.x, SN.player.y, SN.player.z);
+    SN.player.fallPeak = SN.player.y;
+    SN.player.lastHurt = SN.simTime; SN.player.hitReact = 0;
+    SN.carjack = null; SN.reloadTime = 0;
+    if (SN.selectedWeapon < 0) SN.selectedWeapon = 0;
+    Object.assign(SN.playerRig.motion, { speed: 0, weight: 0, lean: 0, phase: 0 });
+    for (const leg of SN.playerRig.legs) leg.planted = false;
+    SN.$("downscreen").classList.remove("visible");
+    SN.$("arrestScreen").classList.remove("visible");
+    SN.$("arrestPrompt").classList.remove("visible");
     SN.heat = 0;
+    SN.survivedPeak = 0;
     SN.wantedSearch = 0;
     SN.wantedResisted = false;
     SN.arrestState = null;
@@ -768,6 +884,7 @@
     }
     SN.clearInput();
     SN.prepareObjective();
+    SN.snapPlayer();
     SN.saveCampaign();
     SN.toggleJournal(false);
     SN.beginCinematic(SN.missionDefinition());
@@ -784,6 +901,7 @@
     SN.cleanupEncounter();
     SN.saveCampaign();
     SN.toast("任务失败 · " + a.reason, 7);
+    SN.showMissionResult(false, SN.missionDefinition(), reason);
   };
 
   SN.finishObjective = function finishObjective() {
@@ -791,11 +909,16 @@
     if (!a || a.status !== "running")
       return;
     const m = SN.missionDefinition();
+    const previous = SN.activeObjective();
+    if (["tail", "chase", "ambush"].includes(previous.type)) a.targetPosition = { x: SN.missionCar.x, z: SN.missionCar.z };
     a.step++;
     if (a.step >= m.objectives.length) {
       a.status = "complete";
       SN.cleanupEncounter();
       SN.money += m.reward;
+      SN.progression.respect += m.respect || 20;
+      if (a.kind === "story") SN.progression.stats.missionsPassed++;
+      else SN.progression.stats.activitiesPassed++;
       SN.completed++;
       if (a.kind === "story") {
         SN.campaign.progress++;
@@ -815,12 +938,13 @@
       SN.campaign.tracked = SN.campaign.progress < SN.storyMissions.length ? "story" : "side";
       SN.saveCampaign();
       SN.toast("任务完成 · " + SN.rewardLabel(m), 6);
-      SN.beginCinematic(m, true);
+      SN.showMissionResult(true, m, m.outro || "报酬已到账");
       return;
     }
     a.spawn = SN.safePosition(SN.player.x, SN.player.z, 0.4);
+    SN.carjack = null;
     a.raceTime = a.time;
-    if (m.id === "taxi")
+    if ((m.id === "taxi" || m.id === "ferry") && SN.player.car)
       a.taxi = SN.player.car;
     SN.prepareObjective();
     SN.saveCampaign();
@@ -834,14 +958,16 @@
   SN.currentTarget = function currentTarget() {
     const a = SN.campaign.active, o = SN.activeObjective();
     if (a && o) {
-      if (o.type === "tail" || o.type === "chase")
+      if (["tail", "chase", "ambush"].includes(o.type))
         return SN.missionCar.active ? SN.missionCar : o;
-      if (o.type === "escape")
-        return { x: -560, z: -40 };
+      if (o.type === "drive" && o.contract && a.contractCar && SN.player.car !== a.contractCar) return a.contractCar;
+      if (o.escortCar && a.taxi && SN.player.car !== a.taxi) return a.taxi;
+      if (o.type === "vehicle" && a.contractCar) return a.contractCar;
+      if (o.type === "escape") return { x: SN.searchX + SN.searchRadius + 100, z: SN.searchZ };
       return o;
     }
     const m = SN.campaign.tracked === "side" ? SN.sideJobs[SN.campaign.jobIndex] : SN.storyMissions[SN.campaign.progress] || SN.sideJobs[SN.campaign.jobIndex];
-    return SN.contacts.find(c => c.id === m.giver);
+    return SN.missionStart(m);
   };
 
   SN.updateMission = function updateMission(dt) {
@@ -852,12 +978,13 @@
     }
     const m = SN.missionDefinition();
     a.time -= dt;
+    a.remaining -= dt;
     a.elapsed += dt;
     if (SN.player.dead) {
       SN.failMission("你已倒下，医疗站将接应你");
       return;
     }
-    if (a.time <= 0) {
+    if (a.time <= 0 || a.remaining <= 0) {
       SN.failMission("超过任务时限");
       return;
     }
@@ -889,7 +1016,7 @@
       }
       done = a.hold >= o.duration;
     }
-    else if (o.type === "chase") {
+    else if (o.type === "chase" || o.type === "ambush") {
       if (!a.departed && SN.player.car) {
         a.departed = true;
         SN.missionCar.parked = false;
@@ -907,8 +1034,14 @@
       a.hold = SN.missionCar.health <= 35 && d < 12 ? a.hold + dt : 0;
       done = a.hold >= 2;
     }
-    else if (o.type === "escape")
-      done = SN.heat === 0 && SN.holstered && (!SN.interiorAt(SN.player.x, SN.player.z, SN.player.y) || m.id !== "dawn");
+    else if (o.type === "escape") {
+      done = SN.heat === 0;
+      if (done) SN.holstered = true;
+    }
+    else if (["vehicle", "drive", "escort"].includes(o.type)) {
+      done = SN.updateStreetObjective(a, o, dt, distance);
+      if (a.status !== "running") return;
+    }
     else if (o.type === "taxiPickup") {
       done = !!SN.player.car && SN.player.car.type === 3 && distance < o.r && Math.abs(SN.player.car.speed) < 1;
       if (done)
@@ -942,13 +1075,17 @@
         SN.failMission("你离开了任务战区");
         return;
       }
-      a.defeated = SN.encounterActors.filter(enemy => enemy.health <= 0).length;
+      a.defeated = 0;
+      let threats = 0;
+      for (const enemy of SN.encounterActors) {
+        if (enemy.health <= 0) a.defeated++;
+        else if (enemy.active && (enemy.x - o.x) ** 2 + (enemy.z - o.z) ** 2 < 25) threats++;
+      }
       if (o.type === "fight")
         done = a.defeated >= o.count;
       else {
         if (distance < 22)
           a.hold += dt;
-        const threats = SN.encounterActors.filter(enemy => enemy.active && enemy.health > 0 && Math.hypot(enemy.x - o.x, enemy.z - o.z) < 5).length;
         a.integrity = Math.max(0, a.integrity - dt * threats * 7);
         if (a.hold > 12 && a.wave === 0) {
           a.wave = 1;
@@ -975,7 +1112,7 @@
       const slot = offset + i, a = SN.actors[SN.encounterStart + slot];
       if (!a)
         continue;
-      const role = o.room && i === count - 1 ? 3 : slot % 3, stats = SN.enemyRoles[role], angle = slot * 2.4;
+      const role = o.melee ? 0 : o.room && i === count - 1 ? 3 : slot % 3, stats = SN.enemyRoles[role], angle = slot * 2.4;
       const spot = o.room ? [[-531, 41], [-509, 41], [-523, 40.2], [-513, 45]][i % 4] : [o.x + Math.sin(angle) * (17 + slot % 2 * 4), o.z + Math.cos(angle) * (17 + slot % 2 * 4)],
         p = SN.safePosition(spot[0], spot[1], 0.4);
       Object.assign(a, {
@@ -1123,7 +1260,7 @@
           a.cool = 0.42;
         }
         else {
-          SN.hurtPlayer(stats.damage);
+          SN.hurtPlayer(stats.damage, false, a);
           a.attackWindup = 0;
           a.cool = 1.15;
           SN.emitSparks(SN.player.x, SN.player.y + 1, SN.player.z, 3, false);
@@ -1137,9 +1274,10 @@
         SN.shotEnd.set(SN.player.x + SN.rand(-0.65, 0.65), SN.player.y + 1.1, SN.player.z + SN.rand(-0.65, 0.65));
         SN.spawnMuzzleFlash(SN.shotOrigin, true);
         SN.spawnTracer(SN.shotOrigin, SN.shotEnd, true);
+        SN.soundEnemyShot(a);
         SN.emitSparks(SN.shotOrigin.x, SN.shotOrigin.y, SN.shotOrigin.z, 2, true);
         if (SN.rnd() < SN.clamp(0.65 - distance * 0.006, 0.15, 0.6)) {
-          SN.hurtPlayer(stats.damage);
+          SN.hurtPlayer(stats.damage, false, a);
           if (SN.player.car)
             SN.player.car.health = Math.max(0, SN.player.car.health - 2);
         }
@@ -1198,12 +1336,12 @@
   SN.missionStatusText = function missionStatusText() {
     const a = SN.campaign.active, o = SN.activeObjective();
     if (!a || !o)
-      return "靠近标记联系人，按 E 听取简报。";
+      return "靠近标记起点，按 E 听取简报。";
     if (a.status !== "running")
       return a.reason || "J 从检查点继续";
     if (o.type === "tail")
       return !a.departed ? "附近已备车 · F 上车后目标发车" : "跟踪 " + Math.floor(a.hold) + " / " + o.duration + " 秒 · 暴露 " + Math.round(a.exposure) + "% · 失联 " + a.lost.toFixed(1) + " / 12 秒";
-    if (o.type === "chase")
+    if (o.type === "chase" || o.type === "ambush")
       return "目标车况 " + Math.ceil(SN.missionCar.health) + "% · 降至 35% 后靠近 2 秒（勿摧毁）";
     if (o.type === "defend")
       return "坚守 " + Math.floor(a.hold) + " / " + o.duration + " 秒 · 接应完整度 " + Math.ceil(a.integrity) + "%" + (a.outside ? " · 返回战区 " + Math.ceil(10 - a.outside) + " 秒" : "");
@@ -1226,8 +1364,12 @@
       target = SN.currentTarget(),
       distance = target ? Math.hypot(SN.player.x - target.x, SN.player.z - target.z) : 0,
       seconds = a ? Math.max(0, Math.ceil(a.time || 0)) : 0;
+    const objective = SN.activeObjective();
+    SN.setText("objectiveText", a ? (a.status === "running" ? (objective ? objective.text : m.title) : "检查点待续 · 打开任务日志") : "前往「" + SN.contacts.find(c => c.id === m.giver).name.split(" · ")[0] + "」");
+    SN.setText("objectiveDistance", distance > 1000 ? (distance / 1000).toFixed(1) + " km" : Math.round(distance) + " m");
+    SN.setText("objectiveTimer", a && a.status === "running" && a.time > 0 ? String(Math.floor(seconds / 60)).padStart(2, "0") + ":" + String(seconds % 60).padStart(2, "0") : "");
     SN.setText("missionName", m.title);
-    SN.setText("missionTag", a ? (a.kind === "story" ? "主线" : "支线") + " / " + (a.step + 1) + " · " + (a.status === "running" ? "进行中" : "检查点待续") : (SN.campaign.tracked === "story" && SN.campaign.progress < 7 ? "主线 · 等待接取" : "支线 · " + (SN.campaign.jobIndex + 1) + " / " + SN.sideJobs.length));
+    SN.setText("missionTag", a ? (a.kind === "story" ? "主线" : "支线") + " / " + (a.step + 1) + " · " + (a.status === "running" ? "进行中" : "检查点待续") : (SN.campaign.tracked === "story" && SN.campaign.progress < SN.storyMissions.length ? "主线 · 等待接取" : "支线 · " + (SN.campaign.jobIndex + 1) + " / " + SN.sideJobs.length));
     SN.setText("missionDesc", a ? m.brief : SN.contacts.find(c => c.id === m.giver).name + " · " + m.brief);
     SN.setHtml("objectiveList", m.objectives.map((o, i) => "<li class=\"" + (a ? (i < a.step ? "done" : i === a.step ? "current" : "") : "") + "\">" + o.text + "</li>").join(""));
     SN.setText("missionDetail", SN.missionStatusText());
@@ -1246,12 +1388,13 @@
       SN.setText("interaction", hint);
       SN.$("interaction").classList.add("visible");
     }
+    SN.refreshStreetHUD();
   };
 
   SN.bindCampaignUI = function bindCampaignUI() {
     SN.$("journalBtn").addEventListener("click", () => SN.toggleJournal());
     SN.$("journalClose").addEventListener("click", () => SN.toggleJournal(false));
-    SN.$("jobBtn").addEventListener("click", SN.nextMission);
+    SN.$("jobBtn").addEventListener("click", () => { SN.togglePause(false); SN.nextMission(); });
     SN.$("costumeBtn").addEventListener("click", SN.cycleCostume);
     SN.$("storyInteract").addEventListener("click", SN.interactStory);
     SN.$("dialogueNext").addEventListener("click", SN.advanceDialogue);
@@ -1536,8 +1679,8 @@
         limit: 240,
         fail: "载客后车辆毁坏、离车 15 秒或倒下即失败。",
         objectives: [
-          { type: "taxiPickup", text: "驾驶出租车到 종로 接客并停稳", x: -68, z: -786, r: 7 },
-          { type: "taxiDrop", text: "送乘客到 명동 路边并停稳", x: 390, z: -446, r: 8 }
+          { type: "taxiPickup", text: "驾驶出租车到 종로 接客并停稳", x: -68, z: -798, r: 10 },
+          { type: "taxiDrop", text: "送乘客到 명동 东街路边并停稳", x: 590, z: -428, r: 12 }
         ]
       },
       {
@@ -1715,7 +1858,7 @@
       checkpoint: null,
       active: null,
       tracked: "story",
-      costume: "night",
+      costume: "street",
       unlocks: ["street", "night"],
       storageOK: true
     };

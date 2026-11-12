@@ -7,6 +7,64 @@
     SN.toastTime = duration;
   };
 
+  const feedbackEls = {};
+  function feedbackEl(id) {
+    return feedbackEls[id] || (feedbackEls[id] = SN.$(id));
+  }
+
+  SN.updateFeedback = function updateFeedback(dt) {
+    SN.updateAudioMix();
+    const stars = Math.ceil(SN.heat);
+    if (stars !== SN.feedbackStars) {
+      const gained = stars > SN.feedbackStars;
+      SN.feedbackStars = stars; SN.starPulse = 1.1; SN.feedbackStarClass = true;
+      feedbackEl("heat").classList.toggle("lost-star", !gained);
+      feedbackEl("heat").classList.toggle("gained-star", gained);
+      SN.tone("triangle", gained ? 440 : 700, gained ? 880 : 330, 0.22, 0.04);
+      SN.tone("sine", gained ? 660 : 440, gained ? 990 : 220, 0.18, 0.025, 0.15);
+    }
+    SN.starPulse = Math.max(0, SN.starPulse - dt);
+    if (!SN.starPulse && SN.feedbackStarClass) {
+      SN.feedbackStarClass = false;
+      feedbackEl("heat").classList.remove("lost-star");
+      feedbackEl("heat").classList.remove("gained-star");
+    }
+    if (SN.money > SN.feedbackMoney) {
+      SN.cashPulse = 0.5; SN.tone("sine", 780, 1200, 0.12, 0.025);
+    }
+    SN.feedbackMoney = SN.money; SN.cashPulse = Math.max(0, SN.cashPulse - dt);
+    const cashPop = SN.cashPulse > 0;
+    if (cashPop !== SN.feedbackCashPop) {
+      SN.feedbackCashPop = cashPop;
+      feedbackEl("money").classList.toggle("cash-pop", cashPop);
+    }
+    const source = SN.hurtSource, visible = !!(source && source.until > SN.simTime && !SN.player.dead);
+    if (visible) {
+      const opacity = Math.min(0.85, (source.until - SN.simTime) * 2);
+      // Camera-right is the negative X axis when facing north in this world.
+      const angle = SN.camState.yaw - Math.atan2(source.x - SN.player.x, source.z - SN.player.z);
+      if (opacity !== SN.feedbackHurtOpacity) {
+        SN.feedbackHurtOpacity = opacity;
+        feedbackEl("hurtDirection").style.opacity = opacity;
+      }
+      if (angle !== SN.feedbackHurtAngle) {
+        SN.feedbackHurtAngle = angle;
+        feedbackEl("hurtDirection").style.transform = "translate(-50%,-50%) rotate(" + angle + "rad)";
+      }
+    } else if (SN.feedbackHurtVisible) {
+      feedbackEl("hurtDirection").style.opacity = 0;
+      SN.feedbackHurtOpacity = -1;
+    }
+    SN.feedbackHurtVisible = visible;
+    if (!visible) SN.feedbackHurtAngle = NaN;
+    const carMode = !!SN.player.car;
+    if (SN.touchVehicleMode !== carMode) {
+      SN.touchVehicleMode = carMode;
+      feedbackEl("touchRear").hidden = !carMode;
+      SN.clearInput();
+    }
+  };
+
   SN.drawWeaponIcon = function drawWeaponIcon(canvas, index, active) {
     const c = canvas.getContext("2d"), s = canvas.width;
     c.clearRect(0, 0, s, s);
@@ -25,6 +83,10 @@
       c.fillRect(-s * 0.16, -s * 0.03, s * 0.24, s * 0.05);
       c.fillStyle = col;
       c.fillRect(-s * 0.23, -s * 0.24, s * 0.06, s * 0.12);
+    }
+    else if (index === 3) {
+      c.rotate(-0.5); c.fillRect(-s * 0.045, -s * 0.33, s * 0.09, s * 0.64);
+      c.fillStyle = accent; c.fillRect(-s * 0.055, s * 0.12, s * 0.11, s * 0.15);
     }
     else if (index === 1) {
       c.fillRect(-s * 0.2, -s * 0.16, s * 0.36, s * 0.1);
@@ -51,8 +113,8 @@
   };
 
   SN.refreshWeaponSlots = function refreshWeaponSlots() {
-    for (let i = 0; i < 3; i++) {
-      const active = !SN.holstered && SN.selectedWeapon === i;
+    for (let i = 0; i < SN.weapons.length; i++) {
+      const active = (SN.holstered ? 0 : SN.selectedWeapon) === i;
       SN.slotElements[i].slot.classList.toggle("active", active);
       SN.slotElements[i].slot.style.opacity = SN.weapons[i].owned ? (active ? "1" : ".72") : ".34";
       SN.drawWeaponIcon(SN.slotElements[i].cv, i, active);
@@ -62,6 +124,10 @@
   SN.speakBubble = function speakBubble(a, text, mood = "neutral") {
     if (!text)
       return;
+    if (SN.cityBarks && SN.cityBarks.bump.includes(text)) {
+      if (SN.simTime < (a.citySpeechAt || 0) || Math.hypot(a.x - SN.player.x, a.z - SN.player.z) > 2.5) return;
+      a.citySpeechAt = SN.simTime + 8;
+    }
     const b = SN.bubblePool[SN.bubbleCursor++ % SN.bubblePool.length];
     b.el.textContent = text;
     b.el.className = "bubble " + (mood === "angry" ? "angry" : mood === "scared" ? "scared" : "");
@@ -109,7 +175,7 @@
         continue;
       }
       b.el.style.display = "block";
-      b.el.style.transform = "translate(" + (SN.screenPoint.x - b.el.offsetWidth * 0.5).toFixed(1) + "px," + (SN.screenPoint.y - b.el.offsetHeight).toFixed(1) + "px)";
+      b.el.style.transform = "translate(" + SN.screenPoint.x.toFixed(1) + "px," + SN.screenPoint.y.toFixed(1) + "px) translate(-50%, -100%)";
       b.el.style.opacity = SN.clamp(b.life / 0.35, 0, 1);
     }
     for (const p of SN.popPool) {
@@ -125,16 +191,17 @@
         continue;
       }
       p.el.style.display = "block";
-      p.el.style.transform = "translate(" + (SN.screenPoint.x - p.el.offsetWidth * 0.5).toFixed(1) + "px," + SN.screenPoint.y.toFixed(1) + "px)";
+      p.el.style.transform = "translate(" + SN.screenPoint.x.toFixed(1) + "px," + SN.screenPoint.y.toFixed(1) + "px) translateX(-50%)";
       p.el.style.opacity = SN.clamp(p.life / 0.3, 0, 1);
     }
   };
 
   SN.toggleCityMap = function toggleCityMap(force) {
-    if (!SN.started || SN.player.dead || SN.cinematic || SN.storyDialogue || SN.shopMenuOpen)
+    if (force !== false && (!SN.started || SN.player.dead || SN.cinematic || SN.storyDialogue || SN.shopMenuOpen || SN.streetPanelOpen))
       return;
     SN.cityMapOpen = typeof force === "boolean" ? force : !SN.cityMapOpen;
     if (SN.cityMapOpen) {
+      if (SN.pauseOpen) SN.togglePause(false);
       SN.toggleJournal(false);
       SN.clearInput();
       if (document.pointerLockElement)
@@ -168,18 +235,21 @@
       h = rect.height;
     if (!w || !h)
       return;
-    SN.atlas.width = Math.round(w * ratio);
-    SN.atlas.height = Math.round(h * ratio);
+    const nw = Math.round(w * ratio), nh = Math.round(h * ratio);
+    if (SN.atlas.width !== nw) SN.atlas.width = nw;
+    if (SN.atlas.height !== nh) SN.atlas.height = nh;
     const g = SN.atlasContext;
     g.setTransform(ratio, 0, 0, ratio, 0, 0);
     g.clearRect(0, 0, w, h);
-    const size = Math.min(w - 20, h - 20),
+    const size = Math.min(w - 20, h - 20) * SN.atlasView.zoom,
       k = size / (SN.EXTENT * 2),
-      ox = (w - size) / 2,
-      oz = (h - size) / 2,
+      ox = (w - size) / 2 - SN.atlasView.x * k,
+      oz = (h - size) / 2 - SN.atlasView.z * k,
       X = x => ox + (x + SN.EXTENT) * k,
       Z = z => oz + (z + SN.EXTENT) * k;
+    SN.atlasTransform = { k, ox, oz };
     g.drawImage(SN.mapCanvas, ox, oz, size, size);
+    SN.drawGPS(g, X, Z, 3);
     g.strokeStyle = "#ccdfca12";
     g.lineWidth = 1;
     for (let v = -3000; v <= 3000; v += 1000) {
@@ -218,10 +288,11 @@
       const d = SN.cityDistricts[i],
         x = X(d.x),
         z = Z(d.z),
-        dx = offsets[i][0] * (size / 750),
-        dz = offsets[i][1] * (size / 750),
+        dx = (offsets[i] || [0, 0])[0],
+        dz = (offsets[i] || [0, 0])[1],
         lx = SN.clamp(x + dx, 65, w - 65),
         lz = SN.clamp(z + dz, 14, h - 14);
+      if (x < -20 || x > w + 20 || z < -20 || z > h + 20) continue;
       g.strokeStyle = i === SN.selectedDistrict ? "#e5c18b" : "#abcab477";
       g.beginPath();
       g.moveTo(x, z);
@@ -237,6 +308,12 @@
       g.fillRect(lx - tw / 2 - 5, lz - 9, tw + 10, 18);
       g.fillStyle = i === SN.selectedDistrict ? "#ffda9e" : "#dfede0";
       g.fillText(d.name, lx, lz + 4);
+    }
+    for (const service of SN.streetServices) {
+      g.fillStyle = service.kind === "repair" ? "#59e6ef" : "#ffcd56";
+      g.fillRect(X(service.x) - 4, Z(service.z) - 4, 8, 8);
+      g.font = "bold 12px sans-serif"; g.textAlign = "left";
+      g.fillText(service.icon, X(service.x) + 5, Z(service.z));
     }
     for (const hospital of SN.hospitals) {
       g.fillStyle = "#b8f7cc";
@@ -261,17 +338,14 @@
       g.fillRect(-2, -2, 4, 4);
       g.restore();
     }
-    const target = SN.currentTarget();
-    if (target) {
-      g.setLineDash([5, 4]);
-      g.strokeStyle = "#ffdb9d";
-      g.beginPath();
-      g.moveTo(X(SN.player.x), Z(SN.player.z));
-      g.lineTo(X(target.x), Z(target.z));
-      g.stroke();
-      g.setLineDash([]);
-      g.strokeRect(X(target.x) - 5, Z(target.z) - 5, 10, 10);
+    SN.drawStreetMapIcons(g, X, Z, 12);
+    for (const shop of SN.shopSpecs.concat(SN.smallShopSpecs)) {
+      g.fillStyle = "#ffcd56"; g.fillRect(X(shop.x) - 2, Z(shop.z) - 2, 4, 4);
+      const glyph = { pc: "网", chicken: "食", clothing: "衣", barber: "剪", weapons: "枪", home: "房", karaoke: "歌" }[shop.kind];
+      if (glyph && SN.atlasView.zoom > 1.3) { g.font = "bold 11px sans-serif"; g.textAlign = "left"; g.fillText(glyph, X(shop.x) + 4, Z(shop.z) + 3); }
     }
+    const target = SN.navigationTarget();
+    if (target) { g.strokeStyle = SN.waypoint ? "#58e4ef" : "#ffd34d"; g.strokeRect(X(target.x) - 6, Z(target.z) - 6, 12, 12); }
     g.save();
     g.translate(X(SN.player.x), Z(SN.player.z));
     g.rotate(-SN.player.yaw + SN.PI);
@@ -322,7 +396,7 @@
       pz = SN.player.z,
       range = SN.player.car ? 250 : 175,
       k = SN.mapSize / (range * 2),
-      angle = SN.camYaw + SN.PI;
+      angle = 0;
     SN.ctx.clearRect(0, 0, SN.mapSize, SN.mapSize);
     SN.ctx.save();
     SN.ctx.beginPath();
@@ -365,6 +439,11 @@
         dot(a.x, a.z, Math.floor(SN.simTime * 5) % 2 ? "#ff6464" : "#6ba7ff", 3);
       else if (a.kind === "gang")
         dot(a.x, a.z, a.hostile ? "#ff635b" : SN.crews[a.crew].css, 3);
+    }
+    for (const service of SN.streetServices) {
+      dot(service.x, service.z, service.kind === "repair" ? "#59e6ef" : "#ffcd56", 5);
+      SN.ctx.save(); SN.ctx.translate(service.x, service.z); SN.ctx.scale(1 / k, 1 / k);
+      SN.ctx.fillStyle = "#fff"; SN.ctx.font = "bold 11px sans-serif"; SN.ctx.fillText(service.icon, 6, 0); SN.ctx.restore();
     }
     for (const p of SN.pickups)
       if (p.cooldown <= 0) {
@@ -422,15 +501,9 @@
     }
     if (SN.helicopter.active)
       dot(SN.helicopter.root.position.x, SN.helicopter.root.position.z, "#d7f4ff", 4);
-    const m = SN.currentTarget();
-    SN.ctx.strokeStyle = "#b7ffcb8a";
-    SN.ctx.setLineDash([5 / k, 5 / k]);
-    SN.ctx.lineWidth = 1.5 / k;
-    SN.ctx.beginPath();
-    SN.ctx.moveTo(px, pz);
-    SN.ctx.lineTo(m.x, m.z);
-    SN.ctx.stroke();
-    SN.ctx.setLineDash([]);
+    const m = SN.navigationTarget() || SN.player;
+    SN.drawGPS(SN.ctx, x => x, z => z, 3 / k);
+    SN.drawStreetMapIcons(SN.ctx, x => x, z => z, 12 / k, true);
     SN.ctx.restore();
     const dx = (m.x - px) * k, dz = (m.z - pz) * k, ca = Math.cos(angle), sa = Math.sin(angle);
     let mx = ca * dx - sa * dz, mz = sa * dx + ca * dz;
@@ -439,18 +512,18 @@
       mx *= 155 / dist;
       mz *= 155 / dist;
     }
-    SN.ctx.fillStyle = "#b8ffd0";
+    SN.ctx.fillStyle = "#ffd34d";
     SN.ctx.beginPath();
     SN.ctx.arc(180 + mx, 180 + mz, 6, 0, SN.TAU);
     SN.ctx.fill();
-    SN.ctx.strokeStyle = "#b8ffd055";
+    SN.ctx.strokeStyle = "#ffd34d55";
     SN.ctx.lineWidth = 2;
     SN.ctx.beginPath();
     SN.ctx.arc(180 + mx, 180 + mz, 11 + Math.sin(SN.simTime * 3) * 2, 0, SN.TAU);
     SN.ctx.stroke();
     SN.ctx.save();
     SN.ctx.translate(180, 180);
-    SN.ctx.rotate(SN.camYaw - SN.player.yaw);
+    SN.ctx.rotate(SN.PI - SN.player.yaw);
     SN.ctx.fillStyle = "#fff0cb";
     SN.ctx.beginPath();
     SN.ctx.moveTo(0, -10);
@@ -538,10 +611,16 @@
 
   SN.refreshHUD = function refreshHUD() {
     const c = SN.player.car, w = SN.weapons[SN.selectedWeapon];
-    SN.setText("area", SN.areaName(SN.player.x, SN.player.z));
+    const area = SN.cityDistrictAt(SN.player.x, SN.player.z);
+    if (SN.lastDistrict !== area.name) {
+      SN.lastDistrict = area.name;
+      SN.districtToastUntil = SN.renderTime + 3.5;
+      SN.setText("area", area.name);
+    }
+    SN.$("districtToast").classList.toggle("show", SN.renderTime < SN.districtToastUntil);
+    document.documentElement.classList.toggle("driving", !!c);
     const turf = SN.crews.find(g => Math.hypot(g.x - SN.player.x, g.z - SN.player.z) < g.radius);
-    const region = SN.cityDistrictAt(SN.player.x, SN.player.z).ko + " / " + SN.cityDistrictAt(SN.player.x, SN.player.z).name;
-    SN.setText("district", turf ? turf.name + " 地盘 · " + (turf.anger > 0 ? "敌对" : "保持克制") : region);
+    SN.setText("district", turf ? turf.name + " 地盘 · " + (turf.anger > 0 ? "敌对" : "保持克制") : "");
     SN.setText("clock", String(Math.floor(SN.minutes / 60) % 24).padStart(2, "0") + ":" + String(Math.floor(SN.minutes) % 60).padStart(2, "0"));
     SN.setText("speed", String(Math.round(Math.abs(c ? c.speed : SN.player.speed) * 3.6)));
     SN.setText("mode", c ? c.spec.name + " · 车况 " + Math.ceil(c.health) + "%" : SN.GAITS[SN.player.gait].name + " · 首尔探索者");
@@ -557,12 +636,17 @@
     SN.$("heat").classList.toggle("searching", stars > 0 && SN.wantedSearch === 1);
     SN.$("heat").classList.toggle("flash", stars > 0 && SN.wantedFlash > 0);
     SN.$("heat").setAttribute("aria-label", "通缉 " + stars + " / 5");
-    SN.setText("wantedState", stars > 0 ? (SN.wantedSearch === 2 ? "警方目击 · 追捕中" : "搜索中 · 离开搜索圈后递减") : "");
-    SN.setText("weaponName", SN.holstered || !w ? "徒手 · 武器已收起" : w.name);
-    SN.setText("ammo", SN.reloadTime > 0 ? "换弹中…" : w && !SN.holstered ? (w.capacity ? w.mag + " / " + w.reserve : "近身武器") : "—");
-    SN.setText("weaponHint", c ? "F 下车 · 空格手刹" : SN.holstered ? "Q / 1–3 装备 · 滚轮变焦" : "Q / 1–3 武器 · 滚轮变焦 · H 收起");
-    if (c) {
-      SN.setHtml("interaction", "<kbd>F</kbd>下车 · 空格手刹 · S 制动 / 倒车");
+    SN.setText("wantedState", stars > 0 ? (SN.wantedSearch === 2 ? "警方目击 · 追捕中" : (SN.wantedCooldown > 0 ? "脱离视线 · 正在消除通缉" : "搜索中 · 离开红圈")) : "");
+    SN.$("crosshair").classList.toggle("target-locked", !!SN.aimTarget);
+    SN.setText("weaponName", SN.holstered || !w ? "徒手" : w.name);
+    SN.setText("ammo", c && c.recoveryReady ? "复位" : SN.reloadTime > 0 ? "换弹中…" : w && !SN.holstered ? (w.capacity ? w.mag + " / " + w.reserve : "近战") : "—");
+    SN.setText("weaponHint", c && c.recoveryReady ? "按 R 复位 · 触屏点右上角「复位」" : c ? "F 下车 · 空格手刹 · G 鸣笛 · 左键车内射击" : SN.holstered ? "Q / 1–6 装备 · 滚轮变焦" : "Q / 1–6 武器 · 滚轮变焦 · H 收起");
+    if (SN.counterTarget && SN.streetServices.includes(SN.counterTarget.shop)) {
+      SN.setHtml("interaction", "<kbd>E</kbd>" + SN.counterTarget.name);
+      SN.$("interaction").classList.add("visible");
+    }
+    else if (c) {
+      SN.setHtml("interaction", "<kbd>F</kbd>下车");
       SN.$("interaction").classList.add("visible");
     }
     else if (SN.doorTarget) {
@@ -570,12 +654,15 @@
       SN.$("interaction").classList.add("visible");
     }
     else if (SN.nearestCar && SN.nearDistance < 5.5) {
-      SN.setHtml("interaction", "<kbd>F</kbd>" + (SN.nearestCar.driver ? "拉出驾驶员并接管" : "驾驶") + " · " + SN.nearestCar.spec.name);
+      SN.setHtml("interaction", "<kbd>F</kbd>上车" + (SN.nearestCar.driver ? " / 接管" : "") + " · " + SN.nearestCar.spec.name);
       SN.$("interaction").classList.add("visible");
     }
     else
       SN.$("interaction").classList.remove("visible");
-    SN.setText("touchEnter", c ? "下车" : "上车");
+    SN.setText("touchEnter", c ? "下车" : SN.doorTarget ? (SN.doorTarget.dir > 0 ? "进门" : "出门") : "上车");
+    SN.setText("touchSprint", c ? "鸣笛" : "疾跑");
+    SN.setText("touchJump", c ? "手刹" : "跳跃");
+    SN.$("touchJump").setAttribute("aria-label", c ? "按住手刹" : "跳跃");
     SN.refreshWeaponSlots();
     SN.refreshMissionHUD();
     SN.drawMap();
@@ -584,12 +671,15 @@
 
   SN.registerInit(28, function initializeHud28() {
     SN.toastTime = 0;
+    SN.feedbackStars = 0; SN.feedbackMoney = SN.money; SN.starPulse = 0; SN.cashPulse = 0;
+    SN.lastDistrict = "";
+    SN.districtToastUntil = 0;
   });
   // Startup phase 30: keep this order relative to the other systems.
 
   SN.registerInit(30, function initializeHud30() {
     SN.slotElements = [];
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < SN.weapons.length; i++) {
       const slot = document.createElement("div");
       slot.className = "slot";
       const cv = document.createElement("canvas");

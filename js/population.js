@@ -33,6 +33,24 @@
       interior: false,
       wanderX: 3,
       wanderZ: 12,
+      pedNode: null,
+      pedPrev: null,
+      pedTarget: null,
+      pedLink: null,
+      pedWait: 0,
+      pedWaitTime: 0,
+      pedCrossClear: false,
+      pedNoCrossUntil: 0,
+      pedLaneBias: 0.3,
+      pedStuckClock: 0,
+      pedTurnClock: 0,
+      pedTurnAccum: 0,
+      pedWindowX: x,
+      pedWindowZ: z,
+      pedFail: 0,
+      pedDespawn: false,
+      pedCornerStreak: 0,
+      pedWalking: false,
       knockout: false,
       temper: kind === "gang" ? SN.rand(0.55, 0.95) : kind === "police" ? 0.72 : SN.rand(0.05, 1),
       tough: kind === "gang" || kind === "police" || index % 5 === 0,
@@ -103,10 +121,7 @@
         icon.sprite.visible = true;
         return icon;
       }
-    const icon = SN.phoneIcons[0];
-    icon.active = true;
-    icon.sprite.visible = true;
-    return icon;
+    return null;
   };
 
   SN.applyCrime = function applyCrime(severity, label, key) {
@@ -151,6 +166,12 @@
       return false;
     if (!SN.started || SN.arrestState)
       return false;
+    const queued = SN.pendingReports.find(r => r.key === key);
+    if (queued) {
+      queued.severity = Math.max(queued.severity, severity);
+      if (severity >= queued.severity) queued.label = label;
+      return true;
+    }
     const policeSeen = [], civilSeen = [];
     for (const a of SN.actors) {
       if (!a.active || a.down || a.inCar && !a.inCar.active)
@@ -296,7 +317,7 @@
         break;
       }
     }
-    if (SN.helicopter.active && Math.hypot(SN.helicopter.root.position.x - SN.player.x, SN.helicopter.root.position.z - SN.player.z) < 80)
+    if (SN.helicopter.active && Math.hypot(SN.helicopter.root.position.x - SN.player.x, SN.helicopter.root.position.z - SN.player.z) < 65 && SN.visibleBetween(SN.helicopter.root.position.x, SN.helicopter.root.position.y, SN.helicopter.root.position.z, SN.player.x, SN.player.y + 1, SN.player.z))
       spotted = true;
     SN.wantedSearch = spotted ? 2 : 1;
     if (spotted) {
@@ -326,8 +347,6 @@
       SN.wantedResisted = false;
       if (SN.heat > 0) {
         SN.searchRadius = Math.max(40, SN.searchRadius - 9);
-        SN.searchX = SN.player.x;
-        SN.searchZ = SN.player.z;
         SN.toast("警戒下降 · 剩余 " + SN.heat + " 星 · 继续离开搜索圈", 3.5);
       }
       else {
@@ -338,26 +357,28 @@
       }
     }
     SN.spawnClock -= dt;
-    if (SN.spawnClock <= 0) {
-      const footDesired = SN.heat <= 1 ? 1 : SN.heat === 2 ? 2 : 4;
+    if (SN.spawnClock <= 0 && (spotted || !outside)) {
+      const tuning = SN.policeTuning[SN.heat];
+      const footDesired = tuning.foot;
       let footCount = 0;
       for (const a of SN.actors)
-        if (a.active && a.footPolice && !a.down)
+        if (a.active && a.footPolice && !a.down && !a.inCar)
           footCount++;
       if (footCount < footDesired)
         SN.spawnFootOfficer(SN.heat >= 4);
-      const carDesired = SN.heat >= 2 ? Math.min(6, SN.heat + 1) : 0;
+      const carDesired = tuning.cars;
       let carCount = 0;
       for (const c of SN.pursuitCars)
         if (c.active && c.role === "police")
           carCount++;
-      if (carCount < carDesired)
-        SN.spawnPursuit("police");
-      SN.spawnClock = SN.heat >= 4 ? 3.1 : 4.8;
+      // Three stars bring a visible pair immediately; later reinforcements stay capped.
+      const arrivals = SN.heat >= 3 && carCount < 2 ? Math.min(2 - carCount, carDesired - carCount) : Math.min(1, carDesired - carCount);
+      for (let i = 0; i < arrivals; i++) SN.spawnPursuit("police");
+      SN.spawnClock = tuning.interval;
     }
-    if (SN.heat >= 3) {
+    if (SN.heat >= 4) {
       SN.roadblockClock -= dt;
-      if (SN.roadblockClock <= 0) {
+      if (SN.roadblockClock <= 0 && (spotted || !outside)) {
         SN.deployRoadblock();
         SN.roadblockClock = 13;
       }
@@ -374,7 +395,7 @@
     }
     if (SN.heat >= 4) {
       SN.spikeClock -= dt;
-      if (SN.spikeClock <= 0) {
+      if (SN.spikeClock <= 0 && (spotted || !outside)) {
         SN.deploySpikes();
         SN.spikeClock = 16;
       }
@@ -398,7 +419,9 @@
   SN.beginArrest = function beginArrest(officer) {
     if (SN.arrestState || SN.player.dead)
       return;
+    SN.failMission("被警方拘留");
     SN.lastArrestStars = Math.max(1, SN.heat);
+    SN.survivedPeak = 0;
     SN.arrestState = { time: 0, fade: false, done: false, officer };
     SN.clearInput();
     SN.firing = SN.aiming = false;
@@ -436,6 +459,8 @@
     }
     SN.weapons[0].owned = true;
     SN.campaign.loadoutLost = true;
+    SN.minutes = (SN.minutes + 240) % 1440;
+    SN.carjack = null;
     SN.selectedWeapon = -1;
     SN.holstered = true;
     const p = SN.safePosition(station.x + 3, station.z + 4, 0.45);
@@ -451,6 +476,9 @@
     SN.player.fallPeak = SN.player.y;
     SN.player.dead = 0;
     SN.player.bail = null;
+    SN.player.vault = null; SN.player.policeHitBudget = 4; SN.player.policeHitAt = SN.simTime;
+    SN.closeShopMenu(); SN.closeStreetPanel(); SN.toggleCityMap(false); SN.toggleJournal(false); SN.closeDialogue();
+    SN.$("downscreen").classList.remove("visible");
     SN.playerRoot.rotation.x = 0;
     SN.playerRoot.visible = true;
     SN.playerRoot.rotation.z = 0;
@@ -532,7 +560,8 @@
     car.yaw = p.yaw + SN.PI / 2;
     car.root.position.set(p.x, SN.surfaceHeight(p.x, p.z), p.z);
     car.root.rotation.y = car.yaw;
-    car.health = 100;
+    SN.repairVehicle(car);
+    car.paint.color.copy(SN.srgb(0xd3e3e7));
     car.speed = car.vx = car.vz = 0;
     car.parked = true;
     car.driver = false;
@@ -628,7 +657,7 @@
     SN.helicopter.angle = Math.atan2(SN.player.x - SN.helicopter.root.position.x, SN.player.z - SN.helicopter.root.position.z);
     if (!Number.isFinite(SN.helicopter.angle))
       SN.helicopter.angle = 0;
-    SN.helicopter.root.position.set(SN.player.x + 30, SN.player.y + 30, SN.player.z + 30);
+    SN.helicopter.root.position.set(SN.searchX + 70, SN.surfaceHeight(SN.searchX + 70, SN.searchZ + 70) + 30, SN.searchZ + 70);
     SN.toast("重案支援：警用直升机已升空", 3.5);
   };
 
@@ -647,13 +676,18 @@
       return;
     h.angle += dt * 0.24;
     const r = 22 + Math.sin(SN.simTime * 0.3) * 4;
-    h.root.position.set(SN.player.x + Math.sin(h.angle) * r, SN.player.y + 27 + Math.sin(SN.simTime * 0.6) * 1.4, SN.player.z + Math.cos(h.angle) * r);
+    const tx = SN.searchX + Math.sin(h.angle) * r, tz = SN.searchZ + Math.cos(h.angle) * r;
+    const dx = tx - h.root.position.x, dz = tz - h.root.position.z, distance = Math.hypot(dx, dz) || 1;
+    const step = Math.min(1, dt * 16 / distance);
+    h.root.position.x += dx * step;
+    h.root.position.z += dz * step;
+    h.root.position.y = SN.lerp(h.root.position.y, SN.surfaceHeight(h.root.position.x, h.root.position.z) + 30, Math.min(1, dt));
     h.root.rotation.y = Math.atan2(SN.player.x - h.root.position.x, SN.player.z - h.root.position.z);
     h.rotor.rotation.y += dt * 26;
     h.tailRotor.rotation.x += dt * 38;
     const aimX = SN.searchX, aimZ = SN.searchZ;
     h.target.position.set(aimX, SN.surfaceHeight(aimX, aimZ), aimZ);
-    h.spot.intensity = 3.6 + Math.sin(SN.simTime * 7) * 0.4;
+    h.spot.intensity = SN.qualityLevel() > 0 ? 2.2 : 0;
     h.beam.visible = true;
     h.beam.position.set(0, -16, 1.6);
   };
@@ -682,17 +716,33 @@
     const car = SN.pursuitCars.find(c => !c.active && c.role === role && (role !== "gang" || c.team === team));
     if (!car)
       return;
-    const p = SN.roadSpawn(95);
+    const type = SN.heat >= 5 ? 13 : SN.heat >= 4 ? 12 : 9;
+    if (role === "police" && car.type !== type) SN.fitVehicle(car, type);
+    const count = SN.pursuitCars.filter(c => c.active && c.role === role).length;
+    const heading = SN.player.car ? SN.player.car.yaw : SN.player.yaw, direction = count % 2 ? -1 : 1;
+    let p = null, best = Infinity;
+    for (const point of SN.roadSpawnPoints) {
+      const dx = point.x - SN.player.x, dz = point.z - SN.player.z, d = Math.hypot(dx, dz);
+      if (d < 48 || d > (count < 2 ? 115 : 220) || SN.carBlocked(point.x, point.z, point.yaw, car) || SN.carWater(point.x, point.z, point.yaw, car)) continue;
+      if (SN.cars.some(c => c !== car && c.active && Math.hypot(c.x - point.x, c.z - point.z) < 8)) continue;
+      const along = dx * Math.sin(heading) + dz * Math.cos(heading);
+      const facingAway = dx * Math.sin(point.yaw) + dz * Math.cos(point.yaw) > 0;
+      const score = Math.abs(d - 78) + (along * direction < 20 ? 150 : 0) + (facingAway ? 20 : 0) + Math.abs(dx * Math.cos(heading) - dz * Math.sin(heading)) * 0.4;
+      if (score < best) { best = score; p = point; }
+    }
     if (!p)
       return;
     let driver;
     if (role === "police")
-      driver = SN.actors.find(a => a.kind === "police" && !a.active);
+      driver = SN.actors.find(a => a.kind === "police" && !a.active && !a.inCar);
     else
       driver = SN.actors.find(a => a.kind === "gang" && !a.missionEnemy && a.crew === team && a.active && !a.down && !a.inCar);
     if (!driver)
       return;
+    SN.repairVehicle(car);
+    if (role === "police") car.paint.color.copy(SN.srgb(SN.heat >= 4 ? 0x243a53 : 0xd3e3e7));
     Object.assign(car, p, {
+      freeRolling: false,
       active: true,
       health: 100,
       speed: 5,
@@ -705,12 +755,19 @@
       navNode: -1,
       navGoal: -1
     });
-    car.root.position.set(car.x, SN.surfaceHeight(car.x, car.z), car.z);
+    car.pursuitSlot = count;
+    SN.resetVehicleGround(car);
+    car.root.position.set(car.x, car.y, car.z);
     car.root.rotation.y = car.yaw;
     car.root.visible = true;
     driver.active = true;
-    driver.health = 100;
+    driver.health = role === "police" && SN.heat >= 4 ? 170 : 100;
+    driver.armored = role === "police" && SN.heat >= 4;
+    driver.armedWeapon = driver.armored ? 2 : 1;
+    driver.footPolice = role === "police";
     driver.down = 0;
+    driver.bail = null; driver.panic = 0; driver.resisted = false; driver.flinch = 0;
+    driver.dropGiven = false; driver.meleeOnly = false; driver.poseDirty = true; driver.lodElapsed = 0;
     driver.hostile = true;
     driver.inCar = car;
     car.occupant = driver;
@@ -719,6 +776,7 @@
   };
 
   SN.scareCivilians = function scareCivilians(x, z, radius) {
+    for (const c of SN.cars) if (c.active && c.driver && c.role === "traffic" && Math.hypot(c.x - x, c.z - z) < radius) c.panic = 6;
     for (const a of SN.actors) {
       if (!a.active || a.down || a.inCar || a.kind !== "civilian" || a.interior)
         continue;
@@ -730,7 +788,7 @@
       a.chat = false;
       a.mode = "flee";
       if (SN.rnd() < 0.18)
-        SN.speakBubble(a, SN.bumpLinesScared[Math.floor(SN.rnd() * SN.bumpLinesScared.length)], "scared");
+        SN.cityBark(a, "gun", "scared");
     }
   };
 
@@ -744,16 +802,491 @@
     return true;
   };
 
+  // Sidewalk graph: two pavement lanes per road, crosswalk links and junction corner links.
+  SN.pedLaneOffset = function pedLaneOffset(road) {
+    return road.pedestrian ? Math.max(0.9, road.width * 0.18) : road.width / 2 + 0.3 + (road.sidewalkW || 2) / 2;
+  };
+
+  SN.pedOnCarriageway = function pedOnCarriageway(x, z) {
+    const sample = SN.roadSample(x, z, 0.5);
+    if (!sample || sample.profile.pedestrian)
+      return false;
+    return Math.abs(sample.across || 0) < sample.profile.width / 2 + 0.1;
+  };
+
+  SN.pedOnCrosswalk = function pedOnCrosswalk(x, z, margin = 2.2) {
+    for (const crossing of SN.pedCrossings || [])
+      if (SN.segmentDistance(x, z, crossing.ax, crossing.az, crossing.bx, crossing.bz) < margin)
+        return crossing;
+    return null;
+  };
+
+  SN.pedLinkClear = function pedLinkClear(ax, az, bx, bz, allowRoad = false) {
+    const dx = bx - ax, dz = bz - az, length = Math.hypot(dx, dz);
+    if (length < 0.01)
+      return false;
+    const steps = Math.max(2, Math.ceil(length / 1.2));
+    for (let i = 0; i <= steps; i++) {
+      const x = SN.lerp(ax, bx, i / steps), z = SN.lerp(az, bz, i / steps);
+      if (SN.blocked(x, z, 0.28) || SN.isWater(x, z, 0.3))
+        return false;
+      if (!allowRoad && SN.pedOnCarriageway(x, z))
+        return false;
+    }
+    return true;
+  };
+
+  SN.buildPedestrianGraph = function buildPedestrianGraph() {
+    const CELL = 16, grid = new Map(), lanes = [];
+    let nodes = [];
+    const keyOf = (x, z) => Math.floor(x / CELL) + "," + Math.floor(z / CELL);
+    const addNode = node => {
+      node.id = nodes.length;
+      node.links = [];
+      nodes.push(node);
+      const key = keyOf(node.x, node.z);
+      if (!grid.has(key))
+        grid.set(key, []);
+      grid.get(key).push(node);
+      return node;
+    };
+    const addLink = (a, b, data = {}) => {
+      if (!a || !b || a === b || a.links.some(link => link.node === b))
+        return null;
+      a.links.push({ node: b, ...data });
+      b.links.push({ node: a, ...data });
+      return data;
+    };
+    SN.pavementSpawns = [];
+    for (const road of SN.roads) {
+      if (road.bridge || /江边北路|奥林匹克|匝道/.test(road.name) || !road.segments || !road.segments.length)
+        continue;
+      const offset = SN.pedLaneOffset(road);
+      for (const side of [-1, 1]) {
+        const laneNodes = [];
+        for (const seg of road.segments)
+          for (let t = 0; t < seg.len - 0.4; t += 8) {
+            const x = seg.a[0] + seg.dx * t / seg.len + seg.dz / seg.len * offset * side,
+              z = seg.a[1] + seg.dz * t / seg.len - seg.dx / seg.len * offset * side;
+            if (SN.blocked(x, z, 0.5) || SN.isWater(x, z, 0.4) || SN.hillHeight(x, z) >= 70 || SN.pedOnCarriageway(x, z))
+              continue;
+            laneNodes.push(addNode({ x, z, yaw: seg.yaw, s: seg.s0 + t, road, side, lane: null, index: laneNodes.length }));
+          }
+        if (laneNodes.length < 2)
+          continue;
+        const lane = { road, side, nodes: laneNodes, pedestrian: !!road.pedestrian };
+        for (const node of laneNodes)
+          node.lane = lane;
+        for (let i = 1; i < laneNodes.length; i++) {
+          const a = laneNodes[i - 1], b = laneNodes[i];
+          if (Math.hypot(b.x - a.x, b.z - a.z) <= 13 && SN.pedLinkClear(a.x, a.z, b.x, b.z))
+            addLink(a, b, { lane: true });
+        }
+        lanes.push(lane);
+      }
+    }
+    for (const path of SN.paths) {
+      const dx = path.b[0] - path.a[0], dz = path.b[1] - path.a[1], length = Math.hypot(dx, dz);
+      if (length < 4)
+        continue;
+      const tx = dx / length, tz = dz / length;
+      for (const side of [-1, 1]) {
+        const laneNodes = [];
+        for (let t = 4; t < length; t += 7) {
+          const x = path.a[0] + tx * t + tz * 1.35 * side, z = path.a[1] + tz * t - tx * 1.35 * side;
+          if (SN.blocked(x, z, 0.4) || SN.isWater(x, z, 0.4))
+            continue;
+          laneNodes.push(addNode({ x, z, yaw: Math.atan2(dx, dz), s: t, road: null, side, lane: null, index: laneNodes.length }));
+          SN.pavementSpawns.push({ x, z, yaw: Math.atan2(dx, dz), river: true, node: laneNodes[laneNodes.length - 1] });
+        }
+        if (laneNodes.length < 2)
+          continue;
+        const lane = { road: null, side, nodes: laneNodes, pedestrian: true };
+        for (const node of laneNodes)
+          node.lane = lane;
+        for (let i = 1; i < laneNodes.length; i++) {
+          const a = laneNodes[i - 1], b = laneNodes[i];
+          if (Math.hypot(b.x - a.x, b.z - a.z) <= 12 && SN.pedLinkClear(a.x, a.z, b.x, b.z))
+            addLink(a, b, { lane: true });
+        }
+        lanes.push(lane);
+      }
+    }
+    // Pavement spawn points now point at their graph node so a recycled pedestrian starts on a lane.
+    for (const lane of lanes)
+      if (lane.road)
+        for (const node of lane.nodes)
+          SN.pavementSpawns.push({ x: node.x, z: node.z, yaw: node.yaw, river: false, node });
+    const query = (x, z, radius) => {
+      const found = [], cells = Math.ceil(radius / CELL);
+      for (let dz = -cells; dz <= cells; dz++)
+        for (let dx = -cells; dx <= cells; dx++) {
+          const bucket = grid.get(keyOf(x + dx * CELL, z + dz * CELL));
+          if (bucket)
+            for (const node of bucket)
+              if (Math.hypot(node.x - x, node.z - z) <= radius)
+                found.push(node);
+        }
+      return found;
+    };
+    SN.pedNodeNearest = function pedNodeNearest(x, z, radius = 8) {
+      let best = null, bestDistance = radius;
+      for (const node of query(x, z, radius)) {
+        const d = Math.hypot(node.x - x, node.z - z);
+        if (d < bestDistance) { bestDistance = d; best = node; }
+      }
+      return best;
+    };
+    for (const crossing of SN.pedCrossings || []) {
+      const a = SN.pedNodeNearest(crossing.ax, crossing.az, 9), b = SN.pedNodeNearest(crossing.bx, crossing.bz, 9);
+      if (!a || !b || a === b)
+        continue;
+      const dx = crossing.bx - crossing.ax, dz = crossing.bz - crossing.az, length = Math.hypot(dx, dz) || 1;
+      if ((b.x - a.x) * dx / length + (b.z - a.z) * dz / length < length * 0.55)
+        continue;
+      addLink(a, b, { cross: crossing });
+    }
+    // Corner paving links pair the nearest pavement node of each road once per
+    // corner, so sidewalk lanes join at junctions without forming tight rings.
+    for (const corner of SN.crossingCorners || []) {
+      const near = query(corner.x, corner.z, 9);
+      const bestByRoad = new Map();
+      for (const node of near) {
+        if (!node.lane || !node.lane.road || node.links.length >= 4)
+          continue;
+        const d = Math.hypot(node.x - corner.x, node.z - corner.z);
+        const current = bestByRoad.get(node.lane.road);
+        if (!current || d < current.d)
+          bestByRoad.set(node.lane.road, { node, d });
+      }
+      const candidates = [...bestByRoad.values()].sort((a, b) => a.d - b.d).map(entry => entry.node);
+      const used = new Set();
+      for (let i = 0; i < candidates.length; i++)
+        for (let j = i + 1; j < candidates.length; j++) {
+          const a = candidates[i], b = candidates[j];
+          if (used.has(a) || used.has(b) || a.lane === b.lane || a.links.length >= 4 || b.links.length >= 4)
+            continue;
+          if (SN.pedLinkClear(a.x, a.z, b.x, b.z)) {
+            addLink(a, b, { corner: true });
+            used.add(a);
+            used.add(b);
+          }
+        }
+    }
+    // Riverside and park paths join the nearest pavement node.
+    for (const node of nodes) {
+      if (node.road || node.links.length >= 3)
+        continue;
+      const near = query(node.x, node.z, 9);
+      for (const other of near) {
+        if (!other.road || other.links.length >= 4)
+          continue;
+        if (SN.pedLinkClear(node.x, node.z, other.x, other.z)) {
+          addLink(node, other, { plaza: true });
+          break;
+        }
+      }
+    }
+    // Tiny disconnected fragments would leave pedestrians pacing between two
+    // nodes, so drop them; crossings always keep their pavement endpoints.
+    const keep = new Set(), visited = new Set();
+    for (const start of nodes) {
+      if (visited.has(start))
+        continue;
+      const component = [], queue = [start];
+      visited.add(start);
+      let hasCross = false;
+      while (queue.length) {
+        const node = queue.pop();
+        component.push(node);
+        for (const link of node.links) {
+          if (link.cross)
+            hasCross = true;
+          if (!visited.has(link.node)) {
+            visited.add(link.node);
+            queue.push(link.node);
+          }
+        }
+      }
+      if (component.length >= 8 || hasCross)
+        for (const node of component)
+          keep.add(node);
+    }
+    for (const node of nodes)
+      node.links = node.links.filter(link => keep.has(link.node));
+    const kept = nodes.filter(node => keep.has(node) && node.links.length > 0);
+    kept.forEach((node, index) => { node.id = index; });
+    grid.clear();
+    for (const node of kept) {
+      const key = keyOf(node.x, node.z);
+      if (!grid.has(key))
+        grid.set(key, []);
+      grid.get(key).push(node);
+    }
+    nodes = kept;
+    SN.pavementSpawns = SN.pavementSpawns.filter(point => !point.node || keep.has(point.node));
+    SN.pedLanes = lanes;
+    SN.pedestrianNodes = nodes;
+    SN.pedNodeGrid = grid;
+    return { nodes: nodes.length, lanes: lanes.length };
+  };
+
+  SN.pedChooseTarget = function pedChooseTarget(a) {
+    const node = a.pedNode;
+    if (!node) {
+      a.pedTarget = null;
+      return false;
+    }
+    const options = [];
+    for (const link of node.links) {
+      if (link.node === a.pedPrev || (link.cross && SN.simTime < a.pedNoCrossUntil))
+        continue;
+      const dx = link.node.x - node.x, dz = link.node.z - node.z, length = Math.hypot(dx, dz);
+      if (length < 0.4)
+        continue;
+      const alignment = (Math.sin(a.yaw) * dx + Math.cos(a.yaw) * dz) / length;
+      let preference = link.lane ? 0.7 : link.cross ? 0.25 : link.plaza ? 0.2 : -0.1;
+      if (!link.lane && !link.cross && a.pedCornerStreak > 1)
+        preference -= 0.8;
+      options.push({ link, score: alignment * (link.lane ? 1.2 : 0.9) + preference + SN.rnd() * 0.3 });
+    }
+    if (!options.length)
+      for (const link of node.links)
+        if (link.node !== node && !link.cross)
+          options.push({ link, score: 0.1 });
+    if (!options.length) {
+      a.pedTarget = null;
+      a.pedLink = null;
+      return false;
+    }
+    options.sort((x, y) => y.score - x.score);
+    const chosen = options[0].link;
+    a.pedCornerStreak = chosen.lane || chosen.cross ? 0 : (a.pedCornerStreak || 0) + 1;
+    if (a.pedCornerStreak > 4) {
+      a.pedCornerStreak = 0;
+      SN.pedestrianRepath(a);
+      return false;
+    }
+    a.pedLink = chosen;
+    a.pedTarget = chosen.node;
+    return true;
+  };
+
+  SN.pedCrossSafe = function pedCrossSafe(crossing, a) {
+    if (!crossing)
+      return true;
+    const waiting = a.pedWaitTime > 8;
+    if (!waiting && SN.trafficGreen(crossing.signal))
+      return false;
+    const mx = (crossing.ax + crossing.bx) / 2, mz = (crossing.az + crossing.bz) / 2;
+    for (const car of SN.cars) {
+      if (!car.active || car.parked || Math.abs(car.speed) < 1.2)
+        continue;
+      if (Math.hypot(car.x - mx, car.z - mz) < 9)
+        return false;
+    }
+    return true;
+  };
+
+  SN.pedestrianWalkTarget = function pedestrianWalkTarget(a, dt) {
+    if (!SN.pedestrianNodes || !SN.pedestrianNodes.length)
+      return null;
+    if (!a.pedNode || Math.hypot(a.pedNode.x - a.x, a.pedNode.z - a.z) > 6.5) {
+      // A pedestrian shoved deep into a wide road can be further than one lane
+      // from any pavement node; widen the lookup so they can still find a way out.
+      a.pedNode = SN.pedNodeNearest(a.x, a.z, 9) || (SN.pedOnCarriageway(a.x, a.z) ? SN.pedNodeNearest(a.x, a.z, 48) : null);
+      a.pedPrev = null;
+      a.pedTarget = null;
+      a.pedLink = null;
+      a.pedCrossClear = false;
+    }
+    if (!a.pedNode)
+      return null;
+    if (!a.pedTarget && !SN.pedChooseTarget(a))
+      return null;
+    let target = a.pedTarget;
+    if (!target)
+      return null;
+    if (a.pedLink && a.pedLink.cross) {
+      if (!a.pedCrossClear) {
+        a.pedWaitTime += dt;
+        if (!SN.pedCrossSafe(a.pedLink.cross, a)) {
+          a.pedWait = 0.25;
+          a.yaw = SN.approachAngle(a.yaw, Math.atan2(target.x - a.x, target.z - a.z), dt * 3);
+          a.pedStuckClock = 0;
+          a.pedTurnClock = 0;
+          a.pedTurnAccum = 0;
+          a.pedWindowX = a.x;
+          a.pedWindowZ = a.z;
+          return { x: target.x, z: target.z, speed: 0, wait: true };
+        }
+        a.pedCrossClear = true;
+        a.pedWait = 0;
+      }
+    } else {
+      a.pedWait = Math.max(0, a.pedWait - dt);
+    }
+    const dx = target.x - a.x, dz = target.z - a.z, distance = Math.hypot(dx, dz);
+    if (distance < 0.75) {
+      const arrivedLink = a.pedLink;
+      a.pedPrev = a.pedNode;
+      a.pedNode = target;
+      a.pedTarget = null;
+      a.pedLink = null;
+      a.pedCrossClear = false;
+      a.pedWaitTime = 0;
+      if (arrivedLink && arrivedLink.cross)
+        a.pedNoCrossUntil = SN.simTime + 7;
+      a.pedFail = 0;
+      if (!SN.pedChooseTarget(a) || !a.pedTarget)
+        return { x: a.x, z: a.z, speed: 0, wait: true };
+      target = a.pedTarget;
+    }
+    let ox = 0, oz = 0;
+    if (!(a.pedLink && a.pedLink.cross)) {
+      const yaw = Math.atan2(target.x - a.pedNode.x, target.z - a.pedNode.z);
+      const bias = a.pedLaneBias + (a.pedNode.lane && a.pedNode.lane.pedestrian ? 0.35 : 0);
+      ox = Math.cos(yaw) * bias;
+      oz = -Math.sin(yaw) * bias;
+    }
+    if (a.pedLink && a.pedLink.lane && a.pedNode.lane)
+      a.sideYaw = Math.atan2(target.x - a.pedNode.x, target.z - a.pedNode.z);
+    return { x: target.x + ox, z: target.z + oz, speed: a.speed, wait: false };
+  };
+
+  SN.pedestrianAvoidance = function pedestrianAvoidance(a) {
+    let ax = 0, az = 0;
+    const bx = Math.floor(a.x / 2), bz = Math.floor(a.z / 2);
+    for (let iz = -1; iz <= 1; iz++)
+      for (let ix = -1; ix <= 1; ix++) {
+        const cell = SN.crowdCells.get((bz + iz + 2048) * 8192 + bx + ix + 2048);
+        if (!cell)
+          continue;
+        for (const other of cell) {
+          if (other === a || other.sitting)
+            continue;
+          const dx = a.x - other.x, dz = a.z - other.z, d2 = dx * dx + dz * dz;
+          if (d2 > 1.1 || d2 < 0.0001)
+            continue;
+          const d = Math.sqrt(d2), weight = (1.1 - d) / 1.1;
+          ax += dx / d * weight;
+          az += dz / d * weight;
+        }
+      }
+    const pdx = a.x - SN.player.x, pdz = a.z - SN.player.z, pd = Math.hypot(pdx, pdz);
+    if (pd < 1.15 && pd > 0.001) {
+      ax += pdx / pd * (1.15 - pd) * 1.2;
+      az += pdz / pd * (1.15 - pd) * 1.2;
+    }
+    const length = Math.hypot(ax, az);
+    if (length > 0.75) { ax = ax / length * 0.75; az = az / length * 0.75; }
+    return { x: ax, z: az };
+  };
+
+  SN.pedestrianStuck = function pedestrianStuck(a, dt, turned) {
+    if (a.pedWait > 0 || (a.pedLink && a.pedLink.cross && !a.pedCrossClear))
+      return;
+    a.pedStuckClock += dt;
+    a.pedTurnClock += dt;
+    a.pedTurnAccum += turned;
+    if (a.pedStuckClock >= 3) {
+      const moved = Math.hypot(a.x - a.pedWindowX, a.z - a.pedWindowZ);
+      a.pedStuckClock = 0;
+      a.pedWindowX = a.x;
+      a.pedWindowZ = a.z;
+      if (moved < 0.3)
+        SN.pedestrianRepath(a);
+    }
+    if (a.pedTurnClock >= 4) {
+      a.pedTurnClock = 0;
+      if (a.pedTurnAccum > 9.42)
+        SN.pedestrianRepath(a);
+      a.pedTurnAccum = 0;
+    }
+  };
+
+  SN.pedestrianRepath = function pedestrianRepath(a) {
+    a.pedFail = (a.pedFail || 0) + 1;
+    a.pedTarget = null;
+    a.pedLink = null;
+    a.pedPrev = null;
+    a.pedWait = 0;
+    a.pedCrossClear = false;
+    a.pedNoCrossUntil = 0;
+    a.pedCornerStreak = 0;
+    a.pedNode = SN.pedNodeNearest(a.x, a.z, 10) || a.pedNode;
+    a.pedWindowX = a.x;
+    a.pedWindowZ = a.z;
+    if (a.pedFail < 2)
+      return;
+    a.pedFail = 0;
+    if (SN.crowdOffscreen(a.x, a.z) || Math.hypot(a.x - SN.player.x, a.z - SN.player.z) > 70) {
+      a.active = false;
+      a.pedDespawn = false;
+      if (a.partner) {
+        a.partner.partner = null;
+        a.partner = null;
+      }
+    } else
+      a.pedDespawn = true;
+  };
+
+  SN.pedestrianArrived = function pedestrianArrived(a) {
+    if (!a.pedLink || !a.pedLink.cross)
+      return;
+    a.pedNoCrossUntil = SN.simTime + 9;
+    a.pedCrossClear = false;
+    a.pedWaitTime = 0;
+  };
+
   SN.assignPedMode = function assignPedMode(a, force = false) {
     if (a.sitting && !force) {
       a.mode = "sit";
       a.modeTimer = SN.rand(18, 45);
       return;
     }
+    // Finish an in-progress road crossing before considering a stay-put activity:
+    // stopping in the middle of the carriageway strands the actor between traffic.
+    if (a.kind === "civilian" && a.pedLink && a.pedLink.cross) {
+      a.mode = "walk";
+      a.modeTimer = SN.rand(3, 6);
+      return;
+    }
+    // Benches, bus stops and phones are only sensible on the pavement.
+    if (!a.interior && a.kind === "civilian" && SN.pedOnCarriageway(a.x, a.z) && !SN.pedOnCrosswalk(a.x, a.z, 2.6)) {
+      a.sitting = false;
+      a.phone = false;
+      a.chat = false;
+      a.mode = "walk";
+      a.modeTimer = SN.rand(4, 8);
+      a.pedTarget = null;
+      a.pedLink = null;
+      a.pedPrev = null;
+      a.pedWait = 0;
+      a.pedCrossClear = false;
+      a.pedCornerStreak = 0;
+      a.pedNode = SN.pedNodeNearest(a.x, a.z, 12);
+      return;
+    }
     a.sitting = false;
     a.phone = false;
     a.chat = false;
+    a.pedTarget = null;
+    a.pedLink = null;
+    a.pedPrev = null;
+    a.pedWait = 0;
+    a.pedCrossClear = false;
+    a.pedCornerStreak = 0;
     a.modeTimer = SN.rand(7, 17);
+    if (!a.interior && SN.busStops && a.index % 4 === 0) {
+      const stop = SN.busStops.find(b => Math.hypot(b.x - a.x, b.z - a.z) < 14);
+      if (stop) {
+        const x = stop.x + Math.sin(stop.yaw) * 1.8 + Math.cos(stop.yaw) * (a.index % 3 - 1) * 1.1;
+        const z = stop.z + Math.cos(stop.yaw) * 1.8 - Math.sin(stop.yaw) * (a.index % 3 - 1) * 1.1;
+        if (!SN.blocked(x, z, 0.3) && !SN.isWater(x, z) && !SN.actors.some(b => b !== a && b.active && Math.hypot(b.x - x, b.z - z) < 0.8)) { a.queueStop = stop; a.queueX = x; a.queueZ = z; a.mode = "queue"; a.modeTimer = 24; return; }
+      }
+    }
+    if (!a.interior && a.archetype === "office" && a.index % 3 === 0) { a.mode = "smoke"; a.modeTimer = 12; return; }
     if (a.archetype === "vendor") {
       a.mode = "idle";
       a.chat = true;
@@ -819,6 +1352,8 @@
       if (partner) {
         a.mode = "chat";
         a.chat = true;
+        a.chatYaw = Math.atan2(partner.x - a.x, partner.z - a.z);
+        a.yaw = a.chatYaw;
         a.modeTimer = SN.rand(6, 12);
       }
       else {
@@ -827,18 +1362,18 @@
       }
       return;
     }
-    if (roll < 0.55) {
-      const cx = a.x + Math.cos(a.sideYaw) * 5.2 * a.dirSign, cz = a.z - Math.sin(a.sideYaw) * 5.2 * a.dirSign;
-      if (!SN.blocked(cx, cz, 0.3) && !SN.isWater(cx, cz, 0.3)) {
-        a.mode = "cross";
-        a.crossX = cx;
-        a.crossZ = cz;
-        a.crossWait = SN.rand(1.4, 3.8);
-        return;
-      }
-    }
     a.mode = "walk";
     a.modeTimer = SN.rand(8, 18);
+    a.pedTarget = null;
+    a.pedLink = null;
+    a.pedPrev = null;
+    a.pedCrossClear = false;
+    a.pedWait = 0;
+    a.pedWaitTime = 0;
+    a.pedFail = 0;
+    if (!a.pedNode || Math.hypot(a.pedNode.x - a.x, a.pedNode.z - a.z) > 10)
+      a.pedNode = SN.pedNodeNearest(a.x, a.z, 10);
+    SN.pedChooseTarget(a);
     if (SN.rnd() < 0.34)
       a.dirSign *= -1;
   };
@@ -975,6 +1510,12 @@
       r.arms[0].upper.rotation.x *= 0.2;
       r.arms[0].lower.rotation.x = -0.08;
     }
+    if (a.mode === "smoke") {
+      r.arms[1].upper.rotation.x = -0.75; r.arms[1].lower.rotation.x = -1.8 + Math.sin(time * 0.7) * 0.45;
+    }
+    if (SN.weather && SN.weather.kind === "rain" && !a.interior && !a.sitting) {
+      r.arms[0].upper.rotation.x = -0.65; r.arms[0].lower.rotation.x = -1.45;
+    }
     if (a.mode === "photo") {
       r.head.rotation.y = 0;
       for (const arm of r.arms) {
@@ -991,13 +1532,14 @@
 
   SN.indexCrowd = function indexCrowd() {
     SN.crowdCells.clear();
+    let used = 0;
     for (const a of SN.actors) {
       if (!a.active || a.inCar || a.down || a.interior)
         continue;
-      const key = Math.floor(a.x / 2) + "," + Math.floor(a.z / 2);
+      const key = (Math.floor(a.z / 2) + 2048) * 8192 + Math.floor(a.x / 2) + 2048;
       let cell = SN.crowdCells.get(key);
       if (!cell) {
-        cell = [];
+        cell = SN.crowdCellPool[used++]; cell.length = 0;
         SN.crowdCells.set(key, cell);
       }
       cell.push(a);
@@ -1010,7 +1552,7 @@
     const bx = Math.floor(a.x / 2), bz = Math.floor(a.z / 2);
     for (let iz = -1; iz <= 1; iz++)
       for (let ix = -1; ix <= 1; ix++) {
-        const cell = SN.crowdCells.get((bx + ix) + "," + (bz + iz));
+        const cell = SN.crowdCells.get((bz + iz + 2048) * 8192 + bx + ix + 2048);
         if (!cell)
           continue;
         for (const other of cell) {
@@ -1049,6 +1591,7 @@
         SN.updateBailout(a, a.rig, dt);
         continue;
       }
+      if (a.cityEventTag === "snatch") continue;
       if (a.missionEnemy) {
         a.poseDirty = true;
         SN.updateEncounterActor(a, dt, time);
@@ -1105,6 +1648,9 @@
         SN.updateShopActor(a, actorDt, time);
         continue;
       }
+      if (a.kind === "civilian" && armed && SN.aiming && distance < 2.5 && Math.cos(Math.atan2(a.x - SN.player.x, a.z - SN.player.z) - SN.camYaw) > 0.6) {
+        SN.cityBark(a, "gun", "scared"); a.panic = Math.max(a.panic, 3);
+      }
       a.cool -= actorDt;
       a.panic = Math.max(0, a.panic - actorDt);
       a.flinch = Math.max(0, a.flinch - actorDt);
@@ -1116,7 +1662,7 @@
         a.strafeDir *= -1;
         a.strafeClock = SN.rand(1.1, 2.7);
       }
-      let oldX = a.x, oldZ = a.z, speed = 0, gait = 0, tx = a.x, tz = a.z, poseWeapon = -1, aimPose = false;
+      let oldX = a.x, oldZ = a.z, oldYaw = a.yaw, speed = 0, gait = 0, tx = a.x, tz = a.z, poseWeapon = -1, aimPose = false;
       if (a.kind === "gang") {
         const c = SN.crews[a.crew];
         if (armed && distance < 24 && Math.hypot(SN.player.x - c.x, SN.player.z - c.z) < c.radius)
@@ -1130,7 +1676,7 @@
         if (a.linger > 2 && a.linger < 2 + actorDt)
           SN.toast(c.name + "：收起武器，离开我们的街口。", 3);
       }
-      if (a.hostileTimer !== undefined) {
+      if (a.hostileTimer > 0) {
         a.hostileTimer -= actorDt;
         if (a.hostileTimer <= 0 && a.kind === "civilian" && distance > 12) {
           a.hostile = false;
@@ -1142,12 +1688,12 @@
       }
       let arrestApproach = false;
       if (a.kind === "police") {
-        if (a.footPolice && !SN.arrestState && SN.heat <= 2 && !SN.wantedResisted) {
+        if (a.footPolice && SN.heat > 0 && !SN.arrestState && SN.heat <= 2 && !SN.wantedResisted) {
           arrestApproach = true;
           a.hostile = false;
         }
         else if (a.footPolice)
-          a.hostile = true;
+          a.hostile = SN.heat > 0;
         else
           a.hostile = SN.heat >= 3 || SN.wantedResisted;
       }
@@ -1158,9 +1704,9 @@
       }
       if (arrestApproach && !SN.player.dead) {
         gait = 2;
-        tx = SN.player.x;
-        tz = SN.player.z;
-        speed = distance > 2.3 ? SN.GAITS[2].speed * 0.94 : 0;
+        tx = visible ? SN.player.x : SN.searchX;
+        tz = visible ? SN.player.z : SN.searchZ;
+        speed = Math.hypot(tx - a.x, tz - a.z) > 2.3 ? SN.GAITS[2].speed * 0.94 : 0;
         a.yaw = SN.approachAngle(a.yaw, Math.atan2(tx - a.x, tz - a.z), actorDt * 7);
         const resisting = !SN.player.car && ((!SN.holstered && SN.selectedWeapon > 0) || SN.firing || SN.aiming || SN.player.speed > 2.8);
         if (SN.player.car) {
@@ -1200,8 +1746,8 @@
           speed = Math.hypot(tx - a.x, tz - a.z) > 1.4 ? SN.GAITS[2].speed * 0.85 : 0;
         }
         else {
-          tx = SN.player.x;
-          tz = SN.player.z;
+          tx = a.kind === "police" && !visible ? SN.searchX : SN.player.x;
+          tz = a.kind === "police" && !visible ? SN.searchZ : SN.player.z;
           speed = melee ? (distance > 1.5 ? SN.GAITS[2].speed : 0) : (visible ? (distance > 21 ? SN.GAITS[1].speed : 0) : SN.GAITS[1].speed);
           if (!melee && visible && distance < 35) {
             const ang = Math.atan2(SN.player.x - a.x, SN.player.z - a.z), strafe = a.strafeDir * 4;
@@ -1216,22 +1762,25 @@
           if (visible && distance < 2.05 && a.cool <= 0 && a.flinch <= 0) {
             a.cool = 1.08;
             a.attackTimer = 0.42;
-            SN.hurtPlayer(a.kind === "police" ? 9 : a.kind === "gang" ? 8 : 6);
+            SN.hurtPlayer(a.kind === "police" ? 7 : a.kind === "gang" ? 8 : 6, false, a);
             SN.emitSparks(SN.player.x, SN.player.y + 1, SN.player.z, 2, false);
             SN.soundImpact(7);
           }
         }
         else if (visible && distance < 72 && a.cool <= 0 && a.flinch <= 0) {
-          a.cool = a.kind === "police" ? (weapon === 2 ? 0.28 : 0.8) : SN.rand(0.8, 1.45);
+          a.cool = a.kind === "police" ? (weapon === 2 ? (a.burst++ % 3 < 2 ? 0.24 : 1.25) : 1.05) : SN.rand(0.9, 1.5);
           const scatter = a.kind === "police" ? 0.35 : 0.55;
           SN.shotOrigin.set(a.x + Math.sin(a.yaw) * 0.32, SN.groundHeight(a.x, a.z) + 1.36, a.z + Math.cos(a.yaw) * 0.32);
           SN.shotEnd.set(SN.player.x + SN.rand(-scatter, scatter), SN.player.y + 1.1, SN.player.z + SN.rand(-scatter, scatter));
           SN.spawnMuzzleFlash(SN.shotOrigin, true);
           SN.spawnTracer(SN.shotOrigin, SN.shotEnd, true);
-          if (SN.rnd() < SN.clamp(0.74 - distance * 0.007, 0.14, 0.7)) {
+          SN.soundEnemyShot(a);
+          const accuracy = a.kind === "police" ? SN.policeTuning[Math.max(1, SN.heat)].accuracy : 0.53;
+          const movingPenalty = SN.player.car ? Math.min(0.2, Math.abs(SN.player.car.speed) * 0.008) : SN.player.speed > 4 ? 0.12 : 0;
+          if (SN.rnd() < SN.clamp(accuracy - distance * 0.005 - movingPenalty, 0.07, accuracy)) {
             if (SN.player.car)
-              SN.player.car.health = Math.max(0, SN.player.car.health - (a.kind === "police" ? 4 : 3) * SN.player.car.spec.damage);
-            SN.hurtPlayer(a.kind === "police" ? (weapon === 2 ? 9 : 7) : a.kind === "gang" ? 5 : 4);
+              SN.player.car.health = Math.max(0, SN.player.car.health - (a.kind === "police" ? 1.5 : 3) * SN.player.car.spec.damage);
+            SN.hurtPlayer(a.kind === "police" ? (weapon === 2 ? 7 : 6) : a.kind === "gang" ? 5 : 4, false, a);
           }
           if (SN.rnd() < 0.045)
             SN.scareCivilians(a.x, a.z, 20);
@@ -1261,8 +1810,24 @@
           speed = a.archetype === "elder" ? 1.45 : a.personality === "timid" ? SN.GAITS[2].speed : SN.GAITS[1].speed * 1.3;
         }
         else {
+          // A shove from a car or the player can leave a stationary pedestrian in
+          // the road; send them walking back to the pavement instead of idling there.
+          if (!a.interior && a.mode !== "walk" && SN.pedOnCarriageway(a.x, a.z) && !SN.pedOnCrosswalk(a.x, a.z, 2.6)) {
+            a.sitting = false;
+            a.phone = false;
+            a.chat = false;
+            a.mode = "walk";
+            a.modeTimer = SN.rand(4, 8);
+            a.pedTarget = null;
+            a.pedLink = null;
+            a.pedPrev = null;
+            a.pedWait = 0;
+            a.pedCrossClear = false;
+            a.pedCornerStreak = 0;
+            a.pedNode = SN.pedNodeNearest(a.x, a.z, 12);
+          }
           a.modeTimer -= actorDt;
-          if (a.modeTimer <= 0 || !["walk", "idle", "phone", "chat", "cross", "sit", "photo"].includes(a.mode))
+          if (a.modeTimer <= 0 || !["walk", "idle", "phone", "chat", "sit", "photo", "queue", "smoke"].includes(a.mode))
             SN.assignPedMode(a);
           if (a.sitting) {
             a.x = a.sitX;
@@ -1273,59 +1838,36 @@
             oldX = a.x;
             oldZ = a.z;
           }
+          else if (a.mode === "queue") {
+            tx = a.queueX; tz = a.queueZ; speed = Math.hypot(tx - a.x, tz - a.z) > 0.25 ? a.speed : 0;
+            if (!speed && a.queueStop) a.yaw = a.queueStop.yaw;
+          }
           else if (a.mode === "walk") {
-            const tangentX = Math.sin(a.sideYaw),
-              tangentZ = Math.cos(a.sideYaw),
-              along = (a.x - a.homeX) * tangentX + (a.z - a.homeZ) * tangentZ;
-            if (Math.abs(along) > a.walkRange)
-              a.dirSign = along > 0 ? -1 : 1;
-            tx = a.x + tangentX * a.dirSign * 4;
-            tz = a.z + tangentZ * a.dirSign * 4;
-            speed = a.speed;
+            const goal = SN.pedestrianWalkTarget(a, actorDt);
             gait = a.archetype === "jogger" ? 1 : 0;
+            if (goal) {
+              tx = goal.x;
+              tz = goal.z;
+              if (goal.wait)
+                speed = 0;
+              else {
+                const remaining = Math.hypot(tx - a.x, tz - a.z);
+                speed = Math.min(a.speed, 0.5 + remaining * 0.85);
+                if (a.pedLink && a.pedLink.cross)
+                  speed = Math.min(1.75, Math.max(speed, 1.2));
+              }
+            }
+            else
+              speed = 0;
             if (a.partner && a.partner.active && !a.partner.down && !a.partner.hostile && a.partner.panic <= 0) {
               const mate = a.partner;
-              if (a.index > mate.index) {
+              if (a.index > mate.index && !(mate.pedLink && mate.pedLink.cross) && Math.hypot(mate.x - a.x, mate.z - a.z) < 3.5) {
                 tx = mate.x + Math.cos(mate.sideYaw) * 0.85;
                 tz = mate.z - Math.sin(mate.sideYaw) * 0.85;
                 speed = Math.hypot(tx - a.x, tz - a.z) > 0.45 ? mate.speed * 1.15 : 0;
               }
-              else if (Math.hypot(a.x - mate.x, a.z - mate.z) > 3)
-                speed *= 0.3;
-            }
-          }
-          else if (a.mode === "cross") {
-            if (a.crossWait > 0) {
-              a.crossWait -= actorDt;
-              tx = a.x;
-              tz = a.z;
-              speed = 0;
-              a.yaw = SN.approachAngle(a.yaw, Math.atan2(a.crossX - a.x, a.crossZ - a.z), actorDt * 3);
-            }
-            else {
-              let carNear = false;
-              for (const c of SN.cars) {
-                if (!c.active || c.parked || Math.abs(c.speed) < 1.5)
-                  continue;
-                if (Math.hypot(c.x - a.crossX, c.z - a.crossZ) < 9) {
-                  carNear = true;
-                  break;
-                }
-              }
-              if (carNear) {
-                a.crossWait = 0.6;
-                speed = 0;
-              }
-              else {
-                tx = a.crossX;
-                tz = a.crossZ;
-                speed = Math.min(1.7, a.speed * 1.15);
-                gait = 0;
-                if (Math.hypot(tx - a.x, tz - a.z) < 0.8) {
-                  a.mode = "walk";
-                  a.modeTimer = 0;
-                }
-              }
+              else if (Math.hypot(a.x - mate.x, a.z - mate.z) > 3.5)
+                speed *= 0.6;
             }
           }
           else {
@@ -1333,20 +1875,8 @@
             tz = a.z;
             speed = 0;
             gait = 0;
-            if (a.chat) {
-              let partner = null, best = 4;
-              for (const other of SN.actors) {
-                if (other === a || !other.active || other.down || other.inCar || other.kind !== "civilian")
-                  continue;
-                const d = Math.hypot(other.x - a.x, other.z - a.z);
-                if (d < best) {
-                  best = d;
-                  partner = other;
-                }
-              }
-              if (partner)
-                a.yaw = SN.approachAngle(a.yaw, Math.atan2(partner.x - a.x, partner.z - a.z), actorDt * 3);
-            }
+            if (a.chat && a.chatYaw !== undefined)
+              a.yaw = SN.approachAngle(a.yaw, a.chatYaw, actorDt * 2);
           }
         }
       }
@@ -1357,17 +1887,46 @@
       }
       const dx = tx - a.x, dz = tz - a.z, len = Math.hypot(dx, dz);
       if (speed && len > 0.2) {
-        a.yaw = SN.approachAngle(a.yaw, Math.atan2(dx, dz), actorDt * 6);
+        const desired = Math.atan2(dx, dz);
+        if (a.kind === "civilian" && a.mode === "walk" && !a.sitting) {
+          const delta = SN.angleDelta(a.yaw, desired), cap = 3.4 * actorDt;
+          a.yaw += SN.clamp(delta, -cap, cap);
+        }
+        else
+          a.yaw = SN.approachAngle(a.yaw, desired, actorDt * 6);
         const step = Math.min(len, speed * actorDt), substeps = Math.max(1, Math.ceil(step / 0.4));
         for (let k = 0; k < substeps; k++) {
           const nx = a.x + dx / len * step / substeps, nz = a.z + dz / len * step / substeps;
           if (SN.isWater(nx, nz, 0.25))
             break;
+          if (a.kind === "civilian" && a.mode === "walk" && SN.pedOnCarriageway(nx, nz) && !SN.pedOnCrosswalk(nx, nz, 2.8)) {
+            // Refuse to step into the road. An actor already pushed into it may
+            // only move outward, toward the kerb, never along the traffic lanes.
+            const from = SN.pedOnCarriageway(a.x, a.z) ? SN.roadSample(a.x, a.z, 0.5) : null;
+            const to = from ? SN.roadSample(nx, nz, 0.5) : null;
+            if (!from || !to || Math.abs(to.across) < Math.abs(from.across) - 0.01) {
+              a.pedTarget = null;
+              a.pedLink = null;
+              a.pedCornerStreak = 0;
+              break;
+            }
+          }
           const r = SN.resolveCircle(nx, nz, 0.28);
           a.x = r.x;
           a.z = r.z;
           if (r.hit)
             break;
+        }
+      }
+      if (a.kind === "civilian" && !a.sitting && !a.down && a.active) {
+        const avoid = SN.pedestrianAvoidance(a);
+        if (avoid.x || avoid.z) {
+          const nx = a.x + avoid.x * actorDt * 2.1, nz = a.z + avoid.z * actorDt * 2.1;
+          if (!SN.isWater(nx, nz, 0.2)) {
+            const r = SN.resolveCircle(nx, nz, 0.28);
+            a.x = r.x;
+            a.z = r.z;
+          }
         }
       }
       for (const c of SN.cars) {
@@ -1379,7 +1938,9 @@
         }
       }
       SN.separatePedestrian(a);
-      a.rig.root.position.set(a.x, SN.groundUnder(a.x, a.z, 0.2), a.z);
+      if (a.kind === "civilian" && !a.sitting && a.active && a.mode === "walk")
+        SN.pedestrianStuck(a, actorDt, Math.abs(SN.angleDelta(oldYaw, a.yaw)));
+      a.rig.root.position.set(a.x, SN.groundUnder(a.x, a.z, 0.2, a.rig.root.position.y), a.z);
       a.rig.root.rotation.y = a.yaw;
       const moved = Math.hypot(a.x - oldX, a.z - oldZ);
       SN.advanceGait(a.rig, moved, actorDt, gait);
@@ -1482,7 +2043,8 @@
       late = SN.smoothRange(16, 19, hour) * (1 - SN.smoothRange(22, 24, hour));
     SN.crowdTarget = Math.round(16 + daytime * (river ? 44 : 42) + commute * 12 + (["myeong", "gangnam", "hongdae"].includes(district) ? late * 42 : late * 9));
     if (SN.qualityLevel() === 0)
-      SN.crowdTarget = Math.max(12, SN.crowdTarget - 12);
+      SN.crowdTarget = Math.min(38, Math.max(12, SN.crowdTarget - 12));
+    else SN.crowdTarget = Math.min(SN.qualityLevel() === 1 ? 64 : 88, SN.crowdTarget);
     const nearby = [], bx = Math.floor(SN.player.x / 100), bz = Math.floor(SN.player.z / 100);
     for (let iz = -2; iz <= 2; iz++)
       for (let ix = -2; ix <= 2; ix++)
@@ -1495,12 +2057,12 @@
     let nearbyCount = 0;
     for (let i = 0; i < SN.pedCount; i++) {
       const a = SN.actors[i], distance = Math.hypot(a.x - SN.player.x, a.z - SN.player.z);
-      if (a.inCar || a.down || a.bail || a.hostile || a.panic > 0) {
+      if (a.cityEventTag || a.inCar || a.down || a.bail || a.hostile || a.panic > 0) {
         if (a.active && distance < 150)
           nearbyCount++;
         continue;
       }
-      const retire = a.active && (distance > 150 || ((nearbyCount >= SN.crowdTarget || SN.simTime > (a.residentUntil || 0)) && SN.crowdOffscreen(a.x, a.z) && distance > 50));
+      const retire = a.active && (distance > 150 || (a.pedDespawn && distance > 45 && SN.crowdOffscreen(a.x, a.z)) || ((nearbyCount >= SN.crowdTarget || SN.simTime > (a.residentUntil || 0)) && SN.crowdOffscreen(a.x, a.z) && distance > 50));
       if (retire) {
         a.active = false;
         if (a.partner) {
@@ -1525,7 +2087,7 @@
       // New pedestrians arrive behind the camera; the initial seed occurs before the first frame.
       if (SN.crowdBootstrapped && !SN.crowdOffscreen(x, z))
         continue;
-      if (SN.blocked(x, z, 0.35) || SN.isWater(x, z, 0.35) || SN.actors.some(a => a.active && !a.inCar && Math.hypot(a.x - x, a.z - z) < 1.25) || SN.cars.some(c => c.active && SN.carCirclePush(x, z, 0.45, c)))
+      if (SN.blocked(x, z, 0.35) || SN.isWater(x, z, 0.35) || SN.pedOnCarriageway(x, z) || SN.actors.some(a => a.active && !a.inCar && Math.hypot(a.x - x, a.z - z) < 1.25) || SN.cars.some(c => c.active && SN.carCirclePush(x, z, 0.45, c)))
         continue;
       let best = null, bestScore = -1;
       for (const candidate of available) {
@@ -1570,7 +2132,23 @@
         residentUntil: SN.simTime + SN.rand(40, 85),
         lodElapsed: 0,
         poseDirty: true,
-        walkRange: a.archetype === "jogger" ? 28 : SN.rand(8, 19)
+        walkRange: a.archetype === "jogger" ? 28 : SN.rand(8, 19),
+        pedNode: p.node || SN.pedNodeNearest(x, z, 9),
+        pedPrev: null,
+        pedTarget: null,
+        pedLink: null,
+        pedWait: 0,
+        pedWaitTime: 0,
+        pedCrossClear: false,
+        pedNoCrossUntil: 0,
+        pedStuckClock: 0,
+        pedTurnClock: 0,
+        pedTurnAccum: 0,
+        pedWindowX: x,
+        pedWindowZ: z,
+        pedFail: 0,
+        pedDespawn: false,
+        pedCornerStreak: 0
       });
       a.rig.root.rotation.z = 0;
       for (const leg of a.rig.legs)
@@ -1582,6 +2160,9 @@
           if (!SN.blocked(cx, cz, 0.3) && !SN.isWater(cx, cz, 0.3) && (!SN.crowdBootstrapped || SN.crowdOffscreen(cx, cz))) {
             a.x = a.homeX = cx;
             a.z = a.homeZ = cz;
+            a.pedNode = mate.pedNode || SN.pedNodeNearest(cx, cz, 9);
+            a.pedWindowX = cx;
+            a.pedWindowZ = cz;
             a.sideYaw = mate.sideYaw;
             a.dirSign = mate.dirSign;
             a.speed = mate.speed;
@@ -1603,10 +2184,26 @@
       const d = Math.hypot(p.x - SN.player.x, p.z - SN.player.z);
       return d > 95 && d < 260;
     });
-    let carsSpawned = 0;
-    for (let i = 0; i < SN.trafficDriverCount && carsSpawned < 4; i++) {
+    const trafficBudget = SN.cityTrafficBudget();
+    for (let i = 0; i < SN.trafficDriverCount; i++) {
       const c = SN.cars[i];
-      if (c === SN.player.car || c.role !== "traffic" || !c.occupant || Math.hypot(c.x - SN.player.x, c.z - SN.player.z) < 330 || !candidates.length)
+      if (c === SN.player.car) continue;
+      if (c.exploded && SN.simTime - c.explodedAt > 20 && SN.crowdOffscreen(c.x, c.z)) {
+        c.active = false; c.root.visible = false;
+        const driver = SN.actors[SN.baseActorCount + i];
+        if (driver && !driver.inCar && (driver.down || SN.crowdOffscreen(driver.x, driver.z))) {
+          Object.assign(driver, { inCar: c, active: true, health: 100, down: 0, fall: 0, bail: null, hostile: false });
+          c.occupant = driver;
+        }
+      }
+      if (!c.occupant) continue;
+      const far = Math.hypot(c.x - SN.player.x, c.z - SN.player.z) > 85 && SN.crowdOffscreen(c.x, c.z);
+      if (i >= trafficBudget && far) { c.active = false; c.root.visible = false; }
+    }
+    let carsSpawned = 0;
+    for (let i = 0; i < trafficBudget && carsSpawned < 4; i++) {
+      const c = SN.cars[i];
+      if (c === SN.player.car || c.role !== "traffic" || !c.occupant || c.active && Math.hypot(c.x - SN.player.x, c.z - SN.player.z) < 330 || !candidates.length)
         continue;
       const p = candidates[Math.floor(SN.rnd() * candidates.length)];
       if (!SN.crowdOffscreen(p.x, p.z) || SN.cars.some(other => other !== c && other.active && Math.hypot(other.x - p.x, other.z - p.z) < 15))
@@ -1617,8 +2214,9 @@
         continue;
       if (c.type !== type)
         SN.fitVehicle(c, type);
-      if (SN.carBlocked(p.x, p.z, p.yaw, c))
+      if (SN.carBlocked(p.x, p.z, p.yaw, c) || SN.carWater(p.x, p.z, p.yaw, c))
         continue;
+      SN.repairVehicle(c); c.stolenOnce = false;
       Object.assign(c, p, {
         px: p.x,
         pz: p.z,
@@ -1633,9 +2231,18 @@
         active: true,
         parked: false,
         cityTraffic: true,
+        driver: true,
         navNode: SN.nearestRoadNode(p.x, p.z),
         previousNode: -1
       });
+      const start = SN.roadNodes[c.navNode];
+      if (start) {
+        const edges = start.links.filter(e => {
+          const n = SN.roadNodes[e.index];
+          return (n.x - c.x) * Math.sin(c.yaw) + (n.z - c.z) * Math.cos(c.yaw) > 0;
+        });
+        if (edges.length) { c.previousNode = c.navNode; c.navNode = edges[0].index; c.laneOffset = edges[0].laneOffset; }
+      }
       c.root.position.set(c.x, c.py, c.z);
       c.root.rotation.y = c.yaw;
       c.root.visible = true;
@@ -1660,7 +2267,7 @@
     SN.missionDriverIndex = SN.encounterStart + 8;
     SN.interiorActorStart = SN.missionDriverIndex + 1;
     SN.shopActorStart = SN.interiorActorStart + SN.interiorPosts.length;
-    SN.shopActorCount = 32;
+    SN.shopActorCount = SN.shopSpecs.reduce((sum, s) => sum + 1 + s.shopperSpots.length, 0) + SN.smallShopSpecs.length;
     SN.npcCapacity = SN.shopActorStart + SN.shopActorCount;
     SN.clothing = [0xb6a185, 0x688d92, 0xb77564, 0x64789d, 0x91a174, 0xc1b9a7];
     SN.skins = [0xd8ac88, 0xba8564, 0xe4bf9d, 0x966c52];
@@ -1771,11 +2378,11 @@
     }
     for (const [key, maxPer] of SN.npcMaxCounts) {
       const sep = key.indexOf("|"), geoName = key.slice(0, sep), matType = key.slice(sep + 1);
-      const geometry = SN.rigGeo[geoName].clone();
+      const geometry = SN.crowdGeo[geoName].clone();
       geometry.boundingSphere = new SN.T.Sphere(new SN.T.Vector3(), SN.WORLD * 1.5);
       const mesh = new SN.T.InstancedMesh(geometry, SN.rigBatchMaterials[matType], maxPer * SN.npcCapacity);
       mesh.instanceMatrix.setUsage(SN.T.DynamicDrawUsage);
-      mesh.castShadow = matType !== "eye" && matType !== "print" && matType !== "glass";
+      mesh.castShadow = SN.qualityLevel() >= 2 && matType !== "eye" && matType !== "print" && matType !== "glass" && matType !== "face";
       mesh.receiveShadow = true;
       mesh.frustumCulled = true;
       SN.scene.add(mesh);
@@ -1792,6 +2399,13 @@
     SN.searchRadius = 55;
     SN.wantedCooldown = 0;
     SN.wantedFlash = 0;
+    SN.policeTuning = [null,
+      { foot: 1, cars: 0, interval: 7, accuracy: 0.32 },
+      { foot: 2, cars: 2, interval: 6, accuracy: 0.38 },
+      { foot: 3, cars: 3, interval: 5, accuracy: 0.45 },
+      { foot: 4, cars: 4, interval: 4.2, accuracy: 0.52 },
+      { foot: 4, cars: 5, interval: 3.6, accuracy: 0.58 }
+    ];
     SN.lastGunCrime = -100;
     SN.wantedResisted = false;
     SN.concealBoost = 0;
@@ -1944,35 +2558,35 @@
       const mast = new SN.T.Mesh(new SN.T.CylinderGeometry(0.09, 0.12, 0.5, 8), dark);
       mast.position.y = 1.05;
       r.add(mast);
-      r.rotor = new SN.T.Group();
-      r.rotor.position.y = 1.28;
-      r.add(r.rotor);
+      h.rotor = new SN.T.Group();
+      h.rotor.position.y = 1.28;
+      r.add(h.rotor);
       for (let i = 0; i < 4; i++) {
         const blade = new SN.T.Mesh(SN.box, dark);
         blade.scale.set(0.14, 0.035, 4.6);
         blade.rotation.y = i * SN.PI / 2;
         blade.castShadow = true;
-        r.rotor.add(blade);
+        h.rotor.add(blade);
       }
-      r.tailRotor = new SN.T.Group();
-      r.tailRotor.position.set(0.18, 0.7, -4.25);
-      r.add(r.tailRotor);
+      h.tailRotor = new SN.T.Group();
+      h.tailRotor.position.set(0.18, 0.7, -4.25);
+      r.add(h.tailRotor);
       for (let i = 0; i < 3; i++) {
         const blade = new SN.T.Mesh(SN.box, dark);
         blade.scale.set(0.03, 0.9, 0.09);
         blade.rotation.z = i * SN.PI / 3;
-        r.tailRotor.add(blade);
+        h.tailRotor.add(blade);
       }
       const lamp = new SN.T.Mesh(new SN.T.SphereGeometry(0.16, 8, 6), new SN.T.MeshBasicMaterial({ color: 0xe6f6ff }));
       lamp.position.set(0, -0.65, 1.7);
       r.add(lamp);
       SN.glow(r, 0, -0.7, 1.75, 1.5, 0xd9f4ff);
-      r.spot = new SN.T.SpotLight(0xe7f4ff, 0, 95, 0.22, 0.45, 1.4);
-      r.spot.position.set(0, -0.7, 1.6);
-      r.target = new SN.T.Object3D();
-      SN.scene.add(r.target);
-      r.add(r.spot);
-      r.spot.target = r.target;
+      h.spot = new SN.T.SpotLight(0xe7f4ff, 0, 95, 0.22, 0.45, 1.4);
+      h.spot.position.set(0, -0.7, 1.6);
+      h.target = new SN.T.Object3D();
+      SN.scene.add(h.target);
+      r.add(h.spot);
+      h.spot.target = h.target;
       const cone = new SN.T.Mesh(new SN.T.ConeGeometry(9, 30, 16, 1, true), new SN.T.MeshBasicMaterial({
         color: 0xbde8ff,
         transparent: true,
@@ -1983,7 +2597,7 @@
       }));
       cone.position.set(0, -16, 1.6);
       r.add(cone);
-      r.beam = cone;
+      h.beam = cone;
     })();
   });
   // Startup phase 41: keep this order relative to the other systems.
@@ -1997,42 +2611,25 @@
         if (length < 0.01)
           continue;
         for (let t = 12; t < length; t += 30) {
-          const x = a[0] + dx * t / length + dz / length * r.laneOffset, z = a[1] + dz * t / length - dx / length * r.laneOffset;
-          if (!SN.blocked(x, z, 2.6))
-            SN.roadSpawnPoints.push({ x, z, yaw: Math.atan2(dx, dz), mainRoad: r.lanes >= 4 && !r.bridge, laneOffset: r.laneOffset });
+          const centerX = a[0] + dx * t / length, centerZ = a[1] + dz * t / length;
+          for (const direction of [-1, 1]) {
+            const yaw = Math.atan2(dx * direction, dz * direction),
+              x = centerX - Math.cos(yaw) * r.laneOffset, z = centerZ + Math.sin(yaw) * r.laneOffset;
+            if (!SN.carBlocked(x, z, yaw, SN.pursuitCars[0]) && !SN.carWater(x, z, yaw, SN.pursuitCars[0]))
+              SN.roadSpawnPoints.push({ x, z, yaw, centerX, centerZ, mainRoad: r.lanes >= 4 && !r.bridge, laneOffset: r.laneOffset });
+          }
         }
       }
-    SN.bumpLinesAngry = ["야! 看路！", "뭐 하는 거야!", "撞了人就想走？", "천천히 걸어!"];
-    SN.bumpLinesScared = ["앗! 对不起！", "吓我一跳……", "Sorry! 没看到你。", "괜찮아요?"];
+    SN.cityBarks = {"bump": ["呀！看着点——我手机差点替你去汉江。", "我这西装是租的，你赔得起干洗费吗？", "推什么推，地铁就在前面。", "你知道我刚退伍吗？……算了，我也怕你。", "对不起对不起——等等，应该你说对不起。", "撞我干嘛，我又不是旋转门。", "再推一下，我就把刚才的试吃吐给你。", "我不是路障，我是排队的人。", "小心点，我手里是给老板的咖啡。", "你赶时间？全首尔都赶时间。", "别碰我，我刚从相亲现场逃出来。", "撞得好，我正想换个方向走。"], "carjack": ["喂！那是我老婆的车——她会先杀你，再杀我。", "钥匙在杯架里！别动我的歌单！", "车可以开走，后备箱的泡菜留下！", "这是我租的，你至少把押金留下。", "你开走吧，反正贷款是我的。", "小心点，刹车要踩两下才灵。", "呀！我还没熄火！", "后座有只猫，麻烦送到兽医那儿。", "GPS 会带你回首尔站，别信它。", "抢车可以，别抢我的停车票。"], "gun": ["是鞭炮！首尔哪来的枪——快跑！", "我什么都没看见，我近视。", "趴下！我瑜伽课刚学的。", "这是电影拍摄吧？摄像机在哪儿？", "别往我这边打，我只是送外卖的！", "我早说这条街该装隔音板。", "警察呢？哦，堵在江南了。", "我听见了，但我决定失忆。", "谁在放烟花？现在才十月。", "我的炸鸡掉了。你赔我炸鸡。"], "rain": ["天气预报说百分之二十，我的鞋说百分之百。", "雨伞又忘在地铁上了。第三次。", "这雨下得像有人在楼上倒洗脚水。", "汉江水位涨了，我的心情也是。", "下雨天，炸鸡店排队比银行还长。", "我新买的鞋，现在是一双船。", "别跑，跑起来水花更大。", "首尔的雨从不迟到，只有我带伞。"]};
+    SN.bumpLinesAngry = SN.cityBarks.bump;
+    SN.bumpLinesScared = SN.cityBarks.bump;
     SN.crowdCells = new Map();
+    SN.crowdCellPool = Array.from({ length: SN.actors.length }, () => []);
   });
   // Startup phase 48: keep this order relative to the other systems.
 
   SN.registerInit(48, function initializePopulation48() {
-    SN.pavementSpawns = [];
-    for (const road of SN.roads) {
-      if (road.bridge || /江边北路|奥林匹克|匝道/.test(road.name))
-        continue;
-      for (let i = 1; i < road.points.length; i++) {
-        const a = road.points[i - 1], b = road.points[i], dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz);
-        for (let t = 10; t < len; t += 8)
-          for (const side of [-1, 1]) {
-            const x = a[0] + dx * t / len + dz / len * (road.pedestrian ? road.width * 0.2 : road.width / 2 + 0.3 + road.sidewalkW / 2) * side,
-              z = a[1] + dz * t / len - dx / len * (road.pedestrian ? road.width * 0.2 : road.width / 2 + 0.3 + road.sidewalkW / 2) * side;
-            if (!SN.blocked(x, z, 0.5) && SN.hillHeight(x, z) < 70)
-              SN.pavementSpawns.push({ x, z, yaw: Math.atan2(dx, dz), river: false });
-          }
-      }
-    }
-    for (const path of SN.paths) {
-      const dx = path.b[0] - path.a[0], dz = path.b[1] - path.a[1], len = Math.hypot(dx, dz);
-      for (let t = 4; t < len; t += 7)
-        for (const side of [-1, 1]) {
-          const x = path.a[0] + dx * t / len + dz / len * 1.35 * side, z = path.a[1] + dz * t / len - dx / len * 1.35 * side;
-          if (!SN.blocked(x, z, 0.4) && !SN.isWater(x, z, 0.4))
-            SN.pavementSpawns.push({ x, z, yaw: Math.atan2(dx, dz), river: true });
-        }
-    }
+    SN.pedGraph = SN.buildPedestrianGraph();
     // Spatial cells avoid scanning every pavement point in the city on each refill.
     SN.pavementCells = new Map();
     for (const p of SN.pavementSpawns) {
@@ -2047,4 +2644,105 @@
     SN.crowdTarget = 68;
     SN.crowdVisible = 0;
   });
+
+  SN.cityBark = function cityBark(actor, kind, mood = "neutral") {
+    if (!actor || !SN.cityBarks || SN.simTime < (actor.citySpeechAt || 0) || Math.hypot(actor.x - SN.player.x, actor.z - SN.player.z) > 2.5) return false;
+    const lines = SN.cityBarks[kind]; if (!lines || !lines.length) return false;
+    SN.speakBubble(actor, lines[(actor.index + Math.floor(SN.simTime / 8)) % lines.length], mood);
+    actor.citySpeechAt = SN.simTime + 8; return true;
+  };
+
+  SN.updateLivingCity = function updateLivingCity(dt) {
+    SN.lifeClock -= dt;
+    if (SN.lifeClock <= 0) {
+      SN.lifeClock = 2;
+      if (SN.weather.kind === "rain") {
+        const a = SN.actors.find(a => a.active && !a.down && !a.interior && !a.inCar && a.kind === "civilian" && Math.hypot(a.x - SN.player.x, a.z - SN.player.z) < 2.5);
+        if (a) SN.cityBark(a, "rain");
+      }
+      const bx = Math.floor(SN.player.x / 100), bz = Math.floor(SN.player.z / 100), points = [];
+      for (let z = -1; z <= 1; z++) for (let x = -1; x <= 1; x++)
+        for (const spot of SN.pavementCells.get((bx + x) + "," + (bz + z)) || [])
+          if (Math.hypot(spot.x - SN.player.x, spot.z - SN.player.z) < 65 && !SN.blocked(spot.x, spot.z, 0.5)) points.push(spot);
+      for (const animal of SN.cityAnimals) if ((!animal.active || Math.hypot(animal.x - SN.player.x, animal.z - SN.player.z) > 85) && points.length) {
+        const spot = points[(animal.id * 7 + Math.floor(SN.simTime / 15)) % points.length];
+        Object.assign(animal, { x: spot.x, z: spot.z, homeX: spot.x, homeZ: spot.z, y: SN.surfaceHeight(spot.x, spot.z), active: true, flee: 0 });
+      }
+    }
+    for (const animal of SN.cityAnimals) {
+      if (!animal.active) continue;
+      const d = Math.hypot(animal.x - SN.player.x, animal.z - SN.player.z);
+      if (d < (SN.player.car ? 8 : 3) || SN.firing && d < 28) { animal.flee = 3; animal.yaw = Math.atan2(animal.x - SN.player.x, animal.z - SN.player.z); }
+      animal.flee = Math.max(0, animal.flee - dt);
+      if (!animal.flee) animal.yaw = Math.atan2(animal.homeX - animal.x + Math.sin(SN.simTime * 0.2 + animal.id), animal.homeZ - animal.z + Math.cos(SN.simTime * 0.2 + animal.id));
+      const speed = animal.flee ? (animal.cat ? 3.2 : 4.5) : animal.cat ? 0.38 : 0.18;
+      const x = animal.x + Math.sin(animal.yaw) * speed * dt, z = animal.z + Math.cos(animal.yaw) * speed * dt;
+      if (!SN.blocked(x, z, 0.2) && !SN.isWater(x, z)) { animal.x = x; animal.z = z; }
+      animal.y = SN.surfaceHeight(animal.x, animal.z) + (!animal.cat && animal.flee ? Math.sin(Math.min(1, animal.flee / 3) * SN.PI) * 3 : 0);
+    }
+  };
+
+  SN.renderLivingCity = function renderLivingCity() {
+    let count = 0;
+    if (SN.weather.kind === "rain") for (const a of SN.actors) {
+      if (count >= [8, 14, 20][SN.qualityLevel()]) break;
+      if (!a.active || a.kind !== "civilian" || a.interior || a.inCar || a.down || a.sitting || Math.hypot(a.x - SN.player.x, a.z - SN.player.z) > 48 || SN.interiorAt(a.x, a.z, SN.surfaceHeight(a.x, a.z))) continue;
+      SN.dummy.position.set(a.x, SN.surfaceHeight(a.x, a.z) + 2.05, a.z); SN.dummy.rotation.set(0.05, a.yaw, 0.08); SN.dummy.scale.set(1, 1, 1); SN.dummy.updateMatrix();
+      for (const mesh of SN.umbrellaMeshes) mesh.setMatrixAt(count, SN.dummy.matrix);
+      count++;
+    }
+    for (const mesh of SN.umbrellaMeshes) { mesh.count = count; mesh.visible = count > 0; mesh.instanceMatrix.needsUpdate = true; }
+    let smokeCount = 0;
+    for (const a of SN.actors) {
+      if (smokeCount >= 6) break;
+      if (!a.active || a.mode !== "smoke" || a.down || a.panic > 0 || a.hostile || Math.hypot(a.x - SN.player.x, a.z - SN.player.z) > 30) continue;
+      const drift = (SN.simTime * 0.5 + a.index * 0.31) % 1;
+      SN.dummy.position.set(a.x + Math.sin(a.yaw) * 0.23 + drift * 0.12, SN.surfaceHeight(a.x, a.z) + 1.5 + drift * 0.4, a.z + Math.cos(a.yaw) * 0.23);
+      SN.dummy.rotation.set(0, a.yaw, 0); SN.dummy.scale.set(0.03 + drift * 0.08, 0.06 + drift * 0.13, 0.03 + drift * 0.08); SN.dummy.updateMatrix();
+      SN.cornerSmoke.setMatrixAt(smokeCount++, SN.dummy.matrix);
+    }
+    SN.cornerSmoke.count = smokeCount; SN.cornerSmoke.visible = smokeCount > 0; SN.cornerSmoke.instanceMatrix.needsUpdate = true;
+    let cats = 0, birds = 0;
+    for (const a of SN.cityAnimals) {
+      if (!a.active || a.id >= [12, 18, 24][SN.qualityLevel()]) continue;
+      SN.dummy.position.set(a.x, a.y, a.z); SN.dummy.rotation.set(0, a.yaw, 0); SN.dummy.scale.set(1, 1, 1); SN.dummy.updateMatrix();
+      if (a.cat) SN.animalMeshes[0].setMatrixAt(cats++, SN.dummy.matrix);
+      else {
+        SN.animalMeshes[1].setMatrixAt(birds, SN.dummy.matrix);
+        SN.dummy.scale.y = a.flee ? 0.55 + Math.sin(SN.simTime * 23 + a.id) * 0.45 : 0.12;
+        SN.dummy.updateMatrix(); SN.animalMeshes[2].setMatrixAt(birds++, SN.dummy.matrix);
+      }
+    }
+    SN.animalMeshes.forEach((mesh, i) => { mesh.count = i ? birds : cats; mesh.visible = mesh.count > 0; mesh.instanceMatrix.needsUpdate = true; });
+  };
+
+  SN.registerInit(51.7, function initializeLivingCity() {
+    SN.lifeClock = 0;
+    const batch = (geometry, material, count) => {
+      const mesh = new SN.T.InstancedMesh(geometry, material, count); mesh.instanceMatrix.setUsage(SN.T.DynamicDrawUsage);
+      mesh.frustumCulled = false; mesh.castShadow = false; mesh.count = 0; SN.scene.add(mesh); return mesh;
+    };
+    SN.cornerSmoke = batch(new SN.T.SphereGeometry(1, 5, 4), new SN.T.MeshBasicMaterial({ color: 0xd2dce1, transparent: true, opacity: 0.3, depthWrite: false }), 6);
+    SN.umbrellaMeshes = [
+      batch(new SN.T.ConeGeometry(0.78, 0.32, 8), SN.mat(0x369cd0, { side: SN.T.DoubleSide, roughness: 0.55 }), 20),
+      batch(SN.merged([{ g: SN.box, x: 0, y: -0.45, z: 0, sx: 0.025, sy: 0.9, sz: 0.025 }]), SN.mat(0xc1cbd3), 20)
+    ];
+    [0xf7ba3e, 0x2b91cf, 0xdf547c, 0x67bda2].forEach((color, i) => {
+      for (let n = i; n < 20; n += 4) SN.umbrellaMeshes[0].setColorAt(n, SN.srgb(color));
+    });
+    SN.umbrellaMeshes[0].material.color.setHex(0xffffff); SN.umbrellaMeshes[0].instanceColor.needsUpdate = true;
+    const cat = [{ g: SN.box, x: 0, y: 0.27, z: 0, sx: 0.24, sy: 0.25, sz: 0.6 },
+      { g: SN.box, x: 0, y: 0.45, z: 0.28, sx: 0.26, sy: 0.25, sz: 0.25 },
+      { g: SN.box, x: 0, y: 0.41, z: -0.42, sx: 0.065, sy: 0.48, sz: 0.065, rx: -0.5 }];
+    for (const side of [-1, 1]) {
+      cat.push({ g: SN.box, x: side * 0.09, y: 0.61, z: 0.28, sx: 0.075, sy: 0.13, sz: 0.1 });
+      for (const end of [-1, 1]) cat.push({ g: SN.box, x: side * 0.09, y: 0.12, z: end * 0.21, sx: 0.07, sy: 0.25, sz: 0.08 });
+    }
+    const bird = [{ g: SN.box, x: 0, y: 0.14, z: 0, sx: 0.14, sy: 0.15, sz: 0.27 }, { g: SN.box, x: 0, y: 0.28, z: 0.12, sx: 0.11, sy: 0.17, sz: 0.12 }, { g: SN.box, x: 0, y: 0.28, z: 0.2, sx: 0.045, sy: 0.04, sz: 0.1 }];
+    SN.animalMeshes = [batch(SN.merged(cat), SN.mat(0xcf9b61), 8), batch(SN.merged(bird), SN.mat(0x8d9bb1), 16),
+      batch(SN.merged([-1, 1].map(side => ({ g: SN.box, x: side * 0.17, y: 0.2, z: -0.03, sx: 0.29, sy: 0.055, sz: 0.19, rz: side * 0.65 }))), SN.mat(0x53627c), 16)];
+    SN.cityAnimals = Array.from({ length: 24 }, (_, id) => ({ id, cat: id % 3 === 0, active: false, x: 0, z: 0, y: 0, yaw: 0, flee: 0 }));
+    SN.updateLivingCity(0);
+  });
+
 })(window.SN);

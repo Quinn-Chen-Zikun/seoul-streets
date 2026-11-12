@@ -2,8 +2,13 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <meta name="description" content="首尔街头：步行或驾车探索首尔的三维开放城市，穿越街巷与汉江两岸，体验昼夜变化和街头故事。">
+    <meta name="theme-color" content="#082b49">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="首尔街头">
     <title>首尔街头</title>
     <link rel="stylesheet" href="css/style.css">
   </head>
@@ -11,17 +16,161 @@
     <canvas id="world" tabindex="0" aria-label="首尔街头，三维开放城市"></canvas>
     <div id="vignette"></div>
     <div id="hud">
-      <div class="topbar">
-        <div>
-          <div class="brand">首尔街头 <span class="brand-separator">/</span> SEOUL</div>
-          <div class="location" id="area">종로 · 钟路</div>
-          <div class="sub" id="district">종로구 / 도심</div>
+      <div id="districtToast" role="status"><b id="area">종로 · 钟路</b><small id="district"></small></div>
+      <div class="topbar"><div class="stats">
+        <b id="money">¥ 2,400</b><b id="clock">10:30</b>
+      </div></div>
+      <div id="missionRibbon" role="status"><span id="objectiveText"></span><b id="objectiveDistance"></b><small id="objectiveTimer"></small></div>
+      <div class="map-wrap">
+        <div class="map-n" id="north" aria-hidden="true">N</div>
+        <canvas id="minimap" width="360" height="360"></canvas>
+        <div class="vitals">
+          <div class="vital" title="生命"><i id="healthBar"></i></div>
+          <div class="vital armor" title="护甲"><i id="armorBar"></i></div>
         </div>
-        <div class="stats">
-          <div class="stat"><small>城市时间</small><b id="clock">08:30</b></div>
-          <div class="stat"><small>随身现金</small><b id="money">¥ 2,400</b></div>
-        </div>
+        <div class="vital-label" id="vitalsText">生命 100 · 护甲 60</div>
+        <div class="map-caption">서울 스트리트 / 自由探索</div>
       </div>
+      <div class="telemetry">
+        <div class="speed"><span id="speed">0</span><small id="speedUnit">KM/H</small></div>
+        <div class="mode" id="mode">慢跑 · 서울 탐험가</div>
+      </div>
+      <div id="weaponSlots" aria-label="武器快捷栏"></div>
+      <div id="wantedWrap">
+        <div id="heat" aria-label="通缉等级"></div>
+        <div id="wantedState"></div>
+      </div>
+      <div class="weapon-panel"><strong id="weaponName">徒手</strong><b id="ammo">—</b><small id="weaponHint">1–6 切换 · H 收起武器</small></div>
+      <button id="openCityMap" class="mobile" aria-label="全城地图">地图</button>
+      <div class="map-legend">青绿 은빛단 · 朱红 붉은매 · 蓝红 巡警 · 金色 补给</div>
+      <div class="interaction" id="interaction"><kbd>F</kbd>驾驶车辆</div>
+      <div id="toast" role="status"></div>
+      <div id="crimeLabel" role="status"></div>
+      <div id="arrestPrompt" role="status"><b>举起双手</b> · 保持不动 1.5 秒<i></i></div>
+      <div id="worldPopups"></div>
+      <div id="speechLayer"></div>
+      <div id="crosshair"><b></b><i></i><i></i><i></i><i></i></div>
+      <div id="hitmark"><i></i><i></i><i></i><i></i></div>
+      <div class="paused-label">窗口暂离 · 城市已暂停</div>
+      <div id="joyZone" class="mobile" aria-label="左侧浮动摇杆"></div>
+      <div id="joystick" class="mobile">
+        <div id="stick"></div>
+      </div>
+      <div class="touchhint mobile">右侧滑动 · 环顾城市</div>
+      <div class="touch-buttons mobile">
+        <button id="touchAccel" aria-label="按住加速">油门</button>
+        <button id="touchBrake" aria-label="刹车或倒车">刹车</button>
+        <button id="touchWeapon" aria-label="切换武器">换武器</button>
+        <button id="touchRear" aria-label="按住向后看" hidden>后视</button>
+        <button id="touchEnter" aria-label="上车或下车">上车</button>
+        <button id="touchJump" aria-label="跳跃">跳跃</button>
+        <button id="touchSprint" aria-label="按住疾跑">疾跑</button>
+        <button id="touchAim" aria-label="按住瞄准">瞄准</button>
+        <button id="touchHolster" aria-label="收起或拔出武器">收枪</button>
+        <button id="touchAttack" aria-label="按住攻击">攻击</button>
+      </div>
+      <div id="streetCounter"></div><div id="tutorialHint" role="status"></div><button id="vehicleJob" hidden>接单</button>
+      <button id="storyInteract">对话</button>
+      <button id="pauseBtn" class="mobile" aria-label="暂停和帮助">Ⅱ</button>
+      <button id="fullscreenBtn" aria-label="切换全屏">全屏</button>
+      <div id="contextStatus" role="status" hidden>画面恢复中 · 城市已暂停</div>
+      <div id="rotateHint">横屏游玩视野更开阔 ↻</div>
+      <div id="fps"></div>
+    </div>
+    <div id="damage"></div><div id="hurtDirection" aria-hidden="true"><i></i></div>
+    <div id="downscreen"><strong>倒下了</strong><p id="respawnText">正在送往最近的医疗站</p></div>
+    <div id="arrestScreen">
+      <strong>被捕</strong>
+      <p id="arrestText">警察正在核对你的身份</p>
+      <small id="arrestFine"></small>
+      <div class="rule"></div>
+    </div>
+    <div class="intro" id="intro">
+      <div class="intro-badge">一条江 · 一座城 · 你的路线</div>
+      <div class="serial">SEOUL · 自由探索</div>
+      <h1>首尔<br><em>街头</em></h1>
+      <div class="poem">서울 스트리트</div>
+      <p class="description">穿过钟路的霓虹街巷，驰骋汉江两岸。跟随金色标记，开启你的首尔故事。</p>
+      <div id="loadingStatus" role="status">准备街区…</div>
+      <div class="start-actions">
+        <button class="start" id="start" disabled><span id="startLabel">正在构筑首尔 · 0%</span><span class="start-arrow" aria-hidden="true">↗</span><progress id="loadingProgress" max="100" value="0" aria-label="城市加载进度"></progress></button>
+        <button class="new-game" id="newGame" disabled>新游戏</button>
+      </div>
+      <div class="intro-controls">
+        <span class="desktop-help">WASD 移动 · 鼠标环顾 · F 上车<br>左键攻击 · J 任务 · Esc / ? 帮助</span>
+        <span class="mobile">左侧摇杆移动 · 右侧滑动环顾<br>圆形按钮操作 · 右上暂停查看帮助</span>
+      </div>
+      <div id="error" role="alert"></div>
+      <div class="intro-footer">钟路 · 明洞 · 江南 · 汉江</div>
+      <div class="intro-coord">37° 33′ N &nbsp; 126° 59′ E<br>SEOUL, SOUTH KOREA</div>
+    </div>
+    <div id="cityRadio"><button id="radioStation" aria-label="切换车载电台">电台</button><span id="radioNews"></span></div>
+    <button id="cityEvent" aria-label="街头偶遇"></button>
+    <div id="pauseMenu" class="story-layer" role="dialog" aria-modal="true" aria-labelledby="pauseTitle">
+      <section class="story-panel pause-panel">
+        <header><div><div class="eyebrow">SEOUL STREETS</div><h2 id="pauseTitle">街头歇一会</h2></div><button id="resumeBtn">继续游戏</button></header>
+        <p>城市已暂停。跟随金色地图标记接取任务，或自由探索街区。</p>
+        <div class="pause-actions"><button id="pauseMap">全城地图</button><button id="hailTaxi">扬招出租车 · G</button><button id="bobToggle" aria-pressed="false">镜头起伏：关 · B</button><button id="qualityToggle">画质：自动</button><button id="controlsBtn">操作指南</button><button id="settingsBtn" aria-expanded="false">设置</button><button id="touchGait" aria-pressed="false">行走 / 奔跑</button><button id="radioCycle">切换车载电台</button></div>
+        <div class="city-weather-controls"><label>时刻 <select id="cityHour" aria-label="自由漫游时刻"><option value="6">06:00 日出</option><option value="10.5" selected>10:30 上午</option><option value="18.5">18:30 日落</option><option value="22">22:00 夜生活</option><option value="2">02:00 深夜</option></select></label><label>天气 <select id="cityWeather" aria-label="自由漫游天气"><option value="clear">晴朗</option><option value="rain">阵雨</option><option value="dust">黄沙薄霾</option><option value="snow">冬日飘雪</option></select></label><button id="weatherAuto">自然天气：开</button><small id="cityWeatherHint">自由漫游可调整时刻与天气</small></div>
+      <div id="campaignTools">
+        <button id="journalBtn">J 任务日志</button>
+        <button id="statsBtn">街头档案</button>
+        <button id="jobBtn">M 支线</button>
+        <button id="costumeBtn">K 换装</button>
+        <span id="costumeName">街行者 · 已解锁</span>
+      </div>
+      <div id="settingsPanel" role="dialog" aria-label="设置">
+        <h4>城市与视角</h4>
+        <label for="cycleSpeed">一昼夜用时</label>
+        <select id="cycleSpeed" aria-label="一昼夜现实分钟"><option value="24">24 分钟</option><option value="48" selected>48 分钟</option><option value="96">96 分钟</option></select>
+        <label>鼠标灵敏度 <span class="setting-value" id="sensValue">1.00×</span></label>
+        <input type="range" id="sensRange" min="0.3" max="2.4" step="0.05" value="1" aria-label="鼠标灵敏度">
+        <label>瞄准灵敏度 <span class="setting-value" id="aimSensValue">0.65×</span></label>
+        <input type="range" id="aimSensRange" min="0.25" max="1.5" step="0.05" value="0.65" aria-label="瞄准灵敏度">
+        <label>垂直视角 <span class="setting-value" id="invertValue">标准</span></label>
+        <input type="range" id="pitchRange" min="0" max="1" step="1" value="0" aria-label="垂直视角方向">
+        <label>主音量 <span class="setting-value" id="volumeValue">65%</span></label>
+        <input id="volumeRange" type="range" min="0" max="1" step="0.05" value="0.65" aria-label="主音量">
+        <button id="muteAudio" aria-pressed="false">声音：开启</button>
+        <label class="check-setting"><input type="checkbox" id="damageNumbers">显示伤害数字</label>
+        <div class="setting-hint">拖动滑块实时生效 · 也可点击「画质」循环自动 / 高 / 中 / 低</div>
+      </div>
+        <h3 id="controlsGuide">操作指南</h3>
+        <p class="mobile">左侧摇杆移动，右侧滑动环顾；按住攻击或疾跑。上车键用于上下车 / 进门；独立交互条用于对话和交易；驾车时摇杆转向，油门加速，刹车踏板减速后倒车；跳跃键变为手刹，按住后视向后看。点武器图标切换武器，点弹药换弹或受困时复位；「接单」接车辆工作，绿色提示参与偶遇。此页可查看任务、换装和切换电台。</p>
+      <div class="full-controls">
+        <span><kbd>WASD</kbd>移动</span>
+        <span><kbd>F</kbd>驾驶</span>
+        <span><kbd>Shift</kbd>疾跑 / C 步行</span>
+        <span><kbd>Space</kbd>跳 / 翻越 / 手刹</span>
+        <span><kbd>1–6</kbd>武器</span>
+        <span><kbd>R</kbd>换弹 / 车辆复位</span><span><kbd>G</kbd>鸣笛 / 扬招出租车</span><span><kbd>X</kbd>按住后视</span>
+        <span><kbd>U</kbd>工作车辆接单</span><span><kbd>Y</kbd>参与街头偶遇</span><span><kbd>[ / ]</kbd>切换电台</span>
+        <span><kbd>H</kbd>收起</span>
+        <span><kbd>N</kbd>地图</span>
+        <span><kbd>J</kbd>日志</span>
+        <span><kbd>E</kbd>对话</span>
+        <span><kbd>K</kbd>换装</span>
+        <span><kbd>T</kbd>时刻</span>
+        <span><kbd>V</kbd>湿街</span>
+        <span>右键瞄准 · 左键攻击</span>
+        <span><kbd>鼠标 / 拖动</kbd>环顾 · 滚轮缩放</span>
+        <span><kbd>Q</kbd>切换武器</span><span><kbd>B</kbd>镜头起伏</span>
+        <span><kbd>Esc / ?</kbd>暂停 / 帮助</span><span><kbd>O</kbd>设置</span>
+        <span><kbd>M</kbd>切换支线</span><span><kbd>Caps Lock</kbd>切换步行</span>
+        <span><kbd>Space</kbd>跳过剧情镜头</span><span><kbd>`</kbd>帧率</span>
+      </div>
+      </section>
+    </div>
+    <div id="journal" class="story-layer" role="dialog" aria-modal="true" aria-labelledby="journalTitle">
+      <section class="story-panel">
+        <header>
+          <div>
+            <div class="eyebrow">서울 · 断线账本</div>
+            <h2 id="journalTitle">城市里的每一步</h2>
+          </div>
+          <button id="journalClose">关闭 · J / Esc</button>
+        </header>
+        <p id="journalSummary"></p>
       <div class="mission">
         <div class="eyebrow">
           <span id="missionTag">断线账本 / 01</span>
@@ -37,127 +186,11 @@
         </div>
         <div class="progress"><i id="missionProgress"></i></div>
       </div>
-      <div class="map-wrap">
-        <div class="map-n" id="north">N</div>
-        <canvas id="minimap" width="360" height="360"></canvas>
-        <div class="vitals">
-          <div class="vital" title="生命"><i id="healthBar"></i></div>
-          <div class="vital armor" title="护甲"><i id="armorBar"></i></div>
-        </div>
-        <div class="vital-label" id="vitalsText">生命 100 · 护甲 60</div>
-        <div class="map-caption">서울 스트리트 / 自由探索</div>
-      </div>
-      <div class="telemetry">
-        <div class="speed"><span id="speed">0</span><small id="speedUnit">KM/H</small></div>
-        <div class="mode" id="mode">慢跑 · 서울 탐험가</div>
-        <button id="bobToggle" aria-pressed="false">镜头起伏：关 · B</button><button id="qualityToggle">画质：自动</button><button id="settingsBtn" aria-expanded="false">设置</button>
-      </div>
-      <div id="settingsPanel" role="dialog" aria-label="设置">
-        <h4>城市与视角</h4>
-        <label for="cycleSpeed">一昼夜用时</label>
-        <select id="cycleSpeed" aria-label="一昼夜现实分钟"><option value="24">24 分钟</option><option value="48" selected>48 分钟</option><option value="96">96 分钟</option></select>
-        <label>鼠标灵敏度 <span class="setting-value" id="sensValue">1.00×</span></label>
-        <input type="range" id="sensRange" min="0.3" max="2.4" step="0.05" value="1" aria-label="鼠标灵敏度">
-        <label>瞄准灵敏度 <span class="setting-value" id="aimSensValue">0.65×</span></label>
-        <input type="range" id="aimSensRange" min="0.25" max="1.5" step="0.05" value="0.65" aria-label="瞄准灵敏度">
-        <label>垂直视角 <span class="setting-value" id="invertValue">标准</span></label>
-        <input type="range" id="pitchRange" min="0" max="1" step="1" value="0" aria-label="垂直视角方向">
-        <div class="setting-hint">拖动滑块实时生效 · 也可点击「画质」循环自动 / 高 / 中 / 低</div>
-      </div>
-      <div id="weaponSlots" aria-label="武器快捷栏"></div>
-      <div id="wantedWrap">
-        <div id="heat" aria-label="通缉等级"></div>
-        <div id="wantedState"></div>
-      </div>
-      <div class="weapon-panel"><strong id="weaponName">徒手</strong><b id="ammo">—</b><small id="weaponHint">1–3 切换 · H 收起武器</small></div>
-      <button id="openCityMap">N · 全城地图</button>
-      <div class="map-legend">青绿 은빛단 · 朱红 붉은매 · 蓝红 巡警 · 金色 补给</div>
-      <div class="keybar">
-        <span><kbd>WASD</kbd>移动</span>
-        <span><kbd>F</kbd>驾驶</span>
-        <span><kbd>Shift</kbd>疾跑 / C 步行</span>
-        <span><kbd>Space</kbd>跳 / 手刹</span>
-        <span><kbd>1–3</kbd>武器</span>
-        <span><kbd>R</kbd>换弹</span>
-        <span><kbd>H</kbd>收起</span>
-        <span><kbd>N</kbd>地图</span>
-        <span><kbd>J</kbd>日志</span>
-        <span><kbd>E</kbd>对话</span>
-        <span><kbd>K</kbd>换装</span>
-        <span><kbd>T</kbd>时刻</span>
-        <span><kbd>V</kbd>湿街</span>
-        <span>右键瞄准 · 左键攻击</span>
-      </div>
-      <div class="interaction" id="interaction"><kbd>F</kbd>驾驶车辆</div>
-      <div id="toast" role="status"></div>
-      <div id="crimeLabel" role="status"></div>
-      <div id="arrestPrompt" role="status"><b>举起双手</b> · 保持不动 1.5 秒<i></i></div>
-      <div id="worldPopups"></div>
-      <div id="speechLayer"></div>
-      <div id="crosshair"><b></b><i></i><i></i><i></i><i></i></div>
-      <div id="hitmark"><i></i><i></i><i></i><i></i></div>
-      <div class="paused-label">窗口暂离 · 城市已暂停</div>
-      <div id="joystick" class="mobile">
-        <div id="stick"></div>
-      </div>
-      <div class="touchhint mobile">右侧滑动 · 环顾城市</div>
-      <div class="touch-buttons mobile">
-        <button id="touchEnter" aria-label="上车或下车">上车</button>
-        <button id="touchJump" aria-label="跳跃">跳跃</button>
-        <button id="touchSprint" aria-label="按住疾跑">疾跑</button>
-        <button id="touchGait" aria-label="切换行走或奔跑" aria-pressed="false">行走/奔跑</button>
-        <button id="touchBrake" aria-label="按住手刹">手刹</button>
-      </div>
-      <div id="campaignTools">
-        <button id="journalBtn">J 任务日志</button>
-        <button id="jobBtn">M 支线</button>
-        <button id="costumeBtn">K 换装</button>
-        <button id="storyInteract">E 对话</button>
-        <span id="costumeName">街行者 · 已解锁</span>
-      </div>
-      <div id="fps"></div>
-    </div>
-    <div id="damage"></div>
-    <div id="downscreen"><strong>倒下了</strong><p id="respawnText">正在送往最近的医疗站</p></div>
-    <div id="arrestScreen">
-      <strong>被捕</strong>
-      <p id="arrestText">警察正在核对你的身份</p>
-      <small id="arrestFine"></small>
-      <div class="rule"></div>
-    </div>
-    <div class="intro" id="intro">
-      <div class="intro-badge">一条江 · 一座城 · 你的路线</div>
-      <div class="serial">原创开放城市 / 首尔街头计划</div>
-      <h1>首尔<br><em>街头</em></h1>
-      <div class="poem">서울 스트리트</div>
-      <p class="description">步行或驾车探索首尔，在白昼与夜晚之间穿过街巷、山坡和汉江两岸。结识街头人物，走出自己的路线。</p>
-      <button class="start" id="start" disabled>正在构筑首尔 <span>↗</span></button>
-      <div class="intro-controls">
-        <span><kbd>WASD</kbd>行走 / 驾驶</span>
-        <span><kbd>F</kbd>上车 / 下车</span>
-        <span><kbd>Shift</kbd>疾跑</span>
-        <span><kbd>Space</kbd>跳跃 / 手刹</span>
-        <span class="desktop-help">点击画面锁定视角 · Esc 释放 · 滚轮始终变焦<br>C / Caps Lock 步行切换 · Shift 疾跑 · Q / 1–3 武器<br>右键瞄准 · 左键攻击 · R 换弹 · H 收起 · B 镜头起伏 · J 日志 · E 对话<br>M 切换支线 · K 街行者换装 · T 清晨/正午/黄昏/夜晚 · V 湿滑路面<br>Space 跳过剧情镜头</span>
-        <span class="mobile">摇杆小推步行 / 大推慢跑 · 按住疾跑 · 右侧滑动环顾</span>
-      </div>
-      <div id="error" role="alert"></div>
-      <div class="intro-footer">程序化构筑 / 无界漫游 / 原创体验</div>
-      <div class="intro-coord">37° 33′ N &nbsp; 126° 59′ E<br>SEOUL, SOUTH KOREA</div>
-    </div>
-    <div id="journal" class="story-layer" role="dialog" aria-modal="true" aria-labelledby="journalTitle">
-      <section class="story-panel">
-        <header>
-          <div>
-            <div class="eyebrow">서울 · 断线账本</div>
-            <h2 id="journalTitle">城市里的每一步</h2>
-          </div>
-          <button id="journalClose">关闭 · J / Esc</button>
-        </header>
-        <p id="journalSummary"></p>
+
         <div id="journalActions" class="journal-actions"></div>
         <div class="journal-grid">
           <section>
-            <h3>主线 · 七段旅程</h3>
+            <h3>主线 · 账本与白鸥</h3>
             <div id="storyRows"></div>
           </section>
           <section>
@@ -200,6 +233,7 @@
         <button id="closeCityMap">返回街头 · N / Esc</button>
       </header>
       <div id="atlasView">
+        <nav id="atlasTools"><button id="atlasZoomIn" aria-label="放大地图">＋</button><button id="atlasZoomOut" aria-label="缩小地图">−</button><button id="atlasCenter">定位</button><button id="atlasClear">清除导航</button></nav><div id="atlasWaypoint">拖动平移 · 滚轮 / 双指缩放 · 点按设置导航</div>
         <canvas id="atlasCanvas" aria-label="首尔全城地图：城区、桥梁、机场、医疗站和任务"></canvas>
       </div>
       <aside id="atlasSide">
@@ -208,7 +242,7 @@
         <button id="atlasTravel">前往街区</button>
         <div id="atlasHint">选择城区查看路线。无任务且未被通缉时，可搭乘城市接驳前往街口。</div>
       </aside>
-      <footer><span>◆ 联系人 / 任务　＋ 医疗　▣ 治安　○ 地铁　━ 道路　┄ 高架</span><span>北 ↑ · 压缩地理 / 原创建筑</span></footer>
+      <footer><span>H 韩序温 · Y 尹海率 · C 蔡娜凛　房 安全屋 / 车库　租 出租　配 配送　赛 赛车　战 挑战　跃 特技　工 工作　枪 武器铺　修 维修改色　食 小吃　＋ 医疗　▣ 治安　○ 地铁　━ 道路　┄ 高架</span><span>北 ↑ · 压缩地理 / 原创建筑</span></footer>
     </div>
     <div id="shopMenu" role="dialog" aria-modal="true" aria-labelledby="shopMenuTitle">
       <section class="shop-card">
@@ -220,13 +254,17 @@
           </div>
           <button id="shopMenuClose">离开柜台 · E / Esc</button>
         </header>
-        <p class="shop-lede">店员把扫码枪放回台面。店内广播正用两种语言报时。货架、冷柜与热面台都在触手可及的地方。</p>
+        <p class="shop-lede" id="shopMenuDescription">店员把扫码枪放回台面。店内广播正用两种语言报时。货架、冷柜与热面台都在触手可及的地方。</p>
         <div id="shopMenuItems" class="shop-items"></div>
         <footer><span id="shopMenuMoney">现金 ¥ 2,400 · 电话余额 ¥ 0</span><span id="shopMenuStatus"></span></footer>
       </section>
     </div>
 
+    <div id="missionResult" role="status"><strong id="resultTitle"></strong><p id="resultDetail"></p><small id="resultStory"></small><div><button id="resultRetry">立即重试</button><button id="resultLeave">返回街头</button></div></div>
+    <div id="streetPanel" class="story-layer" role="dialog" aria-modal="true" aria-labelledby="streetPanelTitle"><section class="story-panel"><header><h2 id="streetPanelTitle"></h2><button id="streetPanelClose">返回 · Esc</button></header><div id="streetPanelBody"></div></section></div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/FXAAShader.js"></script>
@@ -239,7 +277,9 @@
     <script src="js/core.js"></script>
     <script src="js/renderer.js"></script>
     <script src="js/materials.js"></script>
+    <script src="js/models.js"></script>
     <script src="js/world.js"></script>
+    <script src="js/road-network.js"></script>
     <script src="js/buildings.js"></script>
     <script src="js/props.js"></script>
     <script src="js/characters.js"></script>
@@ -247,6 +287,9 @@
     <script src="js/combat.js"></script>
     <script src="js/population.js"></script>
     <script src="js/missions.js"></script>
+    <script src="js/mission-content.js"></script>
+    <script src="js/activities.js"></script>
+    <script src="js/navigation.js"></script>
     <script src="js/shops.js"></script>
     <script src="js/hud.js"></script>
     <script src="js/input.js"></script>

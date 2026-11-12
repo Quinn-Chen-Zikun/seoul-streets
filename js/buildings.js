@@ -46,12 +46,51 @@
     return SN.footprintTerrain(plot.x, plot.z, plot.w, plot.d);
   };
 
+  SN.relocateAuthoredBuildings = function relocateAuthoredBuildings() {
+    // Move authored interiors off steep ground before reserving their plots.
+    SN.buildingRelocations = [];
+    for (const spec of SN.enterableSpecs.concat(SN.shopSpecs, SN.smallShopSpecs)) {
+      if (SN.authoredTerrain(spec).buildable)
+        continue;
+      const original = { x: spec.x, z: spec.z, w: spec.w, d: spec.d };
+      let chosen = null;
+      for (let radius = 4; radius <= 200 && !chosen; radius += 4)
+        for (let i = 0; i < 32; i++) {
+          const angle = i * SN.TAU / 32,
+            x = original.x + Math.sin(angle) * radius,
+            z = original.z + Math.cos(angle) * radius,
+            ground = SN.authoredTerrain(spec, x, z),
+            plot = SN.authoredFootprint(spec, x, z);
+          if (!ground.buildable || !SN.roadGap(plot.x, plot.z, plot.w, plot.d) || SN.isWater(x, z, Math.hypot(plot.w, plot.d) / 2))
+            continue;
+          if (SN.enterableSpecs.concat(SN.shopSpecs, SN.smallShopSpecs).some(other => other !== spec && SN.rectOverlap({ x, z, w: spec.w + 4, d: spec.d + 4 }, other)))
+            continue;
+          chosen = { x, z };
+          break;
+        }
+      if (!chosen) {
+        spec.disabled = true;
+        SN.reportContentProblem(spec.id, spec.x, spec.z, "无法安置坡地商店", "跳过此建筑");
+        continue;
+      }
+      spec.x = chosen.x;
+      spec.z = chosen.z;
+      SN.buildingRelocations.push({ ...original, dx: spec.x - original.x, dz: spec.z - original.z });
+      SN.reportContentProblem(spec.id, original.x, original.z, "商店地基位于陡坡", "移至可建造地块", { to: chosen });
+    }
+    SN.enterableSpecs = SN.enterableSpecs.filter(spec => !spec.disabled);
+    SN.shopSpecs = SN.shopSpecs.filter(spec => !spec.disabled);
+    SN.smallShopSpecs = SN.smallShopSpecs.filter(spec => !spec.disabled);
+  };
+
   SN.foundationGround = function foundationGround(x, z) {
     const road = SN.roadSample(x, z);
     return road ? SN.roadHeight(x, z) + (road.distance < road.profile.width / 2 ? 0.17 : 0.35) : SN.onIsland(x, z) ? 0.93 : SN.terrainHeight(x, z) + 0.01;
   };
 
   SN.footprintTerrain = function footprintTerrain(x, z, w, d, yaw = 0) {
+    if (![x, z, w, d, yaw].every(Number.isFinite) || w <= 0 || d <= 0)
+      return { low: 0, high: 0, slope: Infinity, buildable: false };
     let low = Infinity, high = -Infinity, slope = 0;
     const co = Math.cos(yaw), sn = Math.sin(yaw), nx = Math.max(2, Math.ceil(w / 4)), nz = Math.max(2, Math.ceil(d / 4));
     for (let iz = 0; iz <= nz; iz++)
@@ -161,28 +200,19 @@
         if (SN.isWater(corner.x, corner.z))
           return null;
       }
-    const variant = glass ? 3 : Math.floor(random() * 3),
+    const variant = glass ? 3 : era === "brick" ? 1 : era === "shop" || SN.inMyeong(cx, cz) ? 2 : Math.floor(random() * 3),
       setback = glass && h > 64,
       lowerH = setback ? h * 0.68 : h,
-      tint = [0xcbd0c6, 0xb7c1c2, 0xd4c6b1, 0xb5c3c5, 0xc8b9a4][Math.floor(random() * 5)],
+      tint = (glass ? [0x96c8ef, 0x74bacd, 0xb5dce9, 0x829ee0, 0xc0d9ed] :
+        cz > 800 ? [0xf8e5c1, 0xc4e1ed, 0xefcba4, 0xc5cfef, 0xe5e9db] :
+        cx < -1200 ? [0xffc797, 0xff9c7d, 0xf2d179, 0x88d6cb, 0xf6dfb4] :
+        [0xffe4bf, 0xd0e5e4, 0xf3c291, 0xf6e6b8, 0xe9ada0])[Math.floor(random() * 5)],
       b = { ...candidate, h, base, era, seed: lotSeed, variant, lowerH, setback, upperW: w * 0.73, upperD: d * 0.76 };
     b.foundationBase = ground.low;
     b.foundationFloor = base;
     SN.addFoundation(cx, cz, w, d, yaw, ground, base);
     SN.record(SN.buildingBatches[variant], cx, base + lowerH / 2, cz, w, lowerH, d, yaw, tint);
     SN.buildingBatches[variant][SN.buildingBatches[variant].length - 1].lot = b;
-    if (era === "brick")
-      SN.urbanShells.push({
-        g: SN.urbanBlockGeo,
-        x: cx,
-        y: base + lowerH / 2,
-        z: cz,
-        sx: w,
-        sy: lowerH,
-        sz: d,
-        yaw,
-        color: [0xc9b3a0, 0xf0d8c1, 0xbda4a0][Math.floor(random() * 3)]
-      });
     SN.addOBB(cx, cz, w, d, lowerH, yaw, base);
     SN.placedBuildings.push(b);
     if (setback) {
@@ -226,6 +256,11 @@
   };
 
   SN.sign = function sign(text, x, y, z, w, h, yaw = 0, neon = false) {
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0 || w > 80 || h > 32) {
+      SN.reportContentProblem("sign-" + text, x, z, "招牌尺寸超出范围", "缩至有效尺寸");
+      w = SN.clamp(Number.isFinite(w) ? w : 6, 0.4, 80);
+      h = SN.clamp(Number.isFinite(h) ? h : 1, 0.2, 32);
+    }
     const tex = SN.textTexture(text, neon ? "#16353c" : "#1d5657", neon ? "#c7ffe5" : "#e7eed7");
     const material = SN.mat(0xffffff, {
       map: tex,
@@ -237,6 +272,7 @@
     if (neon)
       SN.neonMats.push(material);
     const m = SN.meshAt(new SN.T.PlaneGeometry(w, h), material, x, y, z, 1, 1, 1, yaw);
+    SN.registerCameraPart({ x, y, z, sx: w, sy: h, sz: 0.05, yaw, cameraOccluder: true });
     m.castShadow = false;
     return m;
   };
@@ -260,6 +296,12 @@
     SN.meshAt(new SN.T.CylinderGeometry(0.5, 1.2, 26, 8), conc, 0, 140, 0, 1, 1, 1, 0, g);
     SN.meshAt(new SN.T.ConeGeometry(1.2, 7, 8), red, 0, 156, 0, 1, 1, 1, 0, g);
     SN.meshAt(new SN.T.SphereGeometry(1.1, 8, 6), SN.mat(0xff6a55, { emissive: 0xff4a35, emissiveIntensity: 2.2 }), 0, 160, 0, 1, 1, 1, 0, g);
+    const mullions = [];
+    for (let n = 0; n < 24; n++) {
+      const angle = n * SN.TAU / 24;
+      mullions.push({ g: SN.box, x: Math.sin(angle) * 15.2, y: 109, z: Math.cos(angle) * 15.2, sx: 0.12, sy: 4.5, sz: 0.18, ry: angle });
+    }
+    g.add(new SN.T.Mesh(SN.merged(mullions), conc));
     SN.sign("남 산 · 首尔塔", x, y + 13, z + 30, 20, 3.6, 0, true);
   };
 
@@ -314,7 +356,7 @@
   };
 
   SN.detailTiles = function detailTiles(geo, material, list, shadows = false, tile = 48, minQ = 0) {
-    tile = Math.min(tile, 48);
+    tile = 160;
     const tiles = new Map();
     for (const p of list) {
       const key = Math.floor(p.x / tile) + "," + Math.floor(p.z / tile);
@@ -323,7 +365,7 @@
       tiles.get(key).push(p);
     }
     for (const [key, entries] of tiles) {
-      SN.registerTile(geo, material, entries, shadows, tile, key, 120, minQ);
+      SN.registerTile(geo, material, entries, shadows, tile, key, 380, minQ);
       SN.cityTiles[SN.cityTiles.length - 1].detail = true;
     }
   };
@@ -348,152 +390,58 @@
       sy: h,
       sz: d,
       yaw: f.yaw,
+      kind: geo === SN.box && y < 4 && h < 0.3 && d > 0.5 ? "awning" : "facade",
       color
     });
   };
 
   SN.buildUrbanDetailPage = function buildUrbanDetailPage(page) {
-    const urbanConcrete = [],
-      urbanMetal = [],
-      urbanDark = [],
-      urbanGlass = [],
-      urbanBrick = [],
-      urbanFabric = [],
-      urbanPlants = [],
-      urbanAC = [],
-      urbanTanks = [],
-      urbanSigns = [];
+    const stone = [], metal = [], fabric = [], ac = [];
+    page.cameraParts = [];
     const tileStart = SN.cityTiles.length;
     for (const b of page.buildings) {
-      const random = SN.lotRng(b.seed ^ 174329),
-        faces = SN.buildingFaces(b),
-        floorHeight = b.era === "brick" ? 3.1 : 3.2,
-        roofY = b.h,
-        rw = b.setback ? b.upperW : b.w,
-        rd = b.setback ? b.upperD : b.d;
-      for (let faceIndex = 0; faceIndex < faces.length; faceIndex++) {
-        const f = faces[faceIndex],
-          front = faceIndex === 0,
-          bays = Math.max(2, Math.floor((f.w - 1) / (b.era === "brick" ? 3.3 : 2.8))),
-          bayW = (f.w - 0.7) / bays,
-          rows = Math.max(1, Math.min(8, Math.floor((b.lowerH - 5.5) / floorHeight) + 1)),
-          wall = b.era === "brick" ? urbanBrick : urbanConcrete;
-        for (let floor = 0; floor < rows; floor++) {
-          const y = 4.6 + floor * floorHeight, windowH = b.era === "brick" ? 1.5 : 1.95;
-          SN.facadePart(wall, b, f, 0, y + windowH / 2 + 0.45, 0.16, f.w - 0.5, 0.65, 0.27);
-          for (let bay = 0; bay < bays; bay++) {
-            const u = -f.w / 2 + 0.35 + (bay + 0.5) * bayW, ww = bayW * (b.era === "brick" ? 0.62 : 0.76), shade = random();
-            // Glazing is 22 cm behind the surrounding masonry and aluminium reveal.
-            SN.facadePart(urbanGlass, b, f, u, y, 0.065, ww, windowH, 0.04, [0xa8b5b6, 0x6f8e99, 0xc2b7a0, 0x899796][Math.floor(shade * 4)]);
-            for (const side of [-1, 1]) {
-              SN.facadePart(wall, b, f, u + side * (ww / 2 + (bayW - ww) / 4), y, 0.18, (bayW - ww) / 2, windowH + 0.6, 0.3);
-              SN.facadePart(urbanMetal, b, f, u + side * ww / 2, y, 0.28, 0.065, windowH + 0.12, 0.12);
-              SN.facadePart(urbanMetal, b, f, u, y + side * windowH / 2, 0.27, ww + 0.13, 0.065, 0.13);
-            }
-            SN.facadePart(urbanMetal, b, f, u + (b.seed % 3 - 1) * ww * 0.16, y, 0.2, 0.045, windowH, 0.08);
-            SN.facadePart(urbanConcrete, b, f, u, y - windowH / 2 - 0.08, 0.34, ww + 0.3, 0.13, 0.48);
-            if (shade > 0.72)
-              SN.facadePart(urbanFabric, b, f, u, y + windowH * 0.25, 0.095, ww * 0.95, windowH * 0.42, 0.025, 0xc7c0ad);
-            if (front && floor % 2 === 0 && bay % 3 === 1 && b.era !== "tower") {
-              const by = y - windowH / 2 - 0.15;
-              SN.facadePart(urbanConcrete, b, f, u, by, 0.72, ww + 0.65, 0.16, 1.35);
-              for (const railY of [by + 0.2, by + 1.05])
-                SN.facadePart(urbanMetal, b, f, u, railY, 1.35, ww + 0.65, 0.055, 0.055);
-              for (let rail = -ww / 2 - 0.25; rail <= ww / 2 + 0.25; rail += 0.28)
-                SN.facadePart(urbanMetal, b, f, u + rail, by + 0.62, 1.35, 0.035, 0.9, 0.035);
-              for (const side of [-1, 1])
-                SN.facadePart(urbanMetal, b, f, u + side * (ww + 0.65) / 2, by + 0.65, 0.7, 0.055, 0.85, 1.35);
-              SN.facadePart(urbanConcrete, b, f, u - ww * 0.3, by + 0.28, 0.94, 0.48, 0.4, 0.36);
-              SN.facadePart(urbanPlants, b, f, u - ww * 0.3, by + 0.6, 0.94, 0.35, 0.35, 0.28, 0x628369, SN.leafGeo);
-              if (shade > 0.4) {
-                SN.facadePart(urbanMetal, b, f, u, by + 1.7, 0.75, ww, 0.025, 0.025);
-                for (let item = 0; item < 3; item++)
-                  SN.facadePart(urbanFabric, b, f, u - ww * 0.32 + item * ww * 0.31, by + 1.36, 0.75, 0.35, 0.62, 0.025, [0xb9c9cf, 0xc59b8f, 0xd1c8aa][item]);
-              }
-            }
-            if ((bay + floor + b.seed) % 9 === 0)
-              SN.facadePart(urbanAC, b, f, u + ww * 0.38, y - 1.1, 0.52, 1, 1, 1, null, SN.acGeo);
-          }
+      const f = SN.buildingFaces(b)[0];
+      // Window grids live in the shell texture; reserve geometry for silhouettes.
+      if (b.era !== "tower") {
+        for (let floor = 0; floor < Math.min(3, Math.floor((b.h - 4) / 3.2)); floor++) {
+          const y = 4.5 + floor * 3.2, u = (b.seed % 3 - 1) * b.w * 0.22;
+          SN.facadePart(ac, b, f, b.w * 0.32, y, 0.45, 1, 1, 1, null, SN.acGeo);
+          if ((floor + b.seed) % 2) continue;
+          SN.facadePart(stone, b, f, u, y - 0.8, 0.58, 2.9, 0.16, 1.15);
+          for (const dy of [-0.45, 0.25])
+            SN.facadePart(metal, b, f, u, y + dy, 1.12, 2.9, 0.065, 0.065);
+          for (let rail = -1.35; rail < 1.5; rail += 0.45)
+            SN.facadePart(metal, b, f, u + rail, y - 0.22, 1.12, 0.055, 0.88, 0.055);
+          SN.facadePart(fabric, b, f, u + 0.45, y, 1.14, 0.75, 0.8, 0.04, [0xf6cc73, 0xea8b79, 0x7bd7ce][b.seed % 3]);
         }
-        // Drainpipes, elbows and brackets continue to the roofline.
-        if (b.era !== "tower") {
-          const pipeU = f.w / 2 - 0.48;
-          SN.facadePart(urbanDark, b, f, pipeU, b.h / 2, 0.32, 0.085, b.h, 0.085);
-          for (let y = 1; y < b.h; y += 3.1)
-            SN.facadePart(urbanMetal, b, f, pipeU, y, 0.25, 0.19, 0.08, 0.4);
-          SN.facadePart(urbanDark, b, f, pipeU - 0.24, 0.5, 0.32, 0.55, 0.08, 0.08);
-        }
-        if (front && b.era !== "tower")
-          for (let panel = 0; panel < Math.min(SN.inMyeong(b.x, b.z) ? 3 : 1, Math.max(1, Math.floor((b.h - 4) / 2.3))); panel++) {
-            const u = f.w / 2 - 0.9 - panel * 0.95,
-              y = Math.min(5.7, b.h - 1.6) + panel * 2.3,
-              out = 0.85,
-              idx = (b.seed + panel) % 8;
-            SN.facadePart(urbanDark, b, f, u, y, 0.48, 0.08, 0.18, 1.2);
-            SN.facadePart(urbanDark, b, f, u, y, out, 0.85, 3.2, 0.24);
-            SN.facadePart(urbanSigns, b, f, u, y, out + 0.14, 0.75, 3.05, 1, null, SN.verticalGeos[idx]);
-          }
+        SN.facadePart(metal, b, f, -b.w / 2 + 0.35, b.h / 2, 0.28, 0.09, b.h, 0.09);
       }
-      // Roof fences, clustered condensers, antennas and tank bases use per-lot seeds.
-      for (const side of [-1, 1]) {
-        const f = SN.buildingFaces({ ...b, w: rw, d: rd })[side < 0 ? 2 : 0];
-        SN.facadePart(urbanMetal, b, f, 0, roofY + 1.25, -0.15, rw, 0.065, 0.065);
-        for (let u = -rw / 2 + 0.4; u < rw / 2; u += 1.8)
-          SN.facadePart(urbanMetal, b, f, u, roofY + 0.9, -0.15, 0.045, 0.75, 0.045);
-      }
-      for (let i = 0; i < 2 + b.seed % 4; i++) {
-        const p = SN.lotPoint(b, (random() - 0.5) * rw * 0.6, (random() - 0.5) * rd * 0.6);
-        SN.record(urbanAC, p.x, b.base + roofY + 0.75, p.z, 1.6, 1.5, 1.6, b.yaw);
-      }
-      const tank = SN.lotPoint(b, -rw * 0.23, -rd * 0.18);
-      SN.record(urbanTanks, tank.x, b.base + roofY + 1.3, tank.z, 0.8, 1.7, 0.8, b.yaw, 0xaeb8b4);
-      SN.record(urbanConcrete, tank.x, b.base + roofY + 0.35, tank.z, 1.9, 0.5, 1.9, b.yaw);
-      const aerial = SN.lotPoint(b, rw * 0.3, rd * 0.2);
-      SN.record(urbanMetal, aerial.x, b.base + roofY + 2.1, aerial.z, 0.05, 4.2, 0.05);
-      for (let i = 0; i < 4; i++)
-        SN.record(urbanMetal, aerial.x, b.base + roofY + 2.6 + i * 0.35, aerial.z, 1.1 - i * 0.16, 0.025, 0.025, b.yaw);
-      // Exterior metal flights occupy only genuine gaps, never a neighbour or road.
-      if (b.era === "brick" && b.seed % 3 === 0) {
-        const center = SN.lotPoint(b, b.w / 2 + 0.85, 0), stair = { x: center.x, z: center.z, w: 1.5, d: 9, yaw: b.yaw };
-        if (SN.roadGap(stair.x, stair.z, stair.w, stair.d, stair.yaw) && !SN.placedBuildings.some(other => other !== b && SN.rectOverlap(stair, other, 0.25))) {
-          for (let step = 0; step < 32; step++) {
-            const v = -4.35 + step * 0.28, p = SN.lotPoint(b, b.w / 2 + 0.85, v), top = b.base + 0.35 + (step + 1) * 0.19;
-            SN.record(urbanMetal, p.x, top - 0.035, p.z, 1.25, 0.07, 0.29, b.yaw);
-            if (step % 4 === 0) {
-              SN.record(urbanDark, p.x, top - 0.55, p.z, 0.06, 1.1, 0.06, b.yaw);
-              const edge = SN.lotPoint(b, b.w / 2 + 1.5, v);
-              SN.record(urbanMetal, edge.x, top + 0.5, edge.z, 0.045, 1, 0.045, b.yaw);
-            }
-          }
-          const landing = SN.lotPoint(b, b.w / 2 + 0.85, 4.8);
-          SN.record(urbanMetal, landing.x, b.base + 6.43, landing.z, 1.4, 0.14, 1.2, b.yaw);
-        }
+      const roof = SN.lotPoint(b, -b.w * 0.17, -b.d * 0.12);
+      SN.record(ac, roof.x, b.base + b.h + 0.7, roof.z, 2, 1.5, 2, b.yaw);
+      if (b.era !== "tower") {
+        const tank = SN.lotPoint(b, b.w * 0.2, -b.d * 0.2);
+        metal.push({ g: SN.cylinder, x: tank.x, y: b.base + b.h + 1.3, z: tank.z, sx: 1.4, sy: 2, sz: 1.4, color: 0x699db8 });
+        SN.record(metal, tank.x + 1.8, b.base + b.h + 2, tank.z, 0.05, 4, 0.05);
+        for (let i = 0; i < 3; i++) SN.record(metal, tank.x + 1.8, b.base + b.h + 2.5 + i * 0.35, tank.z, 1.4 - i * 0.3, 0.035, 0.035, b.yaw);
       }
     }
-    for (const [material, parts] of [
-      [SN.detailConcrete, urbanConcrete],
-      [SN.detailMetal, urbanMetal],
-      [SN.detailDark, urbanDark],
-      [SN.cityPalette.glass, urbanGlass],
-      [SN.cityPalette.brick, urbanBrick],
-      [SN.laundryMat, urbanFabric],
-      [SN.urbanSignMaterial, urbanSigns]
-    ])
-      SN.staticCityTiles(material, parts, 120, 48, true, false);
-    SN.detailTiles(SN.leafGeo, SN.leafMat, urbanPlants, false);
-    SN.detailTiles(SN.acGeo, SN.detailMetal, urbanAC, false);
-    SN.detailTiles(SN.cylinder, SN.detailMetal, urbanTanks, false);
+    for (const [material, parts] of [[SN.detailConcrete, stone], [SN.detailMetal, metal], [SN.laundryMat, fabric], [SN.detailMetal, ac]])
+      SN.staticCityTiles(material, parts, 380, 128, true, false, page.cameraParts);
     page.tiles = SN.cityTiles.slice(tileStart);
     page.ready = true;
   };
 
   SN.streamUrbanDetails = function streamUrbanDetails(px, pz, force) {
-    const pending = [], retired = new Set();
+    let nearest = null, nearestDistance = Infinity;
+    const retired = SN.urbanRetired; retired.clear();
     for (const page of SN.urbanDetailPages) {
       const distance = Math.hypot(px - page.x, pz - page.z);
-      if (distance < 192 && !page.ready)
-        pending.push({ page, distance });
-      else if (distance > 340 && page.ready) {
+      if (distance < (SN.qualityLevel() === 0 ? 280 : 400) && !page.ready && distance < nearestDistance) {
+        nearest = page; nearestDistance = distance;
+      }
+      else if (distance > 680 && page.ready) {
+        SN.releaseCameraParts(page.cameraParts);
+        page.cameraParts = [];
         for (const tile of page.tiles) {
           retired.add(tile);
           if (tile.mesh) {
@@ -511,15 +459,7 @@
       for (let i = SN.cityTiles.length - 1; i >= 0; i--)
         if (retired.has(SN.cityTiles[i]))
           SN.cityTiles.splice(i, 1);
-    pending.sort((a, b) => a.distance - b.distance);
-    const deadline = performance.now() + (force ? 24 : 3);
-    let count = 0;
-    for (const entry of pending) {
-      SN.buildUrbanDetailPage(entry.page);
-      count++;
-      if (count >= (force ? 4 : 1) || performance.now() > deadline)
-        break;
-    }
+    if (nearest) SN.buildUrbanDetailPage(nearest);
   };
 
   SN.iMat = function iMat(color, extra) {
@@ -535,6 +475,7 @@
   SN.mergedMesh = function mergedMesh(parts, color, extra, shadow = true) {
     if (!parts.length)
       return null;
+    for (const p of parts) SN.registerCameraPart(p, p.g);
     const mesh = new SN.T.Mesh(SN.merged(parts), SN.iMat(color, extra));
     mesh.castShadow = shadow;
     mesh.receiveShadow = true;
@@ -854,10 +795,10 @@
     }
     else if (spec.kind === "police") {
       buy(0x46545c, [
-        { g: SN.box, x: x1 - 2.6, y: base + 0.54, z: cz, sx: 1.1, sy: 1.08, sz: 5.6 },
-        { g: SN.box, x: x1 - 2.6, y: base + 1.1, z: cz, sx: 1.2, sy: 0.08, sz: 5.7 }
+        { g: SN.box, x: x1 - 4.2, y: base + 0.54, z: cz, sx: 1.1, sy: 1.08, sz: 5.6 },
+        { g: SN.box, x: x1 - 4.2, y: base + 1.1, z: cz, sx: 1.2, sy: 0.08, sz: 5.7 }
       ]);
-      solid(x1 - 2.6, cz, 1.25, 5.7, 1.1);
+      solid(x1 - 4.2, cz, 1.25, 5.7, 1.1);
       buy(0x8d7f68, [
         { g: SN.box, x: cx - 2.5, y: base + 0.38, z: z0 + 2.2, sx: 6.4, sy: 0.42, sz: 0.6 },
         { g: SN.box, x: cx - 2.5, y: base + 0.7, z: z0 + 2.2, sx: 6.4, sy: 0.34, sz: 0.1 }
@@ -1091,6 +1032,7 @@
     SN.player.motionSpeed = SN.player.speed = 0;
     SN.player.vy = 0;
     SN.player.grounded = true;
+    SN.player.fallPeak = SN.player.y;
     SN.player.moveX = 0;
     SN.player.moveZ = 0;
     for (const leg of SN.playerRig.legs)
@@ -1141,6 +1083,15 @@
       });
       material.normalScale.set(0.4, 0.4);
       SN.applyWorldUV(material, 1 / 12.8, 1 / 25.6, SN.facadeHook);
+      const compileGlass = material.onBeforeCompile;
+      material.onBeforeCompile = shader => {
+        compileGlass(shader);
+        shader.fragmentShader = shader.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
+          float skyBand = smoothstep(3.,140.,vPbrWorld.y);
+          vec3 reflectionTone = mix(vec3(.50,.69,.80),vec3(.94,1.13,1.24),skyBand);
+          diffuseColor.rgb *= reflectionTone;
+          diffuseColor.rgb += vec3(.025,.045,.065)*skyBand;`);
+      };
       SN.buildingMats.push(material);
     }
     // Seoul building stock: mid-rise offices downtown, dense neon shops in Myeongdong,
@@ -1232,34 +1183,8 @@
   });
   // Startup phase 7: keep this order relative to the other systems.
 
-  SN.registerInit(7, function initializeBuildings7() {
-    // Move authored interiors off steep ground before reserving their plots.
-    SN.buildingRelocations = [];
-    for (const spec of SN.enterableSpecs.concat(SN.shopSpecs, SN.smallShopSpecs)) {
-      if (SN.authoredTerrain(spec).buildable)
-        continue;
-      const original = { x: spec.x, z: spec.z, w: spec.w, d: spec.d };
-      let chosen = null;
-      for (let radius = 4; radius <= 200 && !chosen; radius += 4)
-        for (let i = 0; i < 32; i++) {
-          const angle = i * SN.TAU / 32,
-            x = original.x + Math.sin(angle) * radius,
-            z = original.z + Math.cos(angle) * radius,
-            ground = SN.authoredTerrain(spec, x, z),
-            plot = SN.authoredFootprint(spec, x, z);
-          if (!ground.buildable || !SN.roadGap(plot.x, plot.z, plot.w, plot.d) || SN.isWater(x, z, Math.hypot(plot.w, plot.d) / 2))
-            continue;
-          if (SN.enterableSpecs.concat(SN.shopSpecs, SN.smallShopSpecs).some(other => other !== spec && SN.rectOverlap({ x, z, w: spec.w + 4, d: spec.d + 4 }, other)))
-            continue;
-          chosen = { x, z };
-          break;
-        }
-      if (!chosen)
-        throw new Error("无法安置坡地商店：" + spec.id);
-      spec.x = chosen.x;
-      spec.z = chosen.z;
-      SN.buildingRelocations.push({ ...original, dx: spec.x - original.x, dz: spec.z - original.z });
-    }
+  SN.registerInit(7, function* initializeBuildings7() {
+    SN.relocateAuthoredBuildings();
     // Keep every district service on a buildable roadside plot, clear of intersections.
     SN.servicePlots = [];
     for (const h of SN.cityServices) {
@@ -1310,6 +1235,7 @@
     for (const h of SN.cityServices) {
       SN.clearZones.push({ x: h.x, z: h.z, r: 23 }, { x: h.policeX, z: h.policeZ, r: 22 });
     }
+    for (let x = 100; x <= 1100; x += 32) SN.clearZones.push({ x, z: -705, r: 12 });
     SN.placedBuildings = [];
     SN.urbanShells = [];
     SN.urbanRoofParts = [];
@@ -1332,6 +1258,7 @@
     // Roads, bends and rear lanes establish blocks; frontage widths establish lots.
     // Large lots belong to occasional towers, while their neighbours stay smaller.
     for (let roadIndex = 0; roadIndex < SN.roads.length; roadIndex++) {
+      yield "建筑街区 " + (roadIndex + 1) + "/" + SN.roads.length;
       const road = SN.roads[roadIndex];
       if (road.bridge || /江边北路|奥林匹克|匝道|机场|터미널 순환|남산순환/.test(road.name))
         continue;
@@ -1394,10 +1321,12 @@
     SN.record(SN.sideBatch, 0, 0.14, -812, 190, 0.25, 96);
     // Zebra crossings at the main downtown intersections, clear of buildings.
     SN.crossings = [];
+    SN.trafficSignals = [];
+    SN.pedCrossings = [];
     SN.crossingSegments = [];
     SN.crossingCorners = [];
     for (const road of SN.roads)
-      if (!road.bridge && road.width >= 14 && !/江边北路|奥林匹克|匝道/.test(road.name))
+      if (!road.bridge && road.width >= 8 && !/江边北路|奥林匹克|匝道/.test(road.name))
         for (let i = 1; i < road.points.length; i++)
           SN.crossingSegments.push({ a: road.points[i - 1], b: road.points[i], width: road.width });
     for (let i = 0; i < SN.crossingSegments.length; i++)
@@ -1444,12 +1373,42 @@
             yaw = Math.atan2(vx, vz);
           for (const side of [-1, 1]) {
             const along = (other.width / 2 + 3.5) * side, cx = x + vx / len * along, cz = z + vz / len * along;
-            for (let off = -road.width / 2 + 1; off < road.width / 2 - 0.6; off += 1.45)
-              SN.record(SN.markBatch, cx + nx * off, SN.roadHeight(cx, cz) + 0.195, cz + nz * off, 0.75, 0.018, 3.6, yaw);
-            SN.record(SN.markBatch, cx + vx / len * side * 3, SN.roadHeight(cx, cz) + 0.195, cz + vz / len * side * 3, road.width / 2 - 0.5, 0.018, 0.32, yaw);
+            const travelYaw = yaw + (side > 0 ? SN.PI : 0), axis = road === a ? 0 : 1;
+            const signal = { x: cx + vx / len * side * 3, z: cz + vz / len * side * 3, yaw: travelYaw, axis, offset: (Math.abs(Math.round(x + z)) % 4) * 3, width: road.width };
+            signal.poleX = signal.x - Math.cos(travelYaw) * (road.width / 2 + 1.2);
+            signal.poleZ = signal.z + Math.sin(travelYaw) * (road.width / 2 + 1.2);
+            SN.trafficSignals.push(signal);
+            SN.pedCrossings.push({ ax: cx - nx * (road.width / 2 + 1.4), az: cz - nz * (road.width / 2 + 1.4), bx: cx + nx * (road.width / 2 + 1.4), bz: cz + nz * (road.width / 2 + 1.4), signal });
+            const crossY = SN.roadHeight(cx, cz) + 0.168,
+              crossPitch = -Math.atan2(SN.roadHeight(cx + vx / len * 2, cz + vz / len * 2) - SN.roadHeight(cx - vx / len * 2, cz - vz / len * 2), 4);
+            for (let off = -road.width / 2 + 1; off < road.width / 2 - 0.6; off += 1.45) {
+              SN.record(SN.markBatch, cx + nx * off, crossY, cz + nz * off, 0.75, 0.018, 3.6, yaw);
+              SN.markBatch[SN.markBatch.length - 1].pitch = crossPitch;
+            }
+            SN.record(SN.markBatch, cx + vx / len * side * 3, SN.roadHeight(cx, cz) + 0.178, cz + vz / len * side * 3, road.width / 2 - 0.5, 0.018, 0.32, yaw);
           }
         }
       }
+    // Red curbside bus lanes leave intersections and crosswalks clear.
+    const busPaint = [];
+    for (const road of SN.roads) {
+      if (road.lanes < 6 || !/종로|테헤란로|강남대로/.test(road.name)) continue;
+      for (let i = 1; i < road.points.length; i++) {
+        const a = road.points[i - 1], b = road.points[i], dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz);
+        if (len < 40) continue;
+        const nx = dz / len, nz = -dx / len, yaw = Math.atan2(dx, dz);
+        for (let t = 22; t < len - 22; t += 8) {
+          const x = a[0] + dx * t / len, z = a[1] + dz * t / len;
+          if (SN.crossings.some(c => Math.hypot(c[0] - x, c[1] - z) < 28)) continue;
+          for (const side of [-1, 1]) {
+            const off = side * (road.width / 2 - 1.95), px = x + nx * off, pz = z + nz * off;
+            SN.record(busPaint, px, SN.roadHeight(px, pz) + 0.18, pz, 2.9, 0.008, 8.05, yaw, 0xd84032);
+            busPaint[busPaint.length - 1].pitch = -Math.atan2(SN.roadHeight(px + dx / len * 4, pz + dz / len * 4) - SN.roadHeight(px - dx / len * 4, pz - dz / len * 4), 8);
+          }
+        }
+      }
+    }
+    SN.staticCityTiles(SN.stripeMat, busPaint, 900, 240, false, false);
     SN.neonMats = [];
     SN.sign("종 로", -500, 5, -782, 9, 2);
     SN.sign("을 지 로", -600, 5, -622, 9, 2);
@@ -1466,7 +1425,7 @@
     SN.shopFrames = [];
     SN.shopSigns = [[], [], [], [], [], [], [], []];
     SN.shopFronts = [];
-    SN.shopNames = ["달비늘 식탁", "모래별 서가", "여울음 노래집", "구름접시", "잔물결 다방", "솔안개 약방", "초승도시락", "종이달 찻집"];
+    SN.shopNames = ["소리치는 치킨", "옥이 반찬", "달빛 노래방", "별밤 PC방", "명동 향수", "광장 약초", "종로 골동", "순희네 손칼국수"];
     SN.shopColors = ["#8ff1ce", "#ffc88d", "#c1d2ff", "#ff9bd2", "#a5ffcf", "#ffe28f", "#9bd6ff", "#ffb38a"];
     SN.shopColorHex = SN.shopColors.map(c => parseInt(c.slice(1), 16));
     // Choose visible street frontage by the nearest road; corner lots get two fronts.
@@ -1523,21 +1482,6 @@
           SN.shopFronts.push(front);
         }
       }
-    SN.detailTiles(SN.box, SN.mat(0x6f9da2, {
-      metalness: 0.55,
-      roughness: 0.12,
-      transparent: true,
-      opacity: 0.34,
-      depthWrite: false,
-      side: SN.T.DoubleSide
-    }), SN.shopGlass, false);
-    SN.detailTiles(SN.box, SN.darkMat, SN.shopFrames, false);
-    SN.shopSigns.forEach((batch, i) => {
-      const texture = SN.textTexture(SN.shopNames[i], "#15383d", SN.shopColors[i]);
-      const material = SN.mat(0xffffff, { map: texture, emissive: 0xffffff, emissiveMap: texture, emissiveIntensity: 0.72 });
-      SN.neonMats.push(material);
-      SN.detailTiles(SN.box, material, batch, false);
-    });
     // Myeongdong's neon canyon: vertical signs on both sides of the shopping street.
     SN.neonWords = ["노래방", "치킨", "분식", "약국", "PC방", "카페", "화장품", "김밥", "호프", "서점", "사진관", "떡볶이"];
     // Vertical signs are attached to seeded lot facades below, not floating in roads.
@@ -1577,6 +1521,16 @@
     SN.roofParts(0, 11.3, -840, 44, 26, 5.6);
     SN.roofParts(0, 17.4, -840, 32, 19, 4);
     SN.palaceRoof.push({ g: SN.box, x: 0, y: 12.2, z: -840, sx: 20, sy: 0.8, sz: 1 });
+    // Painted bracket tiers and roof ridges define the gate at street height.
+    for (const z of [-850, -830]) for (let x = -18; x <= 18; x += 3) {
+      SN.palaceWood.push({ g: SN.box, x, y: 9.1, z, sx: 0.5, sy: 3, sz: 0.55 });
+      SN.palaceWood.push({ g: SN.box, x, y: 10.2, z, sx: 1.5, sy: 0.35, sz: 2.2 });
+      SN.palaceRoof.push({ g: SN.box, x, y: 10.6, z, sx: 2.1, sy: 0.2, sz: 2.5 });
+    }
+    for (let x = -280; x < 320; x += 8) {
+      if (Math.abs(x) < 25) continue;
+      SN.palaceStone.push({ g: SN.box, x, y: 2.3, z: -838.9, sx: 0.38, sy: 4.3, sz: 0.3 });
+    }
     // Courtyard paving, a few old trees, and the palace name boards.
     SN.record(SN.sideBatch, 10, 0.16, -960, 612, 0.25, 230);
     SN.rasterSurface(-296, 316, -1076, -846, () => true, () => 0.285, 2);
@@ -1587,11 +1541,11 @@
       stoneMesh.castShadow = true;
       stoneMesh.receiveShadow = true;
       SN.scene.add(stoneMesh);
-      const woodMesh = new SN.T.Mesh(SN.merged(SN.palaceWood), SN.mat(0x8a4a3a, { roughness: 0.72 }));
+      const woodMesh = new SN.T.Mesh(SN.merged(SN.palaceWood), SN.mat(0xbb4630, { roughness: 0.72 }));
       woodMesh.castShadow = true;
       woodMesh.receiveShadow = true;
       SN.scene.add(woodMesh);
-      const roofMesh = new SN.T.Mesh(SN.merged(SN.palaceRoof), SN.mat(0x2f3d40, { metalness: 0.18, roughness: 0.58 }));
+      const roofMesh = new SN.T.Mesh(SN.merged(SN.palaceRoof), SN.mat(0x24636b, { metalness: 0.18, roughness: 0.58 }));
       roofMesh.castShadow = true;
       roofMesh.receiveShadow = true;
       SN.scene.add(roofMesh);
@@ -1599,7 +1553,8 @@
       doorMesh.castShadow = true;
       SN.scene.add(doorMesh);
     }
-    SN.sign("북 궐", 0, 14, -824, 22, 4.2, 0, true);
+    SN.sign("광화문 · 光化门", 0, 14, -824, 22, 4.2, 0, true);
+    SN.sign("경복궁", 0, 16, -940, 20, 3, 0, true);
     SN.sign("宮 闕 正 門", 0, 9, -824, 18, 2.6, 0, true);
     // Gwangjang market: original stalls with striped awnings.
     SN.stallWood = [];
@@ -1664,6 +1619,7 @@
       depthWrite: false,
       envMapIntensity: 1.2
     });
+    SN.detailWindowLight = SN.mat(0x527f9b, { roughness: 0.32, metalness: 0.15, emissive: 0xffc96b, emissiveIntensity: 0 });
     SN.detailPlaneGeo = new SN.T.PlaneGeometry(1, 1);
     SN.displayCanvas = document.createElement("canvas");
     SN.displayCanvas.width = 256;
@@ -1746,11 +1702,11 @@
     SN.laundryMat = SN.pbrMat("fabric", 0xffffff, { uvScale: 2, roughness: 1, side: SN.T.DoubleSide });
     SN.signAtlas = SN.makeCanvas(1024, 1024);
     SN.signContext = SN.signAtlas.getContext("2d");
-    SN.verticalNames = ["달비늘", "모래별", "잔물결", "솔안개", "종이달", "여울음", "구름접시", "초승식탁"];
+    SN.verticalNames = ["달빛노래방", "별밤PC방", "소리치는치킨", "옥이반찬", "광장약초", "종로골동", "새벽포차", "명동향수"];
     SN.verticalGeos = [];
     for (let index = 0; index < 8; index++) {
       const col = index % 4, row = Math.floor(index / 4), x = col * 256, y = row * 512;
-      SN.signContext.fillStyle = ["#324647", "#634d43", "#46566b", "#624b59"][col];
+      SN.signContext.fillStyle = ["#063a67", "#a52c20", "#144835", "#721d66"][col];
       SN.signContext.fillRect(x, y, 256, 512);
       SN.signContext.strokeStyle = SN.shopColors[index];
       SN.signContext.lineWidth = 9;
@@ -1758,10 +1714,10 @@
       SN.signContext.fillStyle = SN.shopColors[index];
       SN.signContext.textAlign = "center";
       SN.signContext.textBaseline = "middle";
-      SN.signContext.font = "600 70px sans-serif";
+      SN.signContext.font = "600 54px sans-serif";
       const chars = Array.from(SN.verticalNames[index]);
       for (let k = 0; k < chars.length; k++)
-        SN.signContext.fillText(chars[k], x + 128, y + 92 + k * 88);
+        SN.signContext.fillText(chars[k], x + 128, y + 65 + k * Math.min(75, 355 / chars.length));
       SN.signContext.font = "28px sans-serif";
       SN.signContext.fillText((index % 4 + 1) + " F", x + 128, y + 465);
       const geo = new SN.T.PlaneGeometry(1, 1), uv = geo.attributes.uv;
@@ -1792,6 +1748,105 @@
       SN.urbanDetailMap.get(key).buildings.push(b);
     }
   });
+  SN.registerInit(11.5, function* initializeCityFrontages() {
+    SN.buildCityArtAtlas();
+    SN.hanokArtGeo = new SN.T.CylinderGeometry(0.12, 0.72, 1, 4);
+    SN.hanokArtGeo.rotateY(SN.PI / 4); SN.hanokArtGeo.translate(0, 0.5, 0);
+    const panels = [], shops = [], signs = [], trim = [], vertical = [], led = [], roofTiles = [], lowerWindows = [], lowerFrames = [], tubes = [];
+    SN.neonTubeMat = SN.mat(0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.5, roughness: 0.45 });
+    SN.neonTubeMat.onBeforeCompile = shader => {
+      shader.fragmentShader = shader.fragmentShader.replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
+        #if defined(USE_COLOR) || defined(USE_INSTANCING_COLOR)
+          totalEmissiveRadiance *= vColor;
+        #endif`);
+    };
+    SN.neonMats.push(SN.neonTubeMat);
+    SN.cityArtStats = { frontages: 0, signs: 0, apartments: 0, storefronts: new Array(10).fill(0) };
+    for (const b of SN.placedBuildings) {
+      if (SN.cityArtStats.frontages % 256 === 0) yield "店面与招牌";
+      const district = SN.cityDistrictAt(b.x, b.z).id;
+      const busy = ["myeong", "hongdae", "itaewon"].includes(district);
+      const office = ["gangnam", "samseong", "yeouido", "jamsil"].includes(district);
+      const apartment = b.era !== "tower" && b.h > 13 && !busy && Math.abs(Math.floor(b.x / 220) + Math.floor(b.z / 220)) % 3 === 0;
+      const family = office ? 8 : busy ? 4 : 0;
+      b.artDistrict = district;
+      b.storeType = (b.seed >>> 0) % SN.storefrontTypes.length;
+      const faces = SN.buildingFaces(b);
+      for (let face = 0; face < faces.length; face++) {
+        const f = faces[face], bays = Math.max(1, Math.ceil(f.w / 6)), width = f.w / bays;
+        for (let bay = 0; bay < bays; bay++) {
+          const u = -f.w / 2 + width * (bay + 0.5);
+          const type = b.storeType;
+          SN.facadePart(shops, b, f, u, 1.65, 0.24, width - 0.12, 2.9, 1, null, SN.storefrontGeos[type]);
+          SN.facadePart(trim, b, f, u - width * 0.48, 1.6, 0.28, 0.1, 2.7, 0.16, 0xd7d0bc);
+          if (face === 0 || busy && face === 1) {
+            SN.facadePart(shops, b, f, u, 3.62, 0.3, width - 0.15, 0.76, 1, null, SN.storeSignGeos[type]);
+            const awning = [0x294d6b, 0xbb4c36, 0x27786d, 0xe2eadd, 0x326092, 0x3b65b2, 0xd77c9f, 0xe49527, 0x6450a0, 0x328660][type];
+            if (type !== 4 && type !== 5) SN.facadePart(trim, b, f, u, 3.08, 0.64, width - 0.18, 0.14, type === 2 ? 1.25 : 0.95, awning);
+            if ((busy || office) && bay % 2 === 0) {
+              const color = [0xff459f, 0x35e5ff, 0xffd84f][(b.seed + bay) % 3];
+              SN.facadePart(tubes, b, f, u, 4.13, 0.37, width - 0.25, 0.055, 0.065, color);
+              SN.facadePart(tubes, b, f, u - width * 0.46, 3.66, 0.37, 0.055, 0.95, 0.065, color);
+            }
+          }
+          SN.cityArtStats.storefronts[type]++;
+        }
+        for (const y of [5.2, 8.3]) if (y + 1 < Math.min(b.h, b.lowerH)) {
+          const cells = Math.max(1, Math.floor(f.w / 3.1)), pitch = f.w / cells;
+          for (let cell = 0; cell < cells; cell++) {
+            const u = -f.w / 2 + pitch * (cell + 0.5);
+            SN.facadePart(lowerWindows, b, f, u, y, 0.16, pitch * 0.69, 1.8, 1, null, SN.detailPlaneGeo);
+            SN.facadePart(lowerFrames, b, f, u, y - 0.97, 0.2, pitch * 0.76, 0.13, 0.28, 0xd8d5bd);
+            SN.facadePart(lowerFrames, b, f, u, y, 0.21, 0.07, 1.8, 0.06, 0xc8d6d6);
+          }
+        }
+        SN.facadePart(trim, b, f, 0, 0.27, 0.12, f.w, 0.54, 0.3, 0x64716b);
+        SN.facadePart(trim, b, f, 0, 3.12, 0.23, f.w + 0.15, 0.18, 0.46, 0xf5dfb1);
+        SN.facadePart(trim, b, f, 0, b.lowerH - 0.25, 0.12, f.w + 0.2, 0.28, 0.38, 0xe4d7bd);
+        // Every side has a finished shop floor; signs concentrate toward the road.
+        if (face === 0 || busy && face === 1) {
+
+          SN.cityArtStats.signs++;
+          if (!office || busy) {
+            for (let n = 0; n < (busy ? 3 : b.seed % 3 === 0 ? 1 : 0); n++) {
+              const y = Math.min(b.h - 1.4, 6 + n * 3.5), u = f.w * 0.35 - n * 1.2;
+              SN.facadePart(vertical, b, f, u, y, 0.65, 0.85, 3.2, 1, null, SN.verticalGeos[(b.seed + n) % 8]);
+              SN.facadePart(trim, b, f, u, y, 0.57, 1, 3.3, 0.18, 0x384c5a);
+            }
+            if (busy && b.seed % 2 === 0) {
+              const p = { ...f, yaw: f.yaw + SN.PI / 2 };
+              SN.facadePart(signs, b, p, 0, 5.2, 1.15, 1.8, 1, 1, null, SN.artAtlasGeos[family + b.seed % 4]);
+            }
+          }
+          if ((busy || office) && b.seed % 7 === 0) {
+            SN.facadePart(busy ? led : signs, b, f, 0, b.h + 2.3, -1, Math.min(b.w, 13), 4.4, 1, null, busy ? SN.detailPlaneGeo : SN.artAtlasGeos[8 + b.seed % 4]);
+            for (const u of [-b.w * 0.3, b.w * 0.3]) SN.facadePart(trim, b, f, u, b.h + 0.5, -1.1, 0.16, 3.2, 0.16, 0x475963);
+          }
+        }
+        if (apartment) {
+          SN.facadePart(panels, b, f, f.w * 0.28, b.h - 4, 0.28, 3.8, 3.8, 1, null, SN.artAtlasGeos[12 + b.seed % 4]);
+          SN.facadePart(trim, b, f, -f.w * 0.33, b.h / 2, 0.08, 1.4, b.h, 0.12, [0x84b9bd, 0xe7af78, 0xb2a1c8][b.seed % 3]);
+        }
+        SN.cityArtStats.frontages++;
+      }
+      if (apartment) SN.cityArtStats.apartments++;
+      if (["jongno", "bukchon"].includes(district) && b.era === "brick" && b.seed % 3 === 0) {
+        const roof = SN.hanokArtGeo;
+        roofTiles.push({ g: roof, x: b.x, y: b.base + b.h, z: b.z, sx: b.w + 1.4, sy: 2.2, sz: b.d + 1.4, yaw: b.yaw });
+      }
+    }
+    SN.staticCityTiles(SN.detailWindowLight, lowerWindows, 520, 160, false, false);
+    SN.staticCityTiles(SN.detailConcrete, lowerFrames, 520, 160, false, false);
+    SN.staticCityTiles(SN.artSignMat, panels.concat(signs), 1100, 240, false, false);
+    SN.staticCityTiles(SN.storefrontMat, shops, 1100, 160, false, false);
+    SN.staticCityTiles(SN.detailConcrete, trim, 1100, 240, false, false);
+    SN.staticCityTiles(SN.urbanSignMaterial, vertical, 1000, 240, false, false);
+    SN.staticCityTiles(SN.ledMat, led, 1400, 320, false, false);
+    SN.staticCityTiles(SN.neonTubeMat, tubes, 420, 160, false, false);
+    SN.cityArtStats.neonTubes = tubes.length;
+    SN.staticCityTiles(SN.cityPalette.tile, roofTiles, 1400, 320, false, false);
+  });
+
   // Startup phase 16: keep this order relative to the other systems.
 
   SN.registerInit(16, function initializeBuildings16() {

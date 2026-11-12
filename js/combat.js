@@ -55,12 +55,15 @@
   };
 
   SN.updateWeaponVisuals = function updateWeaponVisuals() {
-    const drawn = !SN.holstered && SN.selectedWeapon >= 0 && !SN.player.car && !SN.player.dead && SN.playerRoot.visible;
-    for (let i = 0; i < 3; i++) {
+    const drawn = !SN.holstered && SN.selectedWeapon >= 0 && !SN.player.dead && SN.playerRoot.visible;
+    // The rigged player carries weapons on the skinned hands; the procedural
+    // holster props would otherwise float beside the new body.
+    const modeled = !!(SN.models && SN.models.playerAgent);
+    for (let i = 0; i < SN.weapons.length; i++) {
       const owned = SN.weapons[i].owned,
         fists = !!SN.weapons[i].fists,
-        hol = owned && !fists && (!drawn || i !== SN.selectedWeapon);
-      SN.holsterModels[i].visible = hol;
+        hol = owned && !fists && !modeled && (!drawn || i !== SN.selectedWeapon);
+      if (SN.holsterModels[i]) SN.holsterModels[i].visible = hol;
       SN.heldWeapons[i].visible = drawn && i === SN.selectedWeapon && !fists;
       if (SN.heldWeapons[i].visible)
         SN.playerRig.weapon.visible = true;
@@ -71,11 +74,17 @@
 
   SN.addPickup = function addPickup(x, z, kind) {
     const root = new SN.T.Group();
-    root.position.set(x, SN.groundHeight(x, z) + 0.25, z);
+    root.position.set(x, SN.surfaceHeight(x, z) + 0.25, z);
     SN.scene.add(root);
     SN.meshAt(new SN.T.TorusGeometry(0.5, 0.045, 5, 16), SN.pickupMaterial, 0, 0.05, 0, 1, 1, 1, 0, root).rotation.x = SN.PI / 2;
     const item = SN.meshAt(kind === "armor" ? new SN.T.OctahedronGeometry(0.27) : SN.roundedBox(0.13, 0.13, kind === 2 ? 0.8 : 0.43, 0.05), SN.pickupMaterial, 0, 0.7, 0, 1, 1, 1, 0, root);
-    SN.glow(root, 0, 0.6, 0, 1.6, 0xffcd80);
+    if (kind === "health") {
+      item.scale.set(1.4, 2.2, 0.6);
+      item.material = SN.healthPickupMat;
+      SN.meshAt(SN.box, SN.healthCrossMat, 0, 0, 0.225, 0.06, 0.1, 0.03, 0, item);
+      SN.meshAt(SN.box, SN.healthCrossMat, 0, 0, 0.225, 0.1, 0.04, 0.03, 0, item);
+    }
+    SN.glow(root, 0, 0.6, 0, 1.6, kind === "health" ? 0x68ffb3 : 0xffcd80);
     SN.pickups.push({ x, z, kind, root, item, cooldown: 0 });
   };
 
@@ -140,7 +149,7 @@
     f.sprite.visible = true;
     f.life = 0.06;
     SN.enemyMuzzleLight.position.copy(pos);
-    SN.enemyMuzzleLight.intensity = 2.4;
+    SN.enemyMuzzleLight.intensity = SN.qualityLevel() > 0 ? 2.4 : 0;
     SN.enemyMuzzleTime = 0.06;
   };
 
@@ -152,9 +161,10 @@
         f.sprite.visible = f.life > 0;
         f.sprite.scale.multiplyScalar(1 + dt * 8);
       }
+    SN.explosionFlash = Math.max(0, SN.explosionFlash - dt);
     SN.enemyMuzzleTime = Math.max(0, SN.enemyMuzzleTime - dt);
     if (SN.enemyMuzzleTime <= 0)
-      SN.enemyMuzzleLight.intensity = 0;
+      SN.enemyMuzzleLight.intensity = SN.qualityLevel() > 0 ? SN.explosionFlash * 28 : 0;
   };
 
   SN.spawnDust = function spawnDust(x, y, z, color = 0xb9ad98, scale = 1) {
@@ -440,9 +450,14 @@
         gain.gain.value = 0;
         osc.connect(filter);
         filter.connect(gain);
-        gain.connect(context.destination);
+        const master = context.createGain();
+        master.gain.value = SN.audioMuted ? 0 : SN.masterVolume;
+        const world = context.createGain(); world.gain.value = 1; world.connect(master);
+        gain.connect(world);
+        master.connect(context.destination);
         osc.start();
-        SN.audio = { context, osc, gain, filter };
+        SN.audio = { context, osc, gain, filter, master, world, voices: 0 };
+        SN.createAmbientAudio();
       }
       SN.audio.context.resume().catch(() => {
       });
@@ -464,8 +479,8 @@
     return SN.noiseBuffer;
   };
 
-  SN.noiseHit = function noiseHit(duration, gain, filterType, frequency, q = 1, delay = 0) {
-    if (!SN.audio)
+  SN.noiseHit = function noiseHit(duration, gain, filterType, frequency, q = 1, delay = 0, point = null) {
+    if (!SN.audio || SN.audio.voices >= 24)
       return;
     const c = SN.audio.context, t = c.currentTime + delay, buffer = SN.ensureNoise();
     if (!buffer)
@@ -475,32 +490,88 @@
     filter.type = filterType;
     filter.frequency.setValueAtTime(frequency, t);
     filter.Q.value = q;
-    g.gain.setValueAtTime(gain, t);
+    g.gain.setValueAtTime(gain * (point ? SN.audioFalloff(point.x, point.z) : 1), t);
     g.gain.exponentialRampToValueAtTime(0.0006, t + duration);
     src.connect(filter);
     filter.connect(g);
-    g.connect(c.destination);
+    const pan = SN.connectSpatial(g, point);
+    SN.audio.voices++;
     src.start(t);
     src.stop(t + duration + 0.03);
+    src.onended = () => { src.disconnect(); filter.disconnect(); g.disconnect(); if (pan) pan.disconnect(); SN.audio.voices--; };
   };
 
-  SN.tone = function tone(type, from, to, duration, gain, delay = 0) {
-    if (!SN.audio)
+  SN.tone = function tone(type, from, to, duration, gain, delay = 0, point = null) {
+    if (!SN.audio || SN.audio.voices >= 24)
       return;
     const c = SN.audio.context, t = c.currentTime + delay, o = c.createOscillator(), g = c.createGain();
     o.type = type;
     o.frequency.setValueAtTime(from, t);
     o.frequency.exponentialRampToValueAtTime(Math.max(20, to), t + duration);
-    g.gain.setValueAtTime(gain, t);
+    g.gain.setValueAtTime(gain * (point ? SN.audioFalloff(point.x, point.z) : 1), t);
     g.gain.exponentialRampToValueAtTime(0.0006, t + duration);
     o.connect(g);
-    g.connect(c.destination);
+    const pan = SN.connectSpatial(g, point);
+    SN.audio.voices++;
     o.start(t);
     o.stop(t + duration + 0.03);
     o.onended = () => {
       o.disconnect();
       g.disconnect();
+      if (pan) pan.disconnect(); SN.audio.voices--;
     };
+  };
+
+  SN.audioFalloff = function audioFalloff(x, z) {
+    const d = Math.hypot(x - SN.player.x, z - SN.player.z);
+    return d >= 140 ? 0 : 1 / (1 + (d / 22) ** 2);
+  };
+
+  SN.connectSpatial = function connectSpatial(node, point) {
+    if (point && SN.audio.context.createStereoPanner) {
+      const pan = SN.audio.context.createStereoPanner(), dx = point.x - SN.player.x, dz = point.z - SN.player.z;
+      pan.pan.value = SN.clamp((-dx * Math.cos(SN.camYaw) + dz * Math.sin(SN.camYaw)) / Math.max(8, Math.hypot(dx, dz)), -1, 1);
+      node.connect(pan); pan.connect(SN.audio.world); return pan;
+    }
+    node.connect(SN.audio.world); return null;
+  };
+
+  SN.createAmbientAudio = function createAmbientAudio() {
+    const a = SN.audio, c = a.context, buffer = SN.ensureNoise();
+    a.beds = ["lowpass", "bandpass"].map((type, i) => {
+      const source = c.createBufferSource(), filter = c.createBiquadFilter(), gain = c.createGain();
+      source.buffer = buffer; source.loop = true; filter.type = type;
+      filter.frequency.value = i ? 650 : 180; filter.Q.value = 0.6; gain.gain.value = 0;
+      source.connect(filter); filter.connect(gain); gain.connect(a.world); source.start();
+      return { source, filter, gain };
+    });
+    a.engines = [0, 1].map(() => {
+      const source = c.createOscillator(), gain = c.createGain();
+      source.type = "triangle"; source.frequency.value = 65; gain.gain.value = 0;
+      source.connect(gain); gain.connect(a.world); source.start(); return { source, gain };
+    });
+  };
+
+  SN.updateAudioMix = function updateAudioMix() {
+    if (!SN.audio) return;
+    const a = SN.audio, t = a.context.currentTime;
+    const active = SN.started && !SN.paused && !SN.journalOpen && !SN.storyDialogue && !SN.cityMapOpen && !SN.shopMenuOpen && !SN.streetPanelOpen;
+    a.world.gain.setTargetAtTime(active ? 1 : 0, t, 0.05);
+  };
+
+  SN.soundStinger = function soundStinger(pass) {
+    SN.noiseHit(0.14, 0.018, "bandpass", 1400, 2);
+    const notes = pass ? [392, 494, 587, 784] : [392, 330, 247];
+    for (let i = 0; i < notes.length; i++) {
+      SN.tone("triangle", notes[i], notes[i] * 0.998, 0.24, 0.048, i * 0.13);
+      SN.tone("sine", notes[i] / 2, notes[i] / 2, 0.3, 0.024, i * 0.13);
+    }
+  };
+
+  SN.soundEnemyShot = function soundEnemyShot(actor) {
+    if (SN.audioFalloff(actor.x, actor.z) < 0.025) return;
+    SN.noiseHit(0.09, 0.06, "bandpass", 1400, 1, 0, actor);
+    SN.tone("triangle", 140, 50, 0.09, 0.035, 0, actor);
   };
 
   SN.soundShot = function soundShot() {
@@ -511,7 +582,7 @@
   SN.soundWeapon = function soundWeapon(index) {
     if (!SN.audio)
       return;
-    if (index === 0) {
+    if (index === 0 || index === 3) {
       SN.noiseHit(0.22, 0.055, "bandpass", 620, 1.4);
       SN.tone("sine", 180, 90, 0.18, 0.02);
     }
@@ -542,6 +613,68 @@
     SN.tone("triangle", 260, 70, 0.1, 0.05 * g);
   };
 
+  SN.setMasterVolume = function setMasterVolume(value, muted = SN.audioMuted) {
+    SN.masterVolume = SN.clamp(Number(value) || 0, 0, 1);
+    SN.audioMuted = !!muted;
+    if (SN.audio) SN.audio.master.gain.setTargetAtTime(SN.audioMuted ? 0 : SN.masterVolume, SN.audio.context.currentTime, 0.04);
+    SN.$("volumeValue").textContent = Math.round(SN.masterVolume * 100) + "%";
+    SN.$("muteAudio").textContent = SN.audioMuted ? "声音：静音" : "声音：开启";
+    SN.$("muteAudio").setAttribute("aria-pressed", SN.audioMuted);
+    if (!SN.devMode) try { localStorage.setItem("seoul-audio", JSON.stringify({ volume: SN.masterVolume, muted: SN.audioMuted })); } catch (_) {}
+  };
+
+  SN.honk = function honk(c = SN.player.car) {
+    if (!c) { SN.hailTaxi(); return; }
+    if (SN.simTime < (c.hornUntil || 0)) return;
+    c.hornUntil = SN.simTime + 1.1;
+    if (Math.hypot(c.x - SN.player.x, c.z - SN.player.z) < 65) {
+      SN.tone("square", 340, 330, 0.22, 0.025, 0, c);
+      SN.tone("sawtooth", 420, 410, 0.22, 0.018, 0, c);
+    }
+  };
+
+  SN.updateStreetAudio = function updateStreetAudio(dt) {
+    if (!SN.audio || !SN.started || SN.paused) return;
+    SN.streetSoundClock -= dt;
+    if (SN.streetSoundClock > 0) return;
+    SN.streetSoundClock = 0.28;
+    const c = SN.player.car;
+    if (c && Math.abs(c.speed) > 8 && (SN.keys.Space || SN.touch.brake)) SN.noiseHit(0.2, 0.035, "bandpass", 1800, 4);
+    const a = SN.audio, t = a.context.currentTime, district = SN.cityDistrictAt(SN.player.x, SN.player.z).id;
+    const river = Math.min(Math.abs(SN.player.z - SN.riverNorth(SN.player.x)), Math.abs(SN.player.z - SN.riverSouth(SN.player.x))) < 80;
+    const night = SN.minutes > 1200 || SN.minutes < 330;
+    const busy = ["myeong", "gangnam", "hongdae"].includes(district);
+    const indoors = !!SN.interiorAt(SN.player.x, SN.player.z, SN.player.y), damp = indoors ? 0.3 : 1;
+    a.beds[0].gain.gain.setTargetAtTime((river ? 0.012 : night ? 0.012 : 0.027) * damp, t, 1);
+    a.beds[1].gain.gain.setTargetAtTime((busy ? night ? 0.012 : 0.022 : 0.006) * damp, t, 1);
+    a.beds[1].filter.frequency.setTargetAtTime(busy ? 650 : 420, t, 1);
+    if (SN.weather && SN.weather.kind === "rain") SN.noiseHit(0.28, 0.012 * damp, "lowpass", 2600, 0.6);
+    if (river && night && Math.floor(SN.simTime * 3) % 4 === 0)
+      SN.tone("sine", 3800, 3300, 0.085, 0.006, 0);
+    // Only two engine voices are mixed; keep the closest two without sorting or allocation.
+    let first = null, second = null, firstD = 6400, secondD = 6400, siren = null, sirenD = Infinity;
+    for (const v of SN.cars) {
+      if (!v.active || v.exploded) continue;
+      const d = (v.x - SN.player.x) ** 2 + (v.z - SN.player.z) ** 2;
+      if (v !== c && Math.abs(v.speed) > 1 && d < secondD) {
+        if (d < firstD) { second = first; secondD = firstD; first = v; firstD = d; }
+        else { second = v; secondD = d; }
+      }
+      if ((v.role === "police" && SN.heat > 0 || v.spec.emergency && v.driver) && d < sirenD) {
+        siren = v; sirenD = d;
+      }
+    }
+    a.engines.forEach((voice, i) => {
+      const v = i === 0 ? first : second;
+      voice.source.frequency.setTargetAtTime(v ? v.spec.pitch * (1 + Math.abs(v.speed) / 15) : 45, t, 0.18);
+      voice.gain.gain.setTargetAtTime(v ? 0.013 * SN.audioFalloff(v.x, v.z) * damp : 0, t, 0.2);
+    });
+    if (siren && SN.audioFalloff(siren.x, siren.z) > 0.02) {
+      const high = Math.floor(SN.simTime * 2) % 2;
+      SN.tone("sine", high ? 880 : 600, high ? 600 : 880, 0.28, 0.045 * damp, 0, siren);
+    }
+  };
+
   SN.selectWeapon = function selectWeapon(index) {
     if (!SN.canControl())
       return;
@@ -549,6 +682,7 @@
       SN.toast("该武器尚未获得 · 从敌人掉落或任务奖励中获取", 3);
       return;
     }
+    SN.tone("sine", 620, 480, 0.035, 0.02);
     SN.selectedWeapon = index;
     SN.holstered = false;
     SN.reloadTime = 0;
@@ -572,16 +706,28 @@
     if (!SN.canControl())
       return;
     const w = SN.weapons[SN.selectedWeapon];
-    if (w && w.capacity && w.mag < w.capacity && w.reserve > 0 && !SN.reloadTime && !SN.holstered && !SN.player.car) {
-      SN.reloadTime = SN.selectedWeapon === 2 ? 1.9 : 1.3;
+    if (w && w.capacity && w.mag < w.capacity && w.reserve > 0 && !SN.reloadTime && !SN.holstered) {
+      SN.reloadTime = w.reload || (SN.selectedWeapon === 2 ? 1.9 : 1.3);
       SN.soundReload();
     }
   };
 
-  SN.hurtPlayer = function hurtPlayer(amount, bypassArmor = false) {
+  SN.hurtPlayer = function hurtPlayer(amount, bypassArmor = false, source = null) {
     if (SN.player.dead || !Number.isFinite(amount) || amount <= 0)
       return;
+    // Shared police pressure budget prevents simultaneous shooters from deleting full health.
+    if (source && source.kind === "police" && SN.heat <= 2) {
+      const elapsed = Math.max(0, SN.simTime - (SN.player.policeHitAt === undefined ? SN.simTime - 1 : SN.player.policeHitAt));
+      SN.player.policeHitBudget = Math.min(4, (SN.player.policeHitBudget === undefined ? 4 : SN.player.policeHitBudget) + elapsed * 3.8);
+      SN.player.policeHitAt = SN.simTime;
+      amount = Math.min(amount, SN.player.policeHitBudget);
+      SN.player.policeHitBudget -= amount;
+      if (amount <= 0) return;
+    }
     SN.player.hitReact = 0.45;
+    if (source && Number.isFinite(source.x) && Number.isFinite(source.z)) {
+      SN.hurtSource = { x: source.x, z: source.z, until: SN.simTime + 1.1 };
+    }
     const absorbed = bypassArmor ? 0 : Math.min(SN.player.armor, amount * 0.7);
     SN.player.armor -= absorbed;
     SN.player.health = Math.max(0, SN.player.health - (amount - absorbed));
@@ -590,6 +736,8 @@
     if (SN.player.health <= 0) {
       SN.failMission("你已倒下，医疗站将接应你");
       SN.player.dead = 4;
+      SN.survivedPeak = 0;
+      SN.carjack = null;
       SN.firing = SN.aiming = false;
       SN.reloadTime = 0;
       SN.clearInput();
@@ -613,10 +761,15 @@
       SN.player.car.parked = true;
       SN.player.car = null;
     }
-    SN.player.x = hospital.x;
-    SN.player.z = hospital.z;
+    const spawn = SN.safePosition(hospital.x, hospital.z, 0.4);
+    SN.player.x = spawn.x;
+    SN.player.z = spawn.z;
     SN.player.y = SN.surfaceHeight(SN.player.x, SN.player.z);
     SN.player.health = 100;
+    SN.minutes = (SN.minutes + 180) % 1440;
+    SN.carjack = null;
+    for (const w of SN.weapons) if (w.capacity) w.mag = 0;
+    SN.reloadTime = 0;
     SN.player.armor = 30;
     SN.player.hitReact = 0;
     SN.player.motionSpeed = 0;
@@ -626,6 +779,9 @@
     SN.player.speed = 0;
     SN.player.dead = 0;
     SN.player.bail = null;
+    SN.player.vault = null; SN.player.policeHitBudget = 4; SN.player.policeHitAt = SN.simTime;
+    SN.closeShopMenu(); SN.closeStreetPanel(); SN.toggleCityMap(false); SN.toggleJournal(false); SN.closeDialogue();
+    SN.$("arrestScreen").classList.remove("visible");
     SN.playerRoot.rotation.x = 0;
     SN.holstered = true;
     SN.heat = 0;
@@ -663,7 +819,9 @@
     SN.lookTarget.copy(SN.camTarget);
     SN.camera.position.set(SN.player.x + 5, SN.player.y + 3, SN.player.z);
     SN.$("downscreen").classList.remove("visible");
-    SN.toast("已在最近的医疗站恢复 · 收起武器可避免挑衅街区", 4);
+    SN.snapPlayer();
+    SN.saveCampaign();
+    SN.toast("医疗站 · 3 小时后 · 保留武器和备弹，弹匣已清空", 4);
   };
 
   SN.solidRayDistance = function solidRayDistance(origin, direction, maxDistance, padding = 0) {
@@ -750,13 +908,13 @@
   };
 
   SN.visibleBetween = function visibleBetween(ax, ay, az, bx, by, bz) {
-    SN.shotOrigin.set(ax, ay, az);
-    SN.shotVector.set(bx - ax, by - ay, bz - az);
-    const distance = SN.shotVector.length();
+    SN.sightOrigin.set(ax, ay, az);
+    SN.sightDirection.set(bx - ax, by - ay, bz - az);
+    const distance = SN.sightDirection.length();
     if (distance < 0.01)
       return true;
-    SN.shotVector.multiplyScalar(1 / distance);
-    return SN.solidRayDistance(SN.shotOrigin, SN.shotVector, distance) >= distance - 0.3;
+    SN.sightDirection.multiplyScalar(1 / distance);
+    return SN.solidRayDistance(SN.sightOrigin, SN.sightDirection, distance) >= distance - 0.3;
   };
 
   SN.hitActor = function hitActor(a, damage, dirX = 0, dirZ = 0, headshot = false, source = "bullet") {
@@ -764,7 +922,12 @@
       return;
     if (a.missionEnemy && a.enemyRole === 3 && !headshot)
       damage *= 0.65;
+    if (source === "melee" && a.kind === "civilian" && a.tough) {
+      a.hostile = true; a.hostileTimer = 12; a.meleeOnly = true; a.armedWeapon = 0;
+    }
     const lethal = a.health - damage <= 0;
+    if (SN.damageNumbers && source !== "environment")
+      SN.showPopup(String(Math.round(damage)), headshot ? "#ffd367" : "#ffffff", a.x, a.rig.root.position.y + 1.9, a.z, 0.7);
     a.health -= damage;
     a.panic = 12;
     a.flinch = 0.42;
@@ -775,21 +938,21 @@
         if (other.crew === a.crew && other.kind === "gang")
           other.hostile = true;
     }
-    if (a.kind === "police") {
+    if (source !== "environment" && a.kind === "police") {
       SN.wantedResisted = true;
       a.resisted = true;
       a.hostile = true;
       SN.commitCrime(lethal ? 4 : 3, lethal ? "击倒警员 ★4" : "袭击警员 ★3", "police", 55);
     }
-    else if (a.kind === "civilian") {
+    else if (source !== "environment" && a.kind === "civilian") {
       if (source === "bullet")
         SN.commitCrime(3, "射击路人 ★3", "gun", 45);
       else if (source === "car")
-        SN.commitCrime(2, "驾车撞人 ★2", "vehicle", 50);
+        SN.commitCrime(1, "驾车撞人 ★1", "vehicle", 50);
       else
         SN.commitCrime(lethal ? 2 : 1, lethal ? "击倒路人 ★2" : "袭击路人 ★1", "assault", 38);
     }
-    else if (a.kind === "gang" && source !== "melee")
+    else if (a.kind === "gang" && source !== "melee" && source !== "environment")
       SN.commitCrime(source === "car" ? 2 : 2, "街头冲突 ★2", "gun", 40);
     // Bullets shove on foot; no gore, just a clear physical flinch.
     const dl = Math.hypot(dirX, dirZ);
@@ -905,136 +1068,159 @@
     return low <= high ? low : limit;
   };
 
-  SN.fireWeapon = function fireWeapon() {
-    if (!SN.canControl())
-      return;
-    const w = SN.weapons[SN.selectedWeapon];
-    if (!w || SN.holstered || SN.player.car || SN.player.dead || SN.shotClock > 0 || SN.reloadTime)
-      return;
-    // Pistol and baton are semi-automatic: one press, one shot. Rifle holds full-auto.
-    if (SN.selectedWeapon !== 2) {
-      if (!SN.triggerPressed)
-        return;
-      SN.triggerPressed = false;
-    }
-    if (w.capacity && w.mag === 0) {
-      SN.reload();
-      return;
-    }
-    SN.shotClock = w.rate;
-    SN.attackTime = w.rate;
-    if (SN.selectedWeapon === 0) {
-      SN.meleeHitDone = false;
-      SN.addShotSpread(0.08);
-      SN.soundWeapon(0);
-      return;
-    }
-    w.mag--;
-    // Spread grows with movement, firing and hip-fire; aiming tightens the cone.
-    const moving = SN.clamp(SN.player.motionSpeed / 6.5, 0, 1),
-      spread = (SN.aiming ? 0.0018 : 0.0075) + moving * (SN.aiming ? 0.0045 : 0.013) + SN.shotSpread * (SN.aiming ? 0.014 : 0.026);
-    SN.camera.getWorldDirection(SN.cameraDirection);
-    SN.cameraDirection.x += (Math.random() * 2 - 1) * spread;
-    SN.cameraDirection.y += (Math.random() * 2 - 1) * spread * 0.75;
-    SN.cameraDirection.z += (Math.random() * 2 - 1) * spread;
-    SN.cameraDirection.normalize();
-    const origin = SN.camera.position;
-    let distance = SN.solidRayDistance(origin, SN.cameraDirection, w.range),
-      target = null,
-      carTarget = null,
-      targetHead = false;
-    SN.shotRay.set(origin, SN.cameraDirection);
+  SN.findAimTarget = function findAimTarget(direction, range) {
+    let best = null, score = Infinity;
     for (const a of SN.actors) {
-      if (!a.active || a.down || a.inCar)
-        continue;
-      const hit = SN.actorRayDistance(a, origin, SN.cameraDirection, distance);
-      if (hit < distance) {
-        distance = hit;
-        target = a;
-        carTarget = null;
-        targetHead = SN.actorRayInfo.head;
-      }
+      if (!a.active || a.down || a.inCar || !(a.hostile || a.missionEnemy || a.kind === "police" && SN.heat > 0)) continue;
+      const dx = a.x - SN.player.x, dz = a.z - SN.player.z, d = Math.hypot(dx, dz);
+      if (d < 0.1 || d > range) continue;
+      const dot = (dx * direction.x + dz * direction.z) / d;
+      if (dot < (SN.coarse || SN.touch.attack ? 0.65 : 0.96)) continue;
+      if (!SN.visibleBetween(SN.player.x, SN.player.y + 1.3, SN.player.z, a.x, a.rig.root.position.y + 1.1, a.z)) continue;
+      const next = d * (2 - dot);
+      if (next < score) { score = next; best = a; }
+    }
+    return best;
+  };
+
+  SN.blast = function blast(x, y, z, radius, damage, sourceCar = null, attributed = true) {
+    SN.emitSparks(x, y, z, 28, true);
+    SN.spawnDust(x, y, z, 0xff8b31, 9);
+    SN.spawnDebris(x, y, z, false);
+    SN.explosionFlash = 0.24;
+    SN.spawnMuzzleFlash(SN.hitCenter.set(x, y, z), true);
+    if (Math.hypot(x - SN.player.x, z - SN.player.z) < 140) {
+      SN.noiseHit(0.5, 0.2, "lowpass", 480, 1, 0, { x, z });
+      SN.tone("sine", 95, 24, 0.5, 0.14, 0, { x, z });
+    }
+    for (const a of SN.actors) {
+      if (!a.active || a.down) continue;
+      const d = Math.hypot(a.x - x, a.z - z);
+      if (d >= radius || !SN.visibleBetween(x, y, z, a.x, (a.inCar ? a.inCar.y : a.rig.root.position.y) + 1, a.z)) continue;
+      if (a.inCar) SN.dismount(a.inCar);
+      SN.hitActor(a, damage * (1 - d / radius), a.x - x, a.z - z, false, attributed ? "bullet" : "environment");
     }
     for (const c of SN.cars) {
-      if (!c.active || c === SN.player.car)
-        continue;
-      const hit = SN.vehicleRayDistance(c, origin, SN.cameraDirection, distance);
-      if (hit < distance) {
-        distance = hit;
-        target = null;
-        carTarget = c;
-        targetHead = false;
+      if (!c.active || c === sourceCar || c.exploded) continue;
+      const d = Math.hypot(c.x - x, c.z - z);
+      if (d < radius && SN.visibleBetween(x, y, z, c.x, c.y + 0.8, c.z)) {
+        c.health = Math.max(0, c.health - damage * (1 - d / radius) * c.spec.damage);
+        c.damageByPlayer = attributed;
       }
     }
-    const endpoint = SN.hitEndpoint.copy(origin).addScaledVector(SN.cameraDirection, distance);
-    const anchor = SN.heldWeapons[SN.selectedWeapon].userData.muzzle;
-    anchor.getWorldPosition(SN.shotOrigin);
-    SN.shotVector.subVectors(endpoint, SN.shotOrigin);
-    const length = SN.shotVector.length();
-    if (length < 0.00001)
-      return;
-    SN.shotVector.multiplyScalar(1 / length);
-    const clear = SN.solidRayDistance(SN.shotOrigin, SN.shotVector, length);
-    SN.shotEnd.copy(SN.shotOrigin).addScaledVector(SN.shotVector, clear);
-    SN.spawnTracer(SN.shotOrigin, SN.shotEnd, false);
-    // Muzzle light, flash sprite, brass and recoil: all at the held weapon's muzzle.
-    SN.muzzleLight.position.copy(SN.shotOrigin);
-    SN.muzzleLight.intensity = SN.selectedWeapon === 2 ? 2.4 : 3;
-    SN.muzzleSprite.position.copy(SN.shotOrigin);
-    SN.muzzleSprite.material.opacity = 0.96;
-    SN.muzzleSprite.material.color.setHex(0xffca7a);
-    SN.muzzleSprite.scale.setScalar(SN.rand(1, 1.9));
-    SN.muzzleSprite.visible = true;
-    SN.muzzleFlashTime = 0.065;
-    const rightX = Math.cos(SN.camYaw), rightZ = -Math.sin(SN.camYaw);
-    SN.ejectShell(SN.shotOrigin, rightX, rightZ);
-    SN.recoilPitch = SN.clamp(SN.recoilPitch + (SN.selectedWeapon === 2 ? 0.0065 : 0.013), 0, 0.075);
-    SN.recoilYaw += (Math.random() - 0.5) * 0.006;
-    SN.armRecoil = SN.selectedWeapon === 2 ? 0.5 : 0.72;
-    SN.camShake = Math.max(SN.camShake, SN.selectedWeapon === 2 ? 0.028 : 0.04);
-    SN.camShakeTime = 0.14;
-    SN.addShotSpread(SN.selectedWeapon === 2 ? 0.06 : 0.16);
+    const d = Math.hypot(SN.player.x - x, SN.player.z - z);
+    if (d < radius && SN.visibleBetween(x, y, z, SN.player.x, SN.player.y + 1, SN.player.z)) {
+      SN.hurtPlayer(damage * (1 - d / radius), false, { x, z });
+      SN.camShake = 0.5; SN.camShakeTime = 0.5;
+    }
+    SN.scareCivilians(x, z, radius * 3);
+  };
+
+  SN.fireWeapon = function fireWeapon() {
+    if (!SN.canControl()) return;
+    if (SN.holstered && !SN.player.car) { SN.selectedWeapon = 0; SN.holstered = false; }
+    const w = SN.weapons[SN.selectedWeapon], car = SN.player.car;
+    if (!w || SN.holstered || SN.shotClock > 0 || SN.reloadTime || car && (!w.capacity || w.blast)) return;
+    if (!w.automatic && !SN.touch.attack) {
+      if (!SN.triggerPressed) return;
+      SN.triggerPressed = false;
+    }
+    if (w.capacity && w.mag <= 0) { SN.reload(); return; }
+    SN.shotClock = SN.attackTime = w.rate;
     SN.soundWeapon(SN.selectedWeapon);
-    if (clear >= length - 0.4) {
-      if (target) {
-        const falloff = SN.clamp(1 - Math.max(0, distance - 9) / w.range * 0.55, 0.35, 1),
-          damage = w.damage * falloff * (targetHead ? 1.8 : 1);
-        SN.hitActor(target, damage, SN.shotVector.x, SN.shotVector.z, targetHead, "bullet");
-        SN.emitSparks(SN.shotEnd.x, SN.shotEnd.y, SN.shotEnd.z, 4, false);
-        SN.spawnDust(SN.shotEnd.x, SN.shotEnd.y, SN.shotEnd.z, 0x9c8f7c, 0.6);
+    if (!w.capacity) { SN.meleeHitDone = false; SN.addShotSpread(0.08); return; }
+    w.mag--;
+    SN.camera.getWorldDirection(SN.cameraDirection);
+    const lock = SN.findAimTarget(SN.cameraDirection, Math.min(w.range, 80));
+    SN.aimTarget = lock;
+    if (car) {
+      // A window-side muzzle avoids shooting through the player's own bonnet.
+      const side = SN.cameraDirection.x * Math.cos(car.yaw) - SN.cameraDirection.z * Math.sin(car.yaw) >= 0 ? 1 : -1;
+      SN.shotOrigin.set(car.x + Math.cos(car.yaw) * side * (car.spec.width / 2 + 0.15), car.y + Math.min(1.5, car.spec.height), car.z - Math.sin(car.yaw) * side * (car.spec.width / 2 + 0.15));
+      SN.lookDelay = 2;
+    }
+    else {
+      SN.playerRoot.updateMatrixWorld(true);
+      SN.heldWeapons[SN.selectedWeapon].userData.muzzle.getWorldPosition(SN.shotOrigin);
+    }
+    if (lock) SN.cameraDirection.set(lock.x - SN.shotOrigin.x, lock.rig.root.position.y + 1.1 - SN.shotOrigin.y, lock.z - SN.shotOrigin.z).normalize();
+    else {
+      const cameraHit = SN.solidRayDistance(SN.camera.position, SN.cameraDirection, w.range);
+      SN.hitEndpoint.copy(SN.camera.position).addScaledVector(SN.cameraDirection, cameraHit);
+      SN.cameraDirection.subVectors(SN.hitEndpoint, SN.shotOrigin).normalize();
+    }
+    const movement = SN.clamp((car ? Math.abs(car.speed) * 0.2 : SN.player.motionSpeed) / 6.5, 0, 1);
+    const spread = (w.spread || 0) + (SN.aiming || lock ? 0.002 : 0.009) + movement * (SN.aiming || lock ? 0.004 : 0.012) + SN.shotSpread * 0.012;
+    for (let pellet = 0; pellet < (w.pellets || 1); pellet++) {
+      SN.shotVector.copy(SN.cameraDirection);
+      SN.shotVector.x += SN.rand(-spread, spread);
+      SN.shotVector.y += SN.rand(-spread, spread);
+      SN.shotVector.z += SN.rand(-spread, spread);
+      SN.shotVector.normalize();
+      let distance = SN.solidRayDistance(SN.shotOrigin, SN.shotVector, w.range), target = null, carTarget = null, head = false;
+      // Ground is part of the ray too, so heavy rounds cannot pass under the road.
+      if (SN.shotVector.y < -0.001) {
+        const ground = (SN.shotOrigin.y - SN.surfaceHeight(SN.shotOrigin.x, SN.shotOrigin.z)) / -SN.shotVector.y;
+        distance = Math.min(distance, Math.max(0.2, ground));
+      }
+      for (const a of SN.actors) {
+        if (!a.active || a.down || a.inCar) continue;
+        const hit = SN.actorRayDistance(a, SN.shotOrigin, SN.shotVector, distance);
+        if (hit < distance) { distance = hit; target = a; head = SN.actorRayInfo.head; }
+      }
+      for (const c of SN.cars) {
+        if (!c.active || c === car) continue;
+        const hit = SN.vehicleRayDistance(c, SN.shotOrigin, SN.shotVector, distance);
+        if (hit < distance) { distance = hit; target = null; carTarget = c; }
+      }
+      SN.shotEnd.copy(SN.shotOrigin).addScaledVector(SN.shotVector, distance);
+      SN.spawnTracer(SN.shotOrigin, SN.shotEnd);
+      if (w.blast) {
+        // Pull the blast just off the struck wall, keeping its visibility rays outside solids.
+        SN.shotEnd.addScaledVector(SN.shotVector, -0.15);
+        SN.blast(SN.shotEnd.x, SN.shotEnd.y, SN.shotEnd.z, w.blast, w.damage);
+      }
+      else if (target) {
+        SN.hitActor(target, w.damage * SN.clamp(1 - distance / w.range * 0.5, 0.5, 1) * (head ? 1.8 : 1), SN.shotVector.x, SN.shotVector.z, head, "bullet");
         SN.soundImpact(8);
       }
       else if (carTarget) {
-        const before = carTarget.health;
-        carTarget.health = Math.max(0, carTarget.health - w.damage * 0.4 * carTarget.spec.damage);
-        carTarget.speed *= 0.92;
+        carTarget.health = Math.max(0, carTarget.health - w.damage * 0.5 * carTarget.spec.damage);
+        carTarget.damageByPlayer = true;
+        carTarget.panic = 7;
+        carTarget.speed *= 0.97;
         SN.hitTime = 0.1;
-        SN.showHitMarker();
-        SN.emitSparks(SN.shotEnd.x, SN.shotEnd.y, SN.shotEnd.z, 8, true);
         SN.soundImpact(10);
-        if (carTarget.role === "police") {
-          if (carTarget.health <= 0 && before > 0)
-            SN.commitCrime(5, "毁坏警车 ★5", "policeCar", 60);
-          else
-            SN.commitCrime(2, "袭击警车 ★2", "policeCar", 50);
+        SN.showHitMarker();
+        if (carTarget.role === "police") SN.commitCrime(carTarget.health <= 0 ? 5 : 3, "袭击警车", "policeCar", 65);
+      }
+      if (distance < w.range) {
+        SN.emitSparks(SN.shotEnd.x, SN.shotEnd.y, SN.shotEnd.z, 4, !target);
+        SN.spawnDust(SN.shotEnd.x, SN.shotEnd.y, SN.shotEnd.z, 0xb9ad98, 0.7);
+        if (!target && !carTarget && !w.blast) {
+          const ground = Math.abs(SN.shotEnd.y - SN.surfaceHeight(SN.shotEnd.x, SN.shotEnd.z)) < 0.25;
+          SN.spawnDecal(SN.shotEnd.x, SN.shotEnd.y, SN.shotEnd.z, ground ? 0 : -SN.shotVector.x, ground ? 1 : 0, ground ? 0 : -SN.shotVector.z);
         }
       }
     }
-    else {
-      // Surface hit: sparks, a short dust puff, and a small decal on the plane we struck.
-      const ground = Math.abs(SN.shotEnd.y - SN.surfaceHeight(SN.shotEnd.x, SN.shotEnd.z)) < 0.22;
-      const nx = ground ? 0 : -SN.shotVector.x, nz = ground ? 0 : -SN.shotVector.z, ny = ground ? 1 : 0;
-      SN.emitSparks(SN.shotEnd.x, SN.shotEnd.y, SN.shotEnd.z, ground ? 5 : 9, !ground);
-      SN.spawnDust(SN.shotEnd.x, SN.shotEnd.y, SN.shotEnd.z, ground ? 0xa79b88 : 0x8c8174, ground ? 1 : 0.7);
-      SN.spawnDecal(SN.shotEnd.x, SN.shotEnd.y, SN.shotEnd.z, nx, ny, nz, ground ? 0x6e6656 : 0x7d7468);
-    }
-    // A shot at a person already files its own crime; only open-ground or vehicle
-    // shots add the public-discharge charge. Scaring bystanders always happens.
+    SN.muzzleLight.position.copy(SN.shotOrigin);
+    SN.muzzleLight.intensity = SN.qualityLevel() > 0 ? 2.4 : 0;
+    SN.muzzleSprite.position.copy(SN.shotOrigin);
+    SN.muzzleSprite.material.opacity = 0.96;
+    SN.muzzleSprite.scale.setScalar(w.pellets ? 2 : 1.2);
+    SN.muzzleSprite.visible = true;
+    SN.muzzleFlashTime = 0.065;
+    SN.ejectShell(SN.shotOrigin, Math.cos(SN.camYaw), -Math.sin(SN.camYaw));
+    SN.recoilPitch = SN.clamp(SN.recoilPitch + (w.pellets ? 0.025 : 0.008), 0, 0.075);
+    SN.armRecoil = 0.55;
+    SN.recoilYaw += SN.rand(-0.003, 0.003);
+    SN.camShake = Math.max(SN.camShake, w.pellets ? 0.06 : 0.03);
+    SN.camShakeTime = Math.max(SN.camShakeTime, 0.14);
+    SN.addShotSpread(0.08);
     if (SN.simTime - SN.lastGunCrime > 1.6) {
       SN.lastGunCrime = SN.simTime;
-      if (!target)
-        SN.commitCrime(2, "公共场所开枪 ★2", "gun", 58);
-      SN.scareCivilians(SN.player.x, SN.player.z, 30);
+      SN.commitCrime(2, "公共场所开枪", "gun", 58);
+      SN.scareCivilians(SN.player.x, SN.player.z, 35);
     }
   };
 
@@ -1066,8 +1252,8 @@
     SN.updateSparks(dt);
     SN.updateDecals(dt);
     // Baton damage lands inside the visible swing window, with knockback.
-    if (SN.selectedWeapon === 0 && SN.attackTime > 0 && !SN.meleeHitDone && SN.attackTime < 0.36 && SN.attackTime > 0.14 && !SN.holstered && !SN.player.car && !SN.player.dead) {
-      const reach = SN.weapons[0].range;
+    if (SN.weapons[SN.selectedWeapon] && !SN.weapons[SN.selectedWeapon].capacity && SN.attackTime > 0 && !SN.meleeHitDone && SN.attackTime < 0.36 && SN.attackTime > 0.14 && !SN.holstered && !SN.player.car && !SN.player.dead) {
+      const reach = SN.weapons[SN.selectedWeapon].range;
       let best = null, bestDistance = reach;
       for (const a of SN.actors) {
         if (!a.active || a.down || a.inCar)
@@ -1079,7 +1265,7 @@
         }
       }
       if (best) {
-        SN.hitActor(best, SN.weapons[0].damage, Math.sin(SN.player.yaw), Math.cos(SN.player.yaw), false, "melee");
+        SN.hitActor(best, SN.weapons[SN.selectedWeapon].damage, Math.sin(SN.player.yaw), Math.cos(SN.player.yaw), false, "melee");
         SN.emitSparks(best.x, best.rig.root.position.y + 1.1, best.z, 3, false);
         SN.soundImpact(10);
       }
@@ -1112,6 +1298,10 @@
     SN.updateMuzzleFlashes(dt);
     SN.updateDust(dt);
     SN.updateDrops(dt);
+    SN.updateVehicleDamage(dt);
+    SN.updateVehicleEffects(dt);
+    SN.updateStreetAudio(dt);
+    if (!SN.firing) SN.aimTarget = null;
     SN.updateWanted(dt);
     for (const p of SN.pickups) {
       p.cooldown = Math.max(0, p.cooldown - dt);
@@ -1120,7 +1310,11 @@
       p.item.position.y = 0.75 + Math.sin(SN.simTime * 2) * 0.15;
       if (p.cooldown === 0 && !SN.player.car && !SN.player.dead && Math.hypot(p.x - SN.player.x, p.z - SN.player.z) < 1.5) {
         p.cooldown = 45;
-        if (p.kind === "armor") {
+        if (p.kind === "health") {
+          SN.player.health = Math.min(100, SN.player.health + 60);
+          SN.toast("急救包 · 生命恢复", 2);
+        }
+        else if (p.kind === "armor") {
           SN.player.armor = 100;
           SN.toast("护甲补充至 100", 2);
         }
@@ -1130,7 +1324,7 @@
           w.reserve = Math.min(240, w.reserve + (first ? 0 : w.capacity * 3));
           if (first)
             SN.selectWeapon(p.kind);
-          SN.toast("已拾取 " + w.name + " · H 收起 / 1–3 切换", 3);
+          SN.toast("已拾取 " + w.name + " · H 收起 / 1–6 切换", 3);
         }
       }
     }
@@ -1153,7 +1347,7 @@
       }
     SN.$("damage").style.opacity = SN.simTime - SN.player.lastHurt < 0.3 ? 0.35 : 0;
     document.documentElement.classList.toggle("aiming", SN.aiming && !SN.holstered && !SN.player.car);
-    document.documentElement.classList.toggle("armed", !SN.holstered && SN.selectedWeapon >= 0 && !SN.player.car && !SN.player.dead);
+    document.documentElement.classList.toggle("armed", !SN.holstered && SN.selectedWeapon >= 0 && !SN.player.dead && (!SN.player.car || SN.weapons[SN.selectedWeapon].capacity > 0));
     document.documentElement.classList.toggle("hit", SN.hitTime > 0);
     if (SN.audio) {
       const c = SN.player.car, t = SN.audio.context.currentTime;
@@ -1172,7 +1366,15 @@
     SN.batonBody = SN.mat(0x394b52, { metalness: 0.4, roughness: 0.45 });
     SN.batonGrip = SN.mat(0x7d5946, { roughness: 0.9 });
     SN.cyl = (r1, r2, h, seg = 8) => new SN.T.CylinderGeometry(r1, r2, h, seg);
-    SN.heldWeapons = [SN.buildBatonModel(), SN.buildPistolModel(), SN.buildRifleModel()];
+    SN.heldWeapons = [SN.buildBatonModel(), SN.buildPistolModel(), SN.buildRifleModel(), SN.buildBatonModel(), SN.buildRifleModel(), SN.buildRifleModel()];
+    SN.heldWeapons[2].scale.set(0.9, 0.85, 0.7);
+    SN.heldWeapons[3].clear();
+    SN.wpart(SN.heldWeapons[3], SN.cyl(0.055, 0.025, 0.72, 8), SN.batonGrip, 0, -0.3, 0);
+    SN.wpart(SN.heldWeapons[3], SN.cyl(0.03, 0.03, 0.18, 8), SN.gunPoly, 0, 0.08, 0);
+    SN.heldWeapons[4].scale.set(1.2, 1.15, 0.9);
+    SN.wpart(SN.heldWeapons[5], SN.cyl(0.09, 0.09, 0.45, 10), SN.gunSteel, 0, -0.6, 0);
+    SN.wpart(SN.heldWeapons[5], SN.cyl(0.13, 0.13, 0.22, 8), SN.gunAccent, 0, -0.24, 0.02);
+    SN.heldWeapons[5].scale.set(1.8, 1.35, 1.15);
     if (SN.playerRig.weapon.children.length) {
       SN.playerRig.weapon.children[0].visible = false;
       SN.playerRig.weapon.children[1].visible = false;
@@ -1216,7 +1418,7 @@
     SN.weapons = [
       {
         name: "徒手 · 拳",
-        damage: 24,
+        damage: 28,
         rate: 0.4,
         range: 2.1,
         mag: 0,
@@ -1225,8 +1427,11 @@
         owned: true,
         fists: true
       },
-      { name: "微隼 · 手枪", damage: 32, rate: 0.26, range: 130, mag: 8, reserve: 16, capacity: 8, owned: true },
-      { name: "折光 · 步枪", damage: 24, rate: 0.105, range: 210, mag: 0, reserve: 0, capacity: 24, owned: false }
+      { name: "微隼 · 手枪", damage: 34, rate: 0.26, range: 100, mag: 8, reserve: 16, capacity: 8, owned: true },
+      { name: "折光 · 冲锋枪", damage: 20, rate: 0.11, range: 85, mag: 0, reserve: 0, capacity: 30, owned: false, automatic: true },
+      { name: "棒球棍", damage: 48, rate: 0.58, range: 2.7, mag: 0, reserve: 0, capacity: 0, owned: false },
+      { name: "霰弹枪", damage: 18, rate: 0.85, range: 48, mag: 0, reserve: 0, capacity: 6, owned: false, pellets: 6, spread: 0.055, reload: 2.2 },
+      { name: "榴弹发射器", damage: 110, rate: 1.5, range: 95, mag: 0, reserve: 0, capacity: 1, owned: false, blast: 8, reload: 2.8 }
     ];
   });
   // Startup phase 31: keep this order relative to the other systems.
@@ -1256,6 +1461,8 @@
     SN.meleeHitDone = false;
     SN.shotSpread = 0;
     SN.hitMarkerTime = 0;
+    SN.hurtSource = null;
+    SN.explosionFlash = 0;
   });
   // Startup phase 33: keep this order relative to the other systems.
 
@@ -1263,6 +1470,8 @@
     SN.pickups = [];
     SN.shotVector = new SN.T.Vector3();
     SN.shotOrigin = new SN.T.Vector3();
+    SN.sightOrigin = new SN.T.Vector3();
+    SN.sightDirection = new SN.T.Vector3();
     SN.shotEnd = new SN.T.Vector3();
     SN.shotRay = new SN.T.Ray();
     SN.cameraDirection = new SN.T.Vector3();
@@ -1270,6 +1479,8 @@
     SN.hitCenter = new SN.T.Vector3();
     SN.hitEndpoint = new SN.T.Vector3();
     SN.pickupMaterial = SN.mat(0xf3c776, { emissive: 0xe9a24c, emissiveIntensity: 1.5, metalness: 0.4, roughness: 0.3 });
+    SN.healthPickupMat = SN.mat(0x159a65, { emissive: 0x127744, emissiveIntensity: 0.5 });
+    SN.healthCrossMat = SN.mat(0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.4 });
     SN.addPickup(430, -390, "armor");
     SN.addPickup(880, -660, "armor");
     // Short additive tracer streaks. One quad per live round, oriented to the camera
@@ -1444,6 +1655,15 @@
     SN.decalCursor = 0;
     SN.audio = null;
     SN.noiseBuffer = null;
+    SN.masterVolume = 0.65;
+    SN.audioMuted = false;
+    SN.streetSoundClock = 0;
+    try {
+      const raw = localStorage.getItem("seoul-audio");
+      const setting = raw && raw.length < 8192 ? JSON.parse(raw) : null;
+      if (setting && Number.isFinite(setting.volume)) SN.masterVolume = SN.clamp(setting.volume, 0, 1);
+      if (setting) SN.audioMuted = !!setting.muted;
+    } catch (_) {}
   });
   // Startup phase 37: keep this order relative to the other systems.
 
@@ -1451,7 +1671,25 @@
     SN.hospitals = [{ x: -690, z: -330 }, { x: 300, z: 990 }, ...SN.cityServices.map(h => ({ x: h.x, z: h.z, label: h.label }))];
     SN.policeStations = SN.cityServices.map(h => ({ x: h.policeX, z: h.policeZ, label: h.label }));
     for (const h of SN.policeStations) {
-      const g = SN.cityGroup(h.x, h.z + 12, 1300);
+      let gx = h.x, gz = h.z + 12;
+      if (!SN.footprintTerrain(gx, gz, 18, 14).buildable) {
+        for (let radius = 8; radius <= 120; radius += 8) {
+          let found = false;
+          for (let i = 0; i < 24 && !found; i++) {
+            const a = i * SN.TAU / 24, x = h.x + Math.sin(a) * radius, z = h.z + 12 + Math.cos(a) * radius;
+            if (SN.isWater(x, z, 12) || SN.onRoadway(x, z, 12) || !SN.footprintTerrain(x, z, 18, 14).buildable)
+              continue;
+            h.x = x;
+            h.z = z - 12;
+            gx = x;
+            gz = z;
+            found = true;
+          }
+          if (found)
+            break;
+        }
+      }
+      const g = SN.cityGroup(gx, gz, 1300);
       SN.cityPart(g, "cream", 0, 4, 0, 18, 8, 14);
       SN.cityPart(g, "teal", 0, 7, 7.2, 18, 1.5, 0.25);
       SN.cityPart(g, "glass", 0, 3, 7.2, 15, 3, 0.25);
@@ -1461,6 +1699,9 @@
     }
     SN.clinicMaterial = SN.mat(0xb8c8bf, { roughness: 0.72 });
     for (const h of SN.hospitals) {
+      // An authored hospital already supplies this facade and its open interior.
+      if (SN.enterableSpecs.some(e => e.kind === "hospital" && SN.rectOverlap({ x: h.x, z: h.z + 15, w: 14, d: 12 }, e)))
+        continue;
       const base = SN.surfaceHeight(h.x, h.z);
       SN.meshAt(SN.box, SN.clinicMaterial, h.x, base + 7.5, h.z + 15, 14, 15, 12);
       SN.addCollider(h.x, h.z + 15, 14, 12, 15);
@@ -1482,4 +1723,74 @@
     SN.hitZones = [[1.655, 0.165], [1.43, 0.235], [1.2, 0.245], [0.96, 0.235], [0.66, 0.22]];
     SN.actorRayInfo = { distance: 0, head: false };
   });
+
+  SN.cycleRadio = function cycleRadio(direction = 1) {
+    SN.radio.station = (SN.radio.station + direction + 5) % 5;
+    SN.radio.beat = 0; SN.radio.next = SN.simTime; SN.radio.newsAt = SN.simTime;
+    SN.radio.line = ""; SN.radio.toastUntil = SN.simTime + 3; SN.updateRadio(0);
+  };
+
+  SN.selectRadioNews = function selectRadioNews() {
+    const r = SN.radio, heat = Math.ceil(SN.heat), done = id => SN.campaign.progress > SN.storyMissions.findIndex(m => m.id === id);
+    const eligible = [heat === 1, heat === 2, heat === 2, heat === 3, heat === 3, heat === 4, heat === 4, heat >= 5, heat >= 5,
+      done("taillight"), done("meeting"), done("gull"), heat === 0 && SN.campaign.progress >= 8, SN.weather.kind === "rain", done("dawn")];
+    const order = heat ? [8, 7, 6, 5, 4, 3, 2, 1, 0, 14, 11, 10, 9, 13, 12] : [14, 11, 10, 9, 12, 13];
+    const i = order.find(i => eligible[i] && SN.simTime >= (r.used[i] === undefined ? -1e9 : r.used[i]) + 90);
+    if (i === undefined) return "";
+    r.used[i] = SN.simTime; return SN.radioLines[i];
+  };
+
+  SN.updateRadio = function updateRadio(dt) {
+    const r = SN.radio;
+    const active = !!SN.player.car && SN.started && !SN.player.dead;
+    SN.$("radioCycle").disabled = !active;
+    SN.setText("radioCycle", "切换电台 · " + SN.radioStations[r.station]);
+    SN.$("cityRadio").classList.toggle("visible", active);
+    SN.$("cityRadio").classList.toggle("show-station", active && SN.simTime < r.toastUntil);
+    if (!active) { r.line = ""; SN.$("cityRadio").classList.remove("show-news"); return; }
+    SN.setText("radioStation", "♫ " + SN.radioStations[r.station] + " · [ / ]");
+    if (r.station === 4) { SN.setText("radioNews", ""); SN.$("cityRadio").classList.remove("show-news"); return; }
+    const newsState = Math.ceil(SN.heat) + "|" + SN.campaign.progress + "|" + SN.weather.kind;
+    if (r.newsState !== newsState) { r.newsState = newsState; r.newsAt = Math.max(SN.simTime, (r.lastBulletin || -20) + 8); }
+    if (SN.simTime >= r.newsAt) {
+      r.newsAt = SN.simTime + (r.station === 3 ? 12 : 25);
+      const line = SN.selectRadioNews();
+      if (line) { r.lastBulletin = SN.simTime; r.line = line; r.lineUntil = SN.simTime + 10; SN.tone("sine", 660, 880, 0.15, 0.016); SN.tone("triangle", 440, 440, 0.22, 0.012, 0.16); }
+    }
+    const newsVisible = !!r.line && SN.simTime < r.lineUntil;
+    SN.setText("radioNews", newsVisible ? r.line : "");
+    SN.$("cityRadio").classList.toggle("show-news", newsVisible);
+    SN.setStyle("radioNews", "opacity", String(SN.clamp((r.lineUntil - SN.simTime) / 1.5, 0, 1)));
+    if (!SN.audio || SN.audio.context.state === "suspended" || SN.paused || SN.simTime < r.next) return;
+    const station = r.station, n = r.beat++, step = station === 0 ? 0.22 : station === 1 ? 0.19 : station === 2 ? 0.34 : 0.28;
+    r.next = SN.simTime + step;
+    const quiet = SN.simTime < r.lineUntil ? 0.4 : 1;
+    if (station === 0) {
+      const melody = [0, 4, 7, 9, 7, 4, 2, 4, 0, 2, 4, 7, 4, 2, -3, 0];
+      const note = 261.63 * Math.pow(2, melody[n % 16] / 12);
+      SN.tone("triangle", note, note * 1.008, 0.18, 0.016 * quiet);
+      if (n % 2 === 0) SN.tone("sine", n % 4 ? 146.83 : 130.81, 75, 0.16, 0.023 * quiet);
+    } else if (station === 1) {
+      if (n % 4 === 0 || n % 8 === 7) SN.tone("sine", 120, 42, 0.18, 0.045 * quiet);
+      if (n % 4 === 2) SN.noiseHit(0.09, 0.025 * quiet, "bandpass", 1600, 1);
+      SN.noiseHit(0.025, 0.008 * quiet, "highpass", 6500, 1);
+      if (n % 2 === 0) { const bass = [55, 55, 65.41, 73.42, 82.41, 65.41, 61.74, 55][n / 2 % 8]; SN.tone("triangle", bass, bass, 0.2, 0.019 * quiet); }
+    } else if (station === 2) {
+      const note = [220, 261.63, 329.63, 293.66, 246.94, 196, 246.94, 293.66][n % 8];
+      SN.tone("sine", note, note * 0.997, 0.6, 0.019 * quiet);
+      if (n % 4 === 0) SN.tone("triangle", note / 2, note / 2, 0.5, 0.013 * quiet);
+      if (n % 2) SN.noiseHit(0.045, 0.005 * quiet, "lowpass", 2400, 1);
+    } else if (n % 16 < 3) {
+      SN.tone("sine", [523.25, 659.25, 783.99][n % 16], [523.25, 659.25, 783.99][n % 16], 0.18, 0.009);
+    }
+  };
+
+  SN.registerInit(51.8, function initializeCityRadio() {
+    SN.radioStations = ["汉江旋律 · 复古摇摆", "弘大节拍 · 街头鼓点", "星夜慢拍 · 低保真", "汉江交通台 · 新闻", "电台关闭"];
+    SN.radioLines = ["汉江交通台：清潭洞一辆白色跑车逆行。听众说开得很稳，就是方向不对。", "汉江交通台：广藏市场附近人群聚集，建议绕行。反正你们也挤不进去。", "社区广播：请勿把车停在消防通道。尤其是那辆刚被偷走的。", "清晨新闻：警方寻找一名「代驾」，此人似乎熟悉首尔所有后巷。", "汉江交通台：盘浦大桥今晚有「民间计时活动」。官方不承认，摄像头承认。", "财经台：白鸥物产称近期传言「毫无根据」，已委托律师「温柔处理」。", "清晨新闻：蚕室一名男子被无人机砸中，情绪稳定，无人机已被拘留。", "紧急新闻：光化门一带警力密集，交通瘫痪。市民表示：跟平时差不多。", "汉江交通台：今晚请避开所有桥梁。不是桥坏了，是有人在桥上办事。", "财经台：一步配送完成新一轮融资，投资方为「一家不愿透露名字的白鸥」。", "深夜节目：圣水仓库派对扰民，邻居投诉三次。第三次警察跟着音乐点头。", "新闻：白鸥之夜因「火警演练」提前结束。拍卖品少一件，律师函多一封。", "汉江交通台：今晚首尔格外安静。听众纷纷询问：那个代驾去哪了？", "天气：今晚有雨。请带伞。也请记得，滑的不是路，是人心。", "清晨新闻：广藏市场租金表决推迟。摊主说，他们在等一个送泡菜箱的人。"];
+    SN.radio = { station: 0, beat: 0, next: 0, newsAt: 0, line: "", lineUntil: 0, toastUntil: 0, used: [] };
+    SN.$("radioCycle").addEventListener("click", () => { if (SN.player.car) { SN.startAudio(); SN.cycleRadio(); } });
+    SN.$("radioStation").addEventListener("click", () => { if (SN.canControl()) { SN.startAudio(); SN.cycleRadio(); } });
+  });
+
 })(window.SN);

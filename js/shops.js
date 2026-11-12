@@ -874,6 +874,7 @@
         leg.position.set(st.x, base + 0.3, st.z);
         leg.scale.set(0.06, 0.6, 0.06);
         g.add(leg);
+        SN.benchSpots.push({ x: st.x, z: st.z, yaw: spec.yaw + SN.PI / 2 });
       }
       for (const u of [-1.6, 0, 1.6]) {
         const p = SN.shopLocalPoint(spec, u, 3.9);
@@ -923,7 +924,9 @@
   SN.buildShopInterior = function buildShopInterior(spec) {
     if (spec.interiorGroup)
       return;
-    if (spec.kind === "mart")
+    if (["pc", "chicken", "clothing", "barber", "weapons", "home"].includes(spec.kind))
+      SN.buildDestinationInterior(spec);
+    else if (spec.kind === "mart")
       SN.buildMartInterior(spec);
     else
       SN.buildSmallInterior(spec);
@@ -1281,18 +1284,21 @@
   };
 
   SN.updateShops = function updateShops(dt) {
-    SN.counterTarget = null;
-    let bestCounter = 2.15;
-    for (const spec of SN.shopSpecs.concat(SN.smallShopSpecs)) {
+    let bestCounter = Infinity, bestShop = null, nearestLight = null, lightDistance = Infinity;
+    for (const spec of SN.allShopSpecs) {
       const centerDistance = Math.hypot(SN.player.x - spec.x, SN.player.z - spec.z);
-      if (!spec.fixturesBuilt && centerDistance < 62)
+      if (!spec.fixturesBuilt && centerDistance < 62 && SN.shopBuildFrame !== SN.renderTime) {
+        SN.shopBuildFrame = SN.renderTime;
         SN.buildShopInterior(spec);
+      }
       const near = centerDistance < 96;
       if (spec.interiorGroup)
         spec.interiorGroup.visible = near;
       if (spec.shopLights)
-        for (const light of spec.shopLights)
-          light.visible = spec.fixturesBuilt && centerDistance < 78;
+        for (const light of spec.shopLights) {
+          light.visible = false;
+          if (centerDistance < 30 && centerDistance < lightDistance) { nearestLight = light; lightDistance = centerDistance; }
+        }
       if (spec.fixturesBuilt) {
         if (spec.clerk)
           spec.clerk.active = near;
@@ -1357,9 +1363,9 @@
       }
       if (inside && !SN.player.car && !SN.player.dead) {
         const d = Math.hypot(SN.player.x - spec.counterSpot.x, SN.player.z - spec.counterSpot.z);
-        if (d < bestCounter && !spec.robbery && spec.robberyCool <= 0) {
+        if (d < 2.15 && d < bestCounter && !spec.robbery && spec.robberyCool <= 0) {
           bestCounter = d;
-          SN.counterTarget = { shop: spec, name: spec.name, kind: spec.kind };
+          bestShop = spec;
         }
         // aiming a firearm at the clerk is the robbery trigger
         if (spec.kind === "mart" && spec.clerk && !spec.clerk.down && !spec.robbery && spec.robberyCool <= 0 && !SN.holstered && SN.selectedWeapon >= 1 && (SN.aiming || SN.firing)) {
@@ -1369,6 +1375,10 @@
         }
       }
     }
+    bestShop = SN.updateStreetServices(bestCounter, bestShop);
+    if (!bestShop) SN.counterTarget = null;
+    else if (!SN.counterTarget || SN.counterTarget.shop !== bestShop)
+      SN.counterTarget = { shop: bestShop, name: bestShop.name, kind: bestShop.kind };
     if (SN.shopMenuOpen && SN.activeShop) {
       if (SN.shopMenuStatusTimer > 0) {
         SN.shopMenuStatusTimer -= dt;
@@ -1379,6 +1389,89 @@
         SN.closeShopMenu();
       }
     }
+    if (nearestLight && SN.qualityLevel() > 0) nearestLight.visible = true;
+  };
+
+  SN.buildStreetServices = function buildStreetServices() {
+    SN.streetServices = [];
+    const locations = [
+      { x: -72, z: -774, kind: "weapons", name: "총포상 · 武器铺", icon: "枪" },
+      { x: -88, z: -800, kind: "repair", name: "韩序温 · 维修改色", icon: "修" },
+      { x: 560, z: 900, kind: "repair", name: "白以贤 · 改装厂", icon: "修" },
+      { x: 861, z: -615, kind: "stall", name: "광장시장 · 街边小吃", icon: "食" }
+    ];
+    const serviceMetal = SN.mat(0x35566a, { metalness: 0.35, roughness: 0.55 }),
+      serviceTrim = SN.mat(0xffc653, { roughness: 0.65 }),
+      serviceLight = new SN.T.MeshBasicMaterial({ color: 0x66eced });
+    for (const spec of locations) {
+      let p;
+      if (spec.kind === "repair") {
+        let distance = Infinity;
+        for (const road of SN.roadSpawnPoints) {
+          const d = Math.hypot(road.x - spec.x, road.z - spec.z);
+          if (d < distance && !SN.blocked(road.x, road.z, 3)) { p = road; distance = d; }
+        }
+      }
+      else p = SN.safePosition(spec.x, spec.z, 0.7);
+      if (!p || p.unsafe) { SN.reportContentProblem(spec.name, spec.x, spec.z, "服务点无法安置", "跳过服务点"); continue; }
+      const service = { ...spec, x: p.x, z: p.z, robberyCool: 0 };
+      const ring = new SN.T.Mesh(new SN.T.TorusGeometry(spec.kind === "repair" ? 3.2 : 1.1, 0.07, 4, 24), new SN.T.MeshBasicMaterial({ color: spec.kind === "repair" ? 0x46dbe5 : 0xffcd56 }));
+      ring.rotation.x = -SN.PI / 2;
+      ring.position.set(p.x, SN.surfaceHeight(p.x, p.z) + 0.09, p.z);
+      SN.scene.add(ring);
+      const tag = SN.nameSprite(service.name, "#fff0b0");
+      tag.position.set(p.x, ring.position.y + 2.7, p.z);
+      SN.scene.add(tag);
+      const fixture = new SN.T.Group();
+      SN.scene.add(fixture);
+      const y = ring.position.y;
+      if (spec.kind === "repair") {
+        // Open repair bay: paint and a high sign frame leave room for buses.
+        fixture.position.set(p.x, y, p.z);
+        fixture.rotation.y = p.yaw || 0;
+        for (const side of [-1, 1]) {
+          SN.meshAt(SN.box, serviceLight, side * 3.5, 0.015, 0, 0.12, 0.02, 7, 0, fixture);
+          SN.meshAt(SN.box, serviceMetal, side * 3.5, 2.4, -3.5, 0.12, 4.8, 0.12, 0, fixture);
+        }
+        SN.meshAt(SN.box, serviceTrim, 0, 4.8, -3.5, 7.2, 0.2, 0.16, 0, fixture);
+        tag.position.y = y + 4.2;
+      }
+      else if (spec.kind === "weapons") {
+        for (let side = 0; side < 4; side++) {
+          const angle = side * SN.PI / 2, x = p.x + Math.sin(angle) * 2.1, z = p.z + Math.cos(angle) * 2.1;
+          if (SN.blocked(x, z, 1.1)) continue;
+          fixture.position.set(x, SN.surfaceHeight(x, z), z);
+          fixture.rotation.y = angle;
+          SN.meshAt(SN.box, serviceMetal, 0, 0.5, 0, 1.8, 1, 0.65, 0, fixture);
+          SN.meshAt(SN.box, serviceTrim, 0, 1.04, 0, 1.95, 0.08, 0.8, 0, fixture);
+          const display = SN.buildRifleModel();
+          display.rotation.set(SN.PI / 2, 0, SN.PI / 2);
+          display.position.set(-0.4, 1.16, 0);
+          fixture.add(display);
+          SN.addOBB(x, z, 1.8, 0.65, 1.1, angle, fixture.position.y);
+          break;
+        }
+      }
+      fixture.traverse(mesh => { mesh.castShadow = false; });
+      service.ring = ring; service.tag = tag; service.fixture = fixture;
+      SN.streetServices.push(service);
+    }
+    const supplies = SN.streetServices.find(p => p.kind === "weapons");
+    if (supplies) for (const [dx, kind] of [[2, "health"], [-2, "armor"]]) {
+      const p = SN.safePosition(supplies.x + dx, supplies.z + 3, 0.4);
+      SN.addPickup(p.x, p.z, kind);
+    }
+  };
+
+  SN.updateStreetServices = function updateStreetServices(bestDistance = Infinity, best = null) {
+    for (const s of SN.streetServices) {
+      const d = Math.hypot(SN.player.x - s.x, SN.player.z - s.z);
+      s.tag.visible = s.ring.visible = s.fixture.visible = d < 110;
+      if (!SN.player.dead && d < bestDistance && d < (s.kind === "repair" ? 5.5 : 2.5) && (!SN.player.car || s.kind === "repair")) {
+        best = s; bestDistance = d;
+      }
+    }
+    return best;
   };
 
   SN.shopGoodsFor = function shopGoodsFor(spec) {
@@ -1396,8 +1489,15 @@
   };
 
   SN.shopGoodState = function shopGoodState(good) {
+    if (["pc-hour", "sing", "home"].includes(good.id) && (SN.campaign.active || SN.heat > 0)) return { ok: false, reason: "先结束委托与通缉" };
     if (SN.money < good.price)
       return { ok: false, reason: "现金不足" };
+    if (good.weapon !== undefined && SN.weapons[good.weapon].owned) return { ok: false, reason: "已拥有" };
+    if (good.id === "respray") {
+      if (!SN.player.car) return { ok: false, reason: "请驾驶车辆进入光圈" };
+      if (SN.player.car.exploded) return { ok: false, reason: "残骸无法修复" };
+      if (Math.abs(SN.player.car.speed) > 1) return { ok: false, reason: "请先停车" };
+    }
     if (good.id === "drink" || good.id === "snack" || good.id === "aid") {
       if (SN.player.health >= 100)
         return { ok: false, reason: "生命已满" };
@@ -1423,7 +1523,12 @@
     SN.$("shopMenu").style.setProperty("--shop-accent", accent);
     SN.setText("shopMenuChain", chain ? ("편의점 · " + chain.brand) : "소상점 · " + spec.name.split(" · ")[0]);
     SN.setText("shopMenuTitle", spec.name + " · 柜台");
-    SN.setText("shopMenuTag", spec.kind === "mart" ? "营业中 · 自动门 · 冷柜与热面台正常运转" : spec.kind === "cafe" ? "小馆营业中 · 现煮饮品" : spec.kind === "phone" ? "通信柜台 · 充值与维修" : spec.kind === "pharmacy" ? "药房柜台 · 急救与护具" : spec.kind === "stall" ? "街边小吃 · 热气腾腾" : "练歌房前台 · 营业中");
+    SN.setText("shopMenuTag", spec.kind === "repair" ? "维修车位 · 停稳车辆 · ¥ 350 维修改色" : spec.kind === "weapons" ? "총포상 · 武器与弹药" : spec.kind === "mart" ? "营业中 · 自动门 · 冷柜与热面台正常运转" : spec.kind === "cafe" ? "小馆营业中 · 现煮饮品" : spec.kind === "phone" ? "通信柜台 · 充值与维修" : spec.kind === "pharmacy" ? "药房柜台 · 急救与护具" : spec.kind === "stall" ? "街边小吃 · 热气腾腾" : "练歌房前台 · 营业中");
+    SN.setText("shopMenuDescription", spec.kind === "repair" ? "把车停在蓝色光圈内，维修车身并更换车漆。改色后警方将失去车辆线索。" : spec.kind === "weapons" ? "挑一件趁手的武器。弹药盒补充当前选中的枪械，按数字键或点武器图标切换。" : spec.kind === "stall" ? "热食与饮料可以恢复生命。吃饱再回到街头。" : "店员把扫码枪放回台面，等你挑好需要的东西。");
+    if (SN.destinationDescriptions[spec.kind]) {
+      SN.setText("shopMenuTag", "营业中 · " + spec.name);
+      SN.setText("shopMenuDescription", SN.destinationDescriptions[spec.kind]);
+    }
     const goods = SN.shopGoodsFor(spec);
     SN.$("shopMenuItems").innerHTML = goods.map(g => {
       const state = SN.shopGoodState(g);
@@ -1461,13 +1566,33 @@
     if (!spec || !SN.shopMenuOpen)
       return;
     const good = SN.shopGoods.find(g => g.id === id), state = good ? SN.shopGoodState(good) : null;
-    if (!good || !state.ok) {
+    if (!good || !good.kinds.includes(spec.kind) || !state.ok) {
       if (good && state)
         SN.$("shopMenuStatus").textContent = state.reason;
       return;
     }
+    if (good.id === "home") { SN.closeShopMenu(); SN.openProperty(0); return; }
     SN.money -= good.price;
     let message = good.name + " · 已付款";
+    if (good.weapon !== undefined) {
+      const w = SN.weapons[good.weapon];
+      w.owned = true; w.mag = w.capacity; w.reserve = w.capacity * 3;
+      SN.campaign.loadoutLost = false;
+      SN.refreshWeaponSlots();
+    }
+    if (good.id === "respray") {
+      SN.repairVehicle(SN.player.car, true);
+      SN.heat = 0; SN.wantedResisted = false;
+      SN.clearWantedResponse();
+      message += " · 车况恢复 · 通缉清除";
+    }
+    if (good.id === "outfit") { SN.progression.cityOutfit = ((SN.progression.cityOutfit || 0) + 1) % 3; SN.campaign.costume = "street"; SN.applyCostume(); message += " · 已换上新配色"; }
+    if (good.id === "hair") { SN.progression.hair = ((SN.progression.hair || 0) + 1) % 3; SN.applyCityLook(); message += " · 发型已更新，便装时可见"; }
+    if (good.id === "pc-hour" || good.id === "sing") {
+      SN.minutes = (SN.minutes + (good.id === "pc-hour" ? 60 : 30)) % 1440; SN.player.health = 100;
+      SN.phoneMapped = true; SN.soundStinger(true); message += " · 休息恢复，城市服务已标记";
+    }
+    SN.tone("sine", 750, 1000, 0.07, 0.025);
     if (good.heal) {
       const before = SN.player.health;
       SN.player.health = Math.min(100, SN.player.health + good.heal);
@@ -1706,6 +1831,14 @@
         light: 0xcf9fff
       }
     ];
+    SN.smallShopSpecs.push(
+      { id: "pc-star", kind: "pc", name: "별밤 PC방 · 星夜网咖", x: -1450, z: -449, side: "south", front: 10, depth: 11, zone: 22 },
+      { id: "chicken-shout", kind: "chicken", name: "소리치는 치킨 · 会喊的炸鸡", x: 610, z: -449, side: "south", front: 9, depth: 10, zone: 22 },
+      { id: "clothes-tailor", kind: "clothing", name: "압구정 테일러 · 狎鸥亭裁缝", x: 610, z: 1034, side: "south", front: 9, depth: 10, zone: 22 },
+      { id: "barber-workshop", kind: "barber", name: "백야 아뜰리에 · 白夜工坊理发间", x: -460, z: -775, side: "north", front: 8, depth: 9, zone: 22 },
+      { id: "weapons-backroom", kind: "weapons", name: "만복 철물 · 万福五金后屋", x: -170, z: -775, side: "north", front: 9, depth: 10, zone: 22 },
+      { id: "home-workshop", kind: "home", name: "乙支路工房 · 休息室", x: -220, z: -775, side: "north", front: 9, depth: 10, zone: 22 }
+    );
     for (const spec of SN.shopSpecs.concat(SN.smallShopSpecs)) {
       spec.fw = spec.front;
       spec.fd = spec.depth;
@@ -1738,7 +1871,8 @@
       { label: "하루약 CARE", paper: "#d4e9d0", ink: "#296040" }
     ];
     // Shop shells are part of the street and are built before the population starts.
-    for (const spec of SN.shopSpecs.concat(SN.smallShopSpecs))
+    SN.allShopSpecs = SN.shopSpecs.concat(SN.smallShopSpecs);
+    for (const spec of SN.allShopSpecs)
       SN.buildShopShell(spec);
     // Shop staff and patrons are ordinary pooled actors dropped onto interior floors.
     SN.interiorPosts.push({ slot: 30, x: -49.4, z: -781.4, yaw: SN.PI / 2, kind: "civilian", w: 0.5, d: 0.5 }, { slot: 31, x: -49.5, z: -775.4, yaw: -SN.PI / 2, kind: "civilian", w: 1.2, d: 1.4 }, { slot: 32, x: 31, z: -595.3, yaw: SN.PI, kind: "civilian", w: 0.4, d: 0.4 }, { slot: 33, x: 33.4, z: -602, yaw: 0, kind: "civilian", w: 1, d: 1.2 }, { slot: 50, x: 333.2, z: -754.2, yaw: SN.PI / 2, kind: "police", w: 0.4, d: 0.4 }, { slot: 51, x: 326.2, z: -746.6, yaw: SN.PI, kind: "police", w: 0.8, d: 0.8 }, { slot: 34, x: -663.1, z: -315, yaw: -SN.PI / 2, kind: "civilian", w: 0.4, d: 0.4 }, { slot: 35, x: -655.6, z: -311.2, yaw: SN.PI, kind: "civilian", w: 1, d: 1 }, { slot: 36, x: 302.6, z: 1009, yaw: SN.PI, kind: "civilian", w: 1, d: 1 }, { slot: 37, x: -521, z: 44, yaw: -SN.PI / 2, kind: "civilian", w: 0.8, d: 0.8 });
@@ -1807,7 +1941,7 @@
         price: 60,
         kinds: ["mart", "pharmacy"]
       },
-      { id: "ammo", icon: "▮", name: "弹药盒", desc: "手枪 / 步枪通用 · 备弹 +24", price: 25, kinds: ["mart"] },
+      { id: "ammo", icon: "▮", name: "弹药盒", desc: "补充当前枪械 · 备弹 +24", price: 60, kinds: ["mart", "weapons"] },
       {
         id: "phone",
         icon: "☎",
@@ -1817,6 +1951,21 @@
         kinds: ["mart", "phone", "karaoke"]
       }
     ];
+    for (const [weapon, price] of [[1, 380], [2, 1800], [3, 160], [4, 3200], [5, 7200]])
+      SN.shopGoods.push({ id: "weapon" + weapon, icon: "▰", name: SN.weapons[weapon].name, desc: SN.weapons[weapon].capacity ? "含弹匣与三组备弹" : "近战重击", price, kinds: ["weapons"], weapon });
+    SN.shopGoods.push({ id: "respray", icon: "🔧", name: "维修与改色", desc: "恢复车况，清除通缉 · 停稳后购买", price: 350, kinds: ["repair"] });
+    SN.shopGoods.push(
+      { id: "chicken", icon: "食", name: "热炸鸡套餐", desc: "恢复 60 生命", price: 28, kinds: ["chicken"], heal: 60 },
+      { id: "pc-hour", icon: "PC", name: "上机一小时", desc: "时间 +1 小时，恢复生命，标记城市服务", price: 25, kinds: ["pc"] },
+      { id: "sing", icon: "♫", name: "练唱半小时", desc: "时间 +30 分钟，恢复生命", price: 40, kinds: ["karaoke"] },
+      { id: "outfit", icon: "衣", name: "更换街头便装", desc: "蓝黄 / 珊瑚红 / 薄荷绿三种配色轮换", price: 120, kinds: ["clothing"] },
+      { id: "hair", icon: "剪", name: "修剪发型", desc: "短发 / 短波波 / 两侧修短轮换", price: 60, kinds: ["barber"] },
+      { id: "home", icon: "房", name: "安全屋管理", desc: "购买、休息存档、换装、存取车与收入", price: 0, kinds: ["home"] }
+    );
+    SN.destinationDescriptions = { pc: "电脑与座椅沿墙排列。上机休息后，手机地图会显示城市服务。", chicken: "热食恢复生命，走到柜台购买。", clothing: "三套便装配色可轮换购买，选择随进度保存。", barber: "三种发型可轮换修剪。穿便装时显示，选择随进度保存。", home: "乙支路工房的休息室，与门口房产共用存档和车库。" };
+    const homeRoom = SN.allShopSpecs.find(s => s.kind === "home");
+    if (homeRoom) Object.assign(SN.properties[0], homeRoom.outside);
+    SN.streetServices = [];
     SN.$("shopMenuClose").addEventListener("click", SN.closeShopMenu);
     SN.$("shopMenuItems").addEventListener("click", event => {
       const button = event.target.closest("button[data-good]");
@@ -1828,4 +1977,63 @@
         SN.closeShopMenu();
     });
   });
+
+  SN.applyCityLook = function applyCityLook() {
+    if (!SN.wardrobe || !SN.wardrobe.base.length) return;
+    const hair = ["hairUnder", "hairShort", "hairBob"][SN.progression.hair || 0];
+    const outfit = SN.progression.cityOutfit || 0, palette = [SN.costumeStyles.street,
+      { outer: 0xde6254, inner: 0xffead2, pants: 0x344c69, accent: 0xffdfa6, shoe: 0xe6dbca },
+      { outer: 0x4ab79d, inner: 0xe8f2d6, pants: 0xe4d4b0, accent: 0x263f59, shoe: 0x314c64 }][outfit];
+    for (const saved of SN.wardrobe.base) {
+      const part = saved.part;
+      if (["hairUnder", "hairShort", "hairBob"].includes(part.geoName)) { part.mesh.geometry = SN.rigGeo[hair]; }
+      if (SN.campaign.costume === "street" && part.matType === "cloth") {
+        if (outfit && palette[part.wardrobeTone] !== undefined) part.mesh.material = SN.clothMaterial(palette[part.wardrobeTone]);
+        else part.mesh.material = saved.material;
+      }
+    }
+  };
+
+  SN.buildDestinationInterior = function buildDestinationInterior(spec) {
+    const g = SN.shopInteriorStart(spec), base = spec.base, wood = [], dark = [], bright = [], metal = [], k = spec.kind;
+    const box = (parts, u, v, y, w, h, d) => SN.shopWorldBox(parts, spec, u, v, base + y, w, h, d);
+    box(wood, -spec.front * 0.2, spec.depth * 0.7, 0.5, 2.8, 1, 0.85);
+    SN.shopSolid(spec, -spec.front * 0.2, spec.depth * 0.7, 2.8, 0.85, 1);
+    box(bright, -spec.front * 0.2, spec.depth * 0.7, 1.03, 2.9, 0.06, 0.95);
+    if (k === "pc") for (const u of [-3.6, 3.6]) for (const v of [2.4, 4.3]) {
+      box(wood, u, v, 0.72, 1.2, 0.12, 1.4); box(dark, u, v, 1.15, 0.8, 0.64, 0.14);
+      box(bright, u, v - 0.08, 1.15, 0.67, 0.5, 0.02); box(dark, u * 0.7, v, 0.42, 0.6, 0.65, 0.6);
+      SN.shopSolid(spec, u, v, 1.1, 1.4, 1.4);
+    }
+    if (k === "clothing") for (const v of [2.5, 4.7]) {
+      box(metal, 2.8, v, 1.6, 0.08, 2, 1.5);
+      for (let i = 0; i < 3; i++) box(i % 2 ? bright : dark, 2.7, v - 0.5 + i * 0.5, 1.5, 0.7, 0.8, 0.22);
+      SN.shopSolid(spec, 2.8, v, 0.9, 1.7, 1.9);
+    }
+    if (k === "barber") for (const v of [2.6, 4.6]) {
+      box(metal, 3.3, v, 1.65, 0.08, 1.4, 1.4); box(bright, 3.24, v, 1.65, 0.02, 1.2, 1.2);
+      box(dark, 2.4, v, 0.62, 0.7, 0.7, 0.75); box(metal, 2.4, v, 0.22, 0.45, 0.44, 0.45);
+      SN.shopSolid(spec, 2.4, v, 0.75, 0.8, 1);
+    }
+    if (k === "chicken") {
+      for (const v of [2.5, 4.8]) { box(wood, 2.6, v, 0.75, 1.4, 0.12, 1.3); box(bright, 2.6, v, 0.88, 0.6, 0.15, 0.5); SN.shopSolid(spec, 2.6, v, 1.4, 1.3, 0.9); }
+      box(metal, 1.8, 8, 1.1, 2, 1.4, 1); box(dark, 1.8, 8, 1.85, 2, 0.18, 1);
+    }
+    if (k === "weapons") {
+      box(dark, 2.8, 5, 1.25, 0.25, 2.5, 4);
+      for (let i = 0; i < 4; i++) { box(metal, 2.6, 3.7 + i * 0.85, 1.5, 0.15, 0.13, 0.7); box(wood, 2.6, 3.7 + i * 0.85, 1.3, 0.2, 0.38, 0.2); }
+      SN.shopSolid(spec, 2.8, 5, 0.65, 4, 2.5);
+    }
+    if (k === "home") {
+      box(wood, 2.4, 6.6, 0.3, 1.7, 0.6, 2.8); box(bright, 2.4, 6.6, 0.65, 1.65, 0.15, 2.7);
+      box(dark, 2.4, 5.7, 0.8, 1.45, 0.18, 0.6); SN.shopSolid(spec, 2.4, 6.6, 1.7, 2.8, 0.8);
+      box(wood, -3.3, 2.5, 1, 0.6, 2, 2); SN.shopSolid(spec, -3.3, 2.5, 0.6, 2, 2);
+    }
+    box(bright, 0, spec.depth * 0.4, 3.1, 2.6, 0.06, 0.4);
+    SN.shopMesh(wood, 0x927450, null, g, false); SN.shopMesh(dark, 0x2e3f55, null, g, false);
+    SN.shopMesh(metal, 0xb3c6cb, { metalness: 0.5, roughness: 0.4 }, g, false);
+    SN.shopMesh(bright, k === "pc" ? 0x68cbec : 0xf4c889, { emissive: k === "pc" ? 0x227abb : 0x775533, emissiveIntensity: 0.65 }, g, false);
+    SN.shopWallSign(spec, g, spec.name, 0, spec.depth - 0.2, base + 2.4, 5.5, 0.6, "#193544", "#f8d89c");
+  };
+
 })(window.SN);

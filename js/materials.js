@@ -48,6 +48,86 @@
     c.height = h;
     return c;
   };
+  // Tileable grayscale fields for the wet-road layer. Both are mip-mapped and
+  // sampled in world space, so the pattern never swims with the camera.
+  SN.buildWetMaskTexture = function buildWetMaskTexture() {
+    const size = 256, canvas = SN.makeCanvas(size, size), ctx = canvas.getContext("2d"),
+      img = ctx.createImageData(size, size), data = img.data;
+    for (let y = 0; y < size; y++)
+      for (let x = 0; x < size; x++) {
+        const u = x / size, v = y / size;
+        const broad = SN.tileFbm(u, v, 4, 8123);
+        const detail = SN.tileFbm(u + 0.31, v + 0.17, 3, 9127);
+        const value = SN.clamp((broad - 0.5) * 2.35 + 0.5 + (detail - 0.5) * 0.18, 0, 1);
+        const g = Math.round(value * 255), i = (y * size + x) * 4;
+        data[i] = data[i + 1] = data[i + 2] = g;
+        data[i + 3] = 255;
+      }
+    ctx.putImageData(img, 0, 0);
+    const texture = SN.tuneTexture(new SN.T.CanvasTexture(canvas));
+    texture.encoding = SN.T.LinearEncoding;
+    texture.wrapS = texture.wrapT = SN.T.RepeatWrapping;
+    return texture;
+  };
+  SN.buildRippleTexture = function buildRippleTexture() {
+    const size = 128, canvas = SN.makeCanvas(size, size), ctx = canvas.getContext("2d"),
+      img = ctx.createImageData(size, size), data = img.data;
+    const centers = [[0.18, 0.24, 0.9], [0.64, 0.38, 1.35], [0.37, 0.79, 1.1], [0.84, 0.86, 0.75]];
+    for (let y = 0; y < size; y++)
+      for (let x = 0; x < size; x++) {
+        const u = x / size, v = y / size;
+        let ring = 0;
+        for (const c of centers) {
+          let dx = u - c[0], dy = v - c[1];
+          dx -= Math.round(dx);
+          dy -= Math.round(dy);
+          const dist = Math.hypot(dx, dy);
+          ring += Math.sin(dist * 78 * c[2] - 1.1) * Math.exp(-dist * 5.5);
+        }
+        const g = Math.round(SN.clamp(128 + ring * 42, 0, 255)), i = (y * size + x) * 4;
+        data[i] = data[i + 1] = data[i + 2] = g;
+        data[i + 3] = 255;
+      }
+    ctx.putImageData(img, 0, 0);
+    const texture = SN.tuneTexture(new SN.T.CanvasTexture(canvas));
+    texture.encoding = SN.T.LinearEncoding;
+    texture.wrapS = texture.wrapT = SN.T.RepeatWrapping;
+    return texture;
+  };
+  // Wetness is baked into the surface shader instead of drawn as coplanar decals.
+  // The low roughness drives environment reflections; albedo darkening keeps the
+  // puddle readable in daylight. All variation lives in world space.
+  SN.applyWetSurface = function applyWetSurface(material, options) {
+    const opts = options || {}, strength = opts.strength === undefined ? 1 : opts.strength,
+      darken = opts.darken === undefined ? 0.42 : opts.darken,
+      previous = material.onBeforeCompile;
+    material.onBeforeCompile = shader => {
+      if (previous) previous.call(material, shader);
+      shader.uniforms.uWet = SN.wetUniforms.wet;
+      shader.uniforms.uWetTime = SN.wetUniforms.time;
+      shader.uniforms.uPuddleMask = SN.wetUniforms.puddle;
+      shader.uniforms.uRippleMap = SN.wetUniforms.ripple;
+      shader.uniforms.uWetNight = SN.wetUniforms.night;
+      shader.uniforms.uWetStrength = { value: strength };
+      shader.uniforms.uWetDarken = { value: darken };
+      shader.fragmentShader = "uniform float uWet;\nuniform float uWetTime;\nuniform float uWetStrength;\nuniform float uWetDarken;\nuniform float uWetNight;\nuniform sampler2D uPuddleMask;\nuniform sampler2D uRippleMap;\n" + shader.fragmentShader;
+      shader.fragmentShader = shader.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
+        vec2 wetCell = vPbrWorld.xz * 0.058;
+        float wetNoise = texture2D(uPuddleMask, wetCell).r;
+        float puddleMask = smoothstep(0.50, 0.64, wetNoise) * uWet * uWetStrength;
+        diffuseColor.rgb *= 1.0 - puddleMask * uWetDarken;`);
+      shader.fragmentShader = shader.fragmentShader.replace("#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>
+        vec2 rippleUv = vPbrWorld.xz * 1.15 + vec2(uWetTime * 0.018, uWetTime * 0.013);
+        float rippleTone = texture2D(uRippleMap, rippleUv).g - 0.5;
+        float wetMask = clamp(puddleMask, 0.0, 1.0);
+        roughnessFactor = mix(roughnessFactor, 0.055 + rippleTone * 0.045, wetMask);
+        roughnessFactor = mix(roughnessFactor, roughnessFactor * 0.62, uWet * 0.55 * uWetStrength);`);
+      shader.fragmentShader = shader.fragmentShader.replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
+        totalEmissiveRadiance += vec3(0.06, 0.095, 0.13) * wetMask * uWetNight * 0.9;`);
+    };
+    material.needsUpdate = true;
+    return material;
+  };
 
   SN.noiseHeightCanvas = function noiseHeightCanvas(size, seed, base, contrast, fine) {
     const c = SN.makeCanvas(size, size), ctx = c.getContext("2d"), img = ctx.createImageData(size, size), d = img.data;
@@ -879,7 +959,7 @@
         hd[i + 3] = 255;
       }
     hctx.putImageData(himg, 0, 0);
-    const color = SN.colorFromHeight(height, glassTower ? [82, 96, 102] : [[154, 150, 142], [160, 151, 136], [164, 153, 134]][variant], 0.42, 811 + variant),
+    const color = SN.colorFromHeight(height, glassTower ? [86, 149, 180] : [[219, 197, 151], [196, 111, 80], [156, 200, 190]][variant], 0.42, 811 + variant),
       cctx = color.getContext("2d");
     const rough = SN.makeCanvas(w, h), rctx = rough.getContext("2d");
     rctx.fillStyle = glassTower ? "#6a6a6a" : "#dcdcdc";
@@ -887,6 +967,18 @@
     const emissive = SN.makeCanvas(w, h), ectx = emissive.getContext("2d");
     ectx.fillStyle = "#000";
     ectx.fillRect(0, 0, w, h);
+    // Masonry courses and glazed shop-house tiles are baked into the shared atlas.
+    if (variant === 1 || variant === 2) {
+      const tileH = variant === 1 ? 16 : 48, tileW = variant === 1 ? 48 : 64;
+      cctx.strokeStyle = variant === 1 ? "#8d6554" : "#759c98";
+      cctx.lineWidth = variant === 1 ? 2 : 3;
+      for (let y = 0; y < h; y += tileH) {
+        cctx.beginPath(); cctx.moveTo(0, y); cctx.lineTo(w, y); cctx.stroke();
+        for (let x = (variant === 1 && y / tileH % 2 ? -tileW / 2 : 0); x < w; x += tileW) {
+          cctx.beginPath(); cctx.moveTo(x, y); cctx.lineTo(x, y + tileH); cctx.stroke();
+        }
+      }
+    }
     const cols = glassTower ? 6 : 4, rows = glassTower ? 14 : 8, cw = w / cols, ch = h / rows;
     for (let row = 0; row < rows; row++)
       for (let col = 0; col < cols; col++) {
@@ -906,6 +998,26 @@
         glass.addColorStop(1, "rgba(" + (glassTower ? 28 : 26) + "," + (glassTower ? 38 : 34) + "," + (glassTower ? 44 : 38) + ",.98)");
         cctx.fillStyle = glass;
         cctx.fillRect(x, y, ww, wh);
+        // Bright sky reflections, mullions and blinds remain readable without near geometry.
+        cctx.fillStyle = glassTower ? "#8bc3df" : "#6799b1";
+        cctx.fillRect(x + 3, y + 3, ww - 6, wh * 0.24);
+        if (v > 0.62) {
+          cctx.fillStyle = v > 0.85 ? "#e2c390" : "#b6c9c9";
+          cctx.fillRect(x + 3, y + 3, ww - 6, wh * (0.22 + v * 0.23));
+          cctx.fillStyle = "#8a9597";
+          for (let blind = 8; blind < wh * 0.4; blind += 7) cctx.fillRect(x + 3, y + blind, ww - 6, 1);
+        }
+        cctx.strokeStyle = glassTower ? "#b5d5df" : "#e5d8bc";
+        cctx.lineWidth = 3;
+        cctx.strokeRect(x, y, ww, wh);
+        cctx.fillStyle = "#c8d4d3";
+        cctx.fillRect(x + ww * 0.5 - 1, y, 2, wh);
+        cctx.fillRect(x, y + wh * 0.65, ww, 2);
+        if (!glassTower && v < 0.22) {
+          cctx.fillStyle = "#dedbcf"; cctx.fillRect(x + ww - 24, y + wh + 7, 28, 17);
+          cctx.fillStyle = "#687579";
+          for (let vent = 0; vent < 4; vent++) cctx.fillRect(x + ww - 20, y + wh + 10 + vent * 3, 20, 1);
+        }
         cctx.fillStyle = glassTower ? "rgba(190,206,210,.2)" : "rgba(196,204,204,.13)";
         cctx.beginPath();
         cctx.moveTo(x, y);
@@ -955,6 +1067,201 @@
     return result;
   };
 
+  // One 1024-square atlas supplies shop bands, windows, transit maps and posters.
+  SN.buildStorefrontAtlas = function buildStorefrontAtlas() {
+    SN.storefrontTypes = [
+      ["fashion", "로데오 부티크", "#243e58", "#e3b780"], ["restaurant", "순희네 손칼국수", "#a43d2f", "#e7c58b"],
+      ["cafe", "청담 다과", "#24625b", "#d6a96b"], ["pharmacy", "약국", "#167f69", "#e4eee7"],
+      ["bank", "은행", "#244d84", "#b8cbda"], ["phone", "휴대폰", "#3753a4", "#61d7ed"],
+      ["cosmetics", "명동 향수", "#a45177", "#f4cee0"], ["chicken", "소리치는 치킨", "#b83e24", "#ffc14d"],
+      ["pc", "별밤 PC방", "#452f87", "#7ce9ed"], ["convenience", "편의점", "#277f53", "#f7ad43"]
+    ];
+    const canvas = SN.makeCanvas(1024, 1024), g = canvas.getContext("2d");
+    SN.storefrontGeos = []; SN.storeSignGeos = [];
+    for (let type = 0; type < SN.storefrontTypes.length; type++) {
+      const [kind, name, band, accent] = SN.storefrontTypes[type], x = type % 4 * 256, y = Math.floor(type / 4) * 256;
+      g.save(); g.translate(x, y);
+      const rect = (color, x, y, w, h) => { g.fillStyle = color; g.fillRect(x, y, w, h); };
+      rect("#d3c9b3", 0, 0, 256, 256); rect("#183344", 8, 55, 240, 184);
+      rect(band, 0, 0, 256, 48); g.fillStyle = "#fff2dd"; g.font = "bold 23px sans-serif";
+      g.textAlign = "center"; g.fillText(name, 128, 31, 240);
+      const doorX = type % 2 ? 10 : 191, displayX = type % 2 ? 72 : 15;
+      rect("#89a8b2", doorX, 55, 55, 184); rect("#203e50", doorX + 4, 60, 47, 173);
+      rect("#e0d7ba", doorX + 40, 137, 3, 28); rect(accent, 0, 240, 256, 16);
+      if (kind === "fashion") {
+        for (let n = 0; n < 2; n++) {
+          const u = displayX + 40 + n * 76;
+          g.fillStyle = "#edc69a"; g.beginPath(); g.arc(u, 102, 12, 0, SN.TAU); g.fill();
+          rect(n ? "#d35d4c" : "#f2dfbb", u - 19, 117, 38, 58);
+          rect("#c1b7a4", u - 14, 175, 9, 48); rect("#c1b7a4", u + 5, 175, 9, 48);
+          rect("#c2b49a", u - 27, 225, 54, 6);
+        }
+      } else if (kind === "restaurant" || kind === "chicken") {
+        rect("#d5ae72", displayX, 188, 163, 15);
+        for (let n = 0; n < 3; n++) {
+          const u = displayX + n * 55;
+          rect(kind === "chicken" ? "#ffbf4e" : "#e6dec3", u, 71, 49, 91);
+          g.fillStyle = "#923b26"; g.beginPath(); g.arc(u + 24, 99, 15, 0, SN.TAU); g.fill();
+          g.font = "13px sans-serif"; g.fillStyle = "#3f352c"; g.fillText(kind === "chicken" ? "치킨" : "메뉴", u + 24, 135);
+          rect("#7c4d32", u + 12, 207, 25, 23);
+        }
+      } else if (kind === "cafe") {
+        rect("#a76b45", displayX, 177, 163, 48);
+        for (let n = 0; n < 3; n++) {
+          rect("#eee1c3", displayX + 16 + n * 51, 151, 23, 25);
+          rect("#253d3c", displayX + 19 + n * 51, 91, 32, 5);
+          rect(accent, displayX + 30 + n * 51, 58, 3, 33);
+        }
+        rect("#24473e", displayX + 18, 112, 110, 25); g.font = "17px sans-serif"; g.fillStyle = "#eee8cd"; g.fillText("커피 · 차", displayX + 73, 131);
+      } else if (kind === "pharmacy") {
+        rect("#d8eee4", displayX, 62, 163, 172); rect("#22a36f", displayX + 65, 84, 30, 98); rect("#22a36f", displayX + 31, 118, 98, 30);
+        rect("#a2c3b9", displayX + 12, 201, 140, 7);
+      } else if (kind === "bank") {
+        rect("#91aab9", displayX + 8, 80, 60, 144); rect("#112e48", displayX + 17, 100, 42, 50);
+        rect("#6cc8d0", displayX + 23, 109, 30, 29); rect("#263b50", displayX + 21, 174, 36, 7);
+        rect("#c7d4d5", displayX + 85, 72, 64, 127); g.fillStyle = "#204979"; g.font = "24px sans-serif"; g.fillText("ATM", displayX + 116, 125);
+      } else if (kind === "phone" || kind === "pc") {
+        rect("#405568", displayX, 194, 164, 29);
+        for (let n = 0; n < 3; n++) {
+          const u = displayX + 6 + n * 54;
+          rect("#101a33", u, kind === "pc" ? 109 : 83, 44, kind === "pc" ? 60 : 100);
+          rect(["#407ddd", "#a954bc", "#3fcaba"][n], u + 5, kind === "pc" ? 115 : 90, 34, kind === "pc" ? 46 : 78);
+          rect(accent, u + 17, 176, 10, 18);
+        }
+      } else if (kind === "cosmetics") {
+        rect("#e6bacb", displayX, 66, 162, 165);
+        for (let n = 0; n < 4; n++) {
+          rect("#fff1df", displayX + n * 40, 183, 32, 46);
+          rect(n % 2 ? "#ae6f99" : "#72bcae", displayX + 9 + n * 40, 132, 18, 49);
+          rect("#d0ac5c", displayX + 12 + n * 40, 122, 12, 11);
+        }
+      } else {
+        for (let row = 0; row < 3; row++) {
+          for (let n = 0; n < 7; n++) rect(["#ebc458", "#cb6356", "#83b8a2"][n % 3], displayX + n * 23, 80 + row * 45, 15, 29);
+          rect("#e2d7bc", displayX, 110 + row * 45, 162, 6);
+        }
+        g.font = "20px sans-serif"; g.fillStyle = "#fff5d8"; g.fillText("24시", displayX + 81, 231);
+      }
+      // Narrow reflections leave the shop silhouettes visible through the glass.
+      g.fillStyle = "rgba(154,220,241,.15)"; g.beginPath(); g.moveTo(displayX, 59); g.lineTo(displayX + 48, 59); g.lineTo(displayX + 140, 235); g.lineTo(displayX + 118, 235); g.fill();
+      rect("#c9d4ce", displayX + 164, 51, 4, 187); g.restore();
+      for (const sign of [false, true]) {
+        const geo = new SN.T.PlaneGeometry(1, 1), uv = geo.attributes.uv;
+        for (let k = 0; k < uv.count; k++) uv.setXY(k, (x + 2 + uv.getX(k) * 252) / 1024, 1 - (y + 2 + (1 - uv.getY(k)) * (sign ? 44 : 252)) / 1024);
+        (sign ? SN.storeSignGeos : SN.storefrontGeos).push(geo);
+      }
+    }
+    const texture = SN.canvasTexture(canvas);
+    SN.storefrontMat = SN.mat(0xffffff, { map: texture, emissive: 0xffffff, emissiveMap: texture, emissiveIntensity: 0.3, roughness: 0.65 });
+    SN.neonMats.push(SN.storefrontMat);
+  };
+
+  SN.buildCityArtAtlas = function buildCityArtAtlas() {
+    SN.buildStorefrontAtlas();
+    const canvas = SN.makeCanvas(1024, 1024), g = canvas.getContext("2d");
+    SN.artNames = ["순희네 손칼국수", "만복 철물", "대성 인쇄", "옥이 반찬",
+      "달빛 노래방", "새벽 포차", "별밤 PC방", "명동 향수",
+      "청솔 자산운용", "한결 회계", "한강 투자자문", "테헤란로 캐피탈"];
+    SN.artAtlasGeos = [];
+    for (let i = 0; i < 32; i++) {
+      const x = i % 4 * 256, y = Math.floor(i / 4) * 128;
+      g.save(); g.translate(x, y);
+      const color = ["#953f32", "#d7b46a", "#247b93", "#e7d9b4", "#c92c7c", "#df6c28", "#3446a1", "#215c66", "#14344f", "#e9e4d6", "#22495e", "#21364c"][i % 12];
+      g.fillStyle = i < 12 ? color : "#e8e3d2"; g.fillRect(0, 0, 256, 128);
+      g.strokeStyle = "#f9e9be"; g.lineWidth = 4; g.strokeRect(6, 6, 244, 116);
+      g.textAlign = "center"; g.textBaseline = "middle";
+      if (i < 12) {
+        g.fillStyle = [1, 3, 9].includes(i) ? "#283340" : "#fff2d1";
+        g.font = "bold 29px sans-serif"; g.fillText(SN.artNames[i], 128, 54, 230);
+        g.font = "16px sans-serif"; g.fillText(i < 4 ? "종로 · 오래된 골목" : i < 8 ? "서울 · OPEN 24" : "SEOUL · BUSINESS", 128, 93, 225);
+      } else if (i < 16) {
+        g.fillStyle = ["#28557b", "#cf7950", "#588b83", "#7e708d"][i - 12]; g.fillRect(0, 0, 256, 128);
+        g.fillStyle = "#fff1ce"; g.font = "bold 62px sans-serif"; g.fillText(String(101 + i - 12), 128, 52);
+        g.font = "21px sans-serif"; g.fillText("아파트 단지", 128, 100);
+      } else if (i === 16 || i === 17) {
+        g.fillStyle = "#31515f"; g.fillRect(0, 0, 256, 128);
+        for (let row = 0; row < 3; row++) {
+          for (let n = 0; n < 12; n++) {
+            g.fillStyle = ["#e4ba58", "#e76e58", "#72c6bd", "#ebe7cd"][((n * 3 + row + i) % 4)];
+            g.fillRect(8 + n * 20, 25 + row * 25, 12, 18);
+          }
+          g.fillStyle = "#bdc9b8"; g.fillRect(5, 45 + row * 25, 246, 3);
+        }
+        g.fillStyle = "rgba(151,221,241,.22)"; g.beginPath(); g.moveTo(0, 0); g.lineTo(154, 0); g.lineTo(0, 100); g.fill();
+        g.fillStyle = "#e5d7b4"; g.fillRect(0, 0, 256, 7); g.fillRect(0, 113, 256, 15);
+        for (const u of [0, 83, 170, 251]) g.fillRect(u, 0, 5, 128);
+        if (i === 17) { g.fillStyle = "#273b44"; g.fillRect(88, 9, 77, 104); g.fillStyle = "#d1e3d2"; g.fillRect(151, 57, 4, 20); }
+      } else if (i === 18) {
+        g.fillStyle = "#153c55"; g.font = "bold 21px sans-serif"; g.fillText("서울 버스 · 노선도", 128, 20);
+        for (let line = 0; line < 3; line++) {
+          g.strokeStyle = ["#2580bf", "#36a267", "#d98238"][line]; g.lineWidth = 4;
+          g.beginPath(); g.moveTo(20, 48 + line * 27); g.lineTo(236, 48 + line * 27); g.stroke();
+          for (let n = 0; n < 6; n++) { g.fillStyle = "#fffaf0"; g.beginPath(); g.arc(25 + n * 40, 48 + line * 27, 5, 0, SN.TAU); g.fill(); }
+        }
+      } else if (i === 19) {
+        g.fillStyle = "#17735d"; g.fillRect(0, 0, 256, 128); g.fillStyle = "#ffffff";
+        g.font = "bold 27px sans-serif"; g.fillText("↑ 종로   강남 ↗", 128, 43);
+        g.font = "19px sans-serif"; g.fillText("Jongno    Gangnam", 128, 82);
+      } else if (i < 24) {
+        g.fillStyle = ["#2355ab", "#36a455", "#e67a35", "#39b7d3"][i - 20]; g.fillRect(0, 0, 256, 128);
+        g.fillStyle = "#ffffff"; g.font = "bold 48px sans-serif"; g.fillText(String(i - 19) + " 지하철", 128, 48);
+        g.font = "19px sans-serif"; g.fillText("SUBWAY  ↓", 128, 94);
+      } else if (i >= 26) {
+        g.fillStyle = ["#215c79", "#267566", "#d39a36", "#bf6b32", "#2c787c", "#4b6889"][i - 26];
+        g.fillRect(0, 0, 256, 128); g.fillStyle = "#fff3d4";
+        g.font = "bold 32px sans-serif";
+        g.fillText(["주차장", "한강공원", "놀이터", "안전제일", "주유소", "학교 운동장"][i - 26], 128, 51, 230);
+        g.font = "22px sans-serif";
+        g.fillText(["停车场 · P", "汉江公园 · 自行车道", "儿童游乐场", "施工中 · 注意安全", "加油站 · 24시", "校园运动场"][i - 26], 128, 94, 230);
+      } else {
+        g.fillStyle = ["#f4bf42", "#df524d", "#77d4cc", "#c6a2d9"][i % 4]; g.fillRect(0, 0, 256, 128);
+        g.fillStyle = "#243e4b"; g.font = "bold 33px sans-serif"; g.fillText(i % 2 ? "1 + 1" : "오늘의 메뉴", 128, 42);
+        g.font = "22px sans-serif"; g.fillText(i % 2 ? "행사 상품 · 24시" : "김밥 · 떡볶이", 128, 91);
+      }
+      g.restore();
+      const geo = new SN.T.PlaneGeometry(1, 1), uv = geo.attributes.uv;
+      for (let k = 0; k < uv.count; k++) uv.setXY(k, (x + 2 + uv.getX(k) * 252) / 1024, 1 - (y + 2 + (1 - uv.getY(k)) * 124) / 1024);
+      SN.artAtlasGeos.push(geo);
+    }
+    SN.artAtlasTexture = SN.canvasTexture(canvas); SN.artAtlasTexture.encoding = SN.T.sRGBEncoding;
+    SN.artSignMat = SN.mat(0xffffff, { map: SN.artAtlasTexture, emissive: 0xffffff, emissiveMap: SN.artAtlasTexture, emissiveIntensity: 0.2, roughness: 0.65, side: SN.T.DoubleSide });
+    SN.artSignMat.onBeforeCompile = shader => {
+      shader.fragmentShader = shader.fragmentShader.replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
+        float artRow=floor((1.-vUv.y)*8.);
+        float artGlow = artRow < 3.0 ? 1.0 : (artRow < 4.0 ? 0.0 : (artRow < 5.0 ? 0.22 : (artRow < 6.0 ? 1.0 : 0.0)));
+        totalEmissiveRadiance*=artGlow;`);
+    };
+    SN.artPanelMat = SN.artSignMat;
+    SN.neonMats.push(SN.artSignMat);
+    SN.ledCanvas = SN.makeCanvas(512, 128); SN.ledTexture = SN.canvasTexture(SN.ledCanvas);
+    SN.ledTexture.encoding = SN.T.sRGBEncoding; SN.ledTexture.generateMipmaps = false; SN.ledTexture.minFilter = SN.T.LinearFilter;
+    SN.ledMat = SN.mat(0xffffff, { map: SN.ledTexture, emissive: 0xffffff, emissiveMap: SN.ledTexture, emissiveIntensity: 0.7, side: SN.T.DoubleSide });
+    SN.neonMats.push(SN.ledMat); SN.ledTick = -1;
+  };
+
+  SN.updateCityArt = function updateCityArt() {
+    const tick = Math.floor(SN.renderTime * 5);
+    if (tick !== SN.ledTick && SN.ledCanvas) {
+      SN.ledTick = tick;
+      const g = SN.ledCanvas.getContext("2d");
+      const ad = Math.floor(tick / 50) % 3;
+      const titles = ["한걸음배송", "백구물산", "零点代驾 · 영시 대리"];
+      const lines = ["让每一条街都准时  ·  한 걸음 먼저", "城市更新 · 街坊生活  ·  서울의 내일", "夜路慢一点 · 平安到家  ·  안전 귀가"];
+      g.fillStyle = ["#143d51", "#272542", "#14382f"][ad]; g.fillRect(0, 0, 512, 128);
+      g.fillStyle = ["#54ffe2", "#ff6dbb", "#ffe06b"][ad]; g.fillRect(0, 0, 8, 128);
+      g.textAlign = "center"; g.font = "bold 42px sans-serif"; g.fillText(titles[ad], 260, 57, 470);
+      g.fillStyle = "#fff0ce"; g.font = "23px sans-serif"; g.textAlign = "left";
+      const scroll = (tick * 7) % 680;
+      for (let i = 0; i < 2; i++) g.fillText(lines[ad], 16 - scroll + i * 680, 104);
+      g.fillStyle = "rgba(8,20,42,.2)"; for (let y = 0; y < 128; y += 4) g.fillRect(0, y, 512, 1);
+      SN.ledTexture.needsUpdate = true;
+    }
+    if (SN.banpoFountain) {
+      SN.banpoFountain.material.opacity = 0.44 + SN.night * 0.24;
+      SN.banpoFountain.material.color.setHSL(0.52 + Math.sin(SN.renderTime * 0.3) * 0.05, 0.65, 0.7);
+    }
+  };
+
   SN.getSurface = function getSurface(key) {
     if (SN.surfaceCache.has(key))
       return SN.surfaceCache.get(key);
@@ -992,11 +1299,15 @@
       return SN.buildCarPaint(key, 88001);
     return SN.buildConcrete(key, 55661, [152, 147, 138], { cracks: 7, joints: true, streaks: false });
   };
-  // World-space planar UVs: horizontal faces use XZ, vertical faces use X+Y and Y,
+  // World-space planar UVs: project along each wall tangent, including diagonal streets,
   // so a 4 m wall corner and a 140 m road share the same texel density.
 
   SN.applyWorldUV = function applyWorldUV(material, scaleX, scaleY, extra) {
     const ax = scaleX === undefined ? 0.28 : scaleX, ay = scaleY === undefined ? ax : scaleY;
+    const wallProjection = extra === SN.facadeHook;
+    material.customProgramCacheKey = function worldSurfaceKey() {
+      return (wallProjection ? "wall-tangent|" : "surface|") + (extra ? extra.toString() : "") + this.onBeforeCompile.toString();
+    };
     material.onBeforeCompile = shader => {
       shader.uniforms.uPbrScale = { value: new SN.T.Vector2(ax, ay) };
       shader.vertexShader = "uniform vec2 uPbrScale;\nvarying vec3 vPbrWorld;\n" + shader.vertexShader;
@@ -1007,7 +1318,8 @@
  #endif
  pbrPos=modelMatrix*pbrPos;vPbrWorld=pbrPos.xyz;
  pbrNor=normalize(mat3(modelMatrix)*pbrNor);
- vUv=(abs(pbrNor.y)>.55?pbrPos.xz:vec2(pbrPos.x+pbrPos.z,pbrPos.y))*uPbrScale;`);
+ vec2 pbrTangent=normalize(vec2(pbrNor.z,-pbrNor.x)+vec2(.00001));
+ vUv=(abs(pbrNor.y)>.55?pbrPos.xz:vec2(${wallProjection ? "dot(pbrPos.xz,pbrTangent)" : "pbrPos.x+pbrPos.z"},pbrPos.y))*uPbrScale;`);
       if (extra)
         extra(shader);
     };
@@ -1054,16 +1366,74 @@
     list.push({ x, y, z, sx, sy, sz, yaw, color });
   };
 
+  // Decorative overhangs do not block pedestrians, but must stop the camera boom.
+  SN.registerCameraPart = function registerCameraPart(p, geo = SN.box) {
+    if (geo !== SN.box || p.y < 2 || !p.cameraOccluder && (p.sy > 1.2 || p.sx < 1.5 || p.sz < 0.5)) return;
+    if (![p.x, p.y, p.z, p.sx, p.sy, p.sz].every(Number.isFinite)) return;
+    const pitch = p.pitch || p.rx || 0, yaw = p.yaw || p.ry || 0;
+    const hy = (Math.abs(Math.cos(pitch)) * p.sy + Math.abs(Math.sin(pitch)) * p.sz) / 2;
+    const depth = Math.abs(Math.cos(pitch)) * p.sz + Math.abs(Math.sin(pitch)) * p.sy;
+    const hx = (Math.abs(Math.cos(yaw)) * p.sx + Math.abs(Math.sin(yaw)) * depth) / 2;
+    const hz = (Math.abs(Math.sin(yaw)) * p.sx + Math.abs(Math.cos(yaw)) * depth) / 2;
+    const b = { minX: p.x - hx, maxX: p.x + hx, minY: p.y - hy, maxY: p.y + hy, minZ: p.z - hz, maxZ: p.z + hz, stamp: 0 };
+    for (let iz = Math.floor(b.minZ / 48); iz <= Math.floor(b.maxZ / 48); iz++)
+      for (let ix = Math.floor(b.minX / 48); ix <= Math.floor(b.maxX / 48); ix++) {
+        const key = ix + "," + iz;
+        if (!SN.cameraPropBins.has(key)) SN.cameraPropBins.set(key, []);
+        SN.cameraPropBins.get(key).push(b);
+      }
+    return b;
+  };
+
+  SN.releaseCameraParts = function releaseCameraParts(boxes) {
+    for (const b of boxes || [])
+      for (let iz = Math.floor(b.minZ / 48); iz <= Math.floor(b.maxZ / 48); iz++)
+        for (let ix = Math.floor(b.minX / 48); ix <= Math.floor(b.maxX / 48); ix++) {
+          const key = ix + "," + iz, bin = SN.cameraPropBins.get(key);
+          if (!bin) continue;
+          const index = bin.indexOf(b);
+          if (index >= 0) bin.splice(index, 1);
+          if (!bin.length) SN.cameraPropBins.delete(key);
+        }
+  };
+
   SN.registerTile = function registerTile(geo, material, entries, shadows, tileSize, key, range, minQ = 0) {
-    const parts = key.split(",");
+    // Bound the transformed source geometry, not an entire grid cell plus a full
+    // part diagonal. Tall or sparse batches otherwise intersect unrelated views.
+    let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    const bounds = new Float32Array(entries.length * 4);
+    for (let i = 0; i < entries.length; i++) {
+      const p = entries[i];
+      const source = p.g || geo;
+      if (!source.boundingBox) source.computeBoundingBox();
+      const b = source.boundingBox;
+      const x = (b.min.x + b.max.x) * p.sx / 2, y = (b.min.y + b.max.y) * p.sy / 2, z = (b.min.z + b.max.z) * p.sz / 2;
+      const hx = (b.max.x - b.min.x) * Math.abs(p.sx) / 2, hy = (b.max.y - b.min.y) * Math.abs(p.sy) / 2, hz = (b.max.z - b.min.z) * Math.abs(p.sz) / 2;
+      const yaw = p.yaw || p.ry || 0, pitch = p.pitch || p.rx || 0, roll = p.rz || 0;
+      const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch), cr = Math.cos(roll), sr = Math.sin(roll);
+      const xx = cy * cr + sy * sp * sr, xy = -cy * sr + sy * sp * cr, xz = sy * cp;
+      const yx = cp * sr, yy = cp * cr, yz = -sp;
+      const zx = -sy * cr + cy * sp * sr, zy = sy * sr + cy * sp * cr, zz = cy * cp;
+      const cx = p.x + xx * x + xy * y + xz * z, ex = Math.abs(xx) * hx + Math.abs(xy) * hy + Math.abs(xz) * hz;
+      const cy0 = p.y + yx * x + yy * y + yz * z, ey = Math.abs(yx) * hx + Math.abs(yy) * hy + Math.abs(yz) * hz;
+      const cz = p.z + zx * x + zy * y + zz * z, ez = Math.abs(zx) * hx + Math.abs(zy) * hy + Math.abs(zz) * hz;
+      bounds[i * 4] = cx; bounds[i * 4 + 1] = cy0; bounds[i * 4 + 2] = cz;
+      bounds[i * 4 + 3] = Math.hypot(ex, ey, ez) + 0.001;
+      minX = Math.min(minX, cx - ex); maxX = Math.max(maxX, cx + ex);
+      minY = Math.min(minY, cy0 - ey); maxY = Math.max(maxY, cy0 + ey);
+      minZ = Math.min(minZ, cz - ez); maxZ = Math.max(maxZ, cz + ez);
+    }
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
     SN.cityTiles.push({
+      sphere: new SN.T.Sphere(new SN.T.Vector3(cx, cy, cz), Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) / 2), distance: 0,
       geo,
       material,
       entries,
+      bounds,
       shadows,
-      cx: (Number(parts[0]) + 0.5) * tileSize,
-      cz: (Number(parts[1]) + 0.5) * tileSize,
-      half: tileSize * 0.71,
+      cx,
+      cz,
+      half: Math.hypot(maxX - minX, maxZ - minZ) / 2,
       range,
       minQ,
       mesh: null,
@@ -1094,79 +1464,182 @@
       return;
     }
     const g = tile.geo.clone(),
-      mesh = new SN.T.InstancedMesh(g, tile.material, tile.entries.length),
-      bounds = new SN.T.Box3(),
-      v = new SN.T.Vector3();
-    // Uncoloured instances (setback towers, roof blocks) must stay white, not black.
-    if (tile.entries.some(p => p.color !== null && p.color !== undefined))
-      mesh.instanceColor = new SN.T.InstancedBufferAttribute(new Float32Array(tile.entries.length * 3).fill(1), 3);
+      mesh = new SN.T.InstancedMesh(g, tile.material, tile.entries.length), tint = new SN.T.Color();
+    // The shared constructor supplies white instance colours for untinted parts.
     for (let i = 0; i < tile.entries.length; i++) {
       const p = tile.entries[i];
       SN.dummy.position.set(p.x, p.y, p.z);
-      SN.dummy.rotation.set(p.pitch || 0, p.yaw || 0, 0, "YXZ");
+      SN.dummy.rotation.set(p.pitch || p.rx || 0, p.yaw || p.ry || 0, p.rz || 0, "YXZ");
       SN.dummy.scale.set(p.sx, p.sy, p.sz);
       SN.dummy.updateMatrix();
       mesh.setMatrixAt(i, SN.dummy.matrix);
       if (p.color !== null && p.color !== undefined)
-        mesh.setColorAt(i, new SN.T.Color(p.color));
-      const r = Math.hypot(p.sx, p.sy, p.sz);
-      bounds.expandByPoint(v.set(p.x - r, p.y - r, p.z - r));
-      bounds.expandByPoint(v.set(p.x + r, p.y + r, p.z + r));
+        mesh.setColorAt(i, tint.set(p.color).convertSRGBToLinear());
     }
-    g.boundingSphere = bounds.getBoundingSphere(new SN.T.Sphere());
+    g.boundingSphere = new SN.T.Sphere(tile.sphere.center.clone(), tile.sphere.radius);
     mesh.frustumCulled = true;
     mesh.castShadow = tile.shadows;
     mesh.receiveShadow = true;
     mesh.instanceMatrix.needsUpdate = true;
-    SN.scene.add(mesh);
+    // This tile retains CPU transforms for streaming. Visible instances from all
+    // tiles of the same geometry/material share the submission buffers below.
     tile.mesh = mesh;
   };
 
+  // Preserve pending ranges when several simulation updates precede one draw.
+  SN.markBufferRange = function markBufferRange(attribute, start, end) {
+    const range = attribute.updateRange;
+    if (range.count > 0) {
+      end = Math.max(end, range.offset + range.count);
+      start = Math.min(start, range.offset);
+    }
+    range.offset = start; range.count = end - start;
+    attribute.needsUpdate = true;
+  };
+
+  // r128 invokes object draw callbacks in the colour pass, not the shadow pass.
+  // Emptying this private geometry's draw range avoids any colour submission.
+  SN.skipCityColor = function skipCityColor() {
+    this.userData.drawStart = this.geometry.drawRange.start;
+    this.userData.drawCount = this.geometry.drawRange.count;
+    this.geometry.setDrawRange(0, 0);
+  };
+  SN.restoreCityRange = function restoreCityRange() {
+    this.geometry.setDrawRange(this.userData.drawStart, this.userData.drawCount);
+  };
+
+  SN.packCityInstances = function packCityInstances(px, pz, level) {
+    const groups = SN.cityInstanceGroups, sphere = SN.cityInstanceSphere, capacity = 2048;
+    const state = SN.cityPacking, view = SN.tileProjection.elements;
+    let changed = !view || state.tiles.length !== SN.cityTiles.length;
+    for (let i = 0; i < 19; i++) {
+      const value = i < 16 ? view && view[i] : i === 16 ? px : i === 17 ? pz : level;
+      if (state.view[i] !== value) { changed = true; state.view[i] = value; }
+    }
+    for (let i = 0; i < SN.cityTiles.length; i++) {
+      const tile = SN.cityTiles[i], mesh = tile.mesh;
+      const flags = mesh ? (mesh.visible ? 1 : 0) + (mesh.castShadow ? 2 : 0) : 0;
+      if (state.tiles[i] !== tile || state.meshes[i] !== mesh || state.flags[i] !== flags) changed = true;
+      state.tiles[i] = tile; state.meshes[i] = mesh; state.flags[i] = flags;
+    }
+    state.tiles.length = state.meshes.length = state.flags.length = SN.cityTiles.length;
+    if (changed) {
+      for (const materials of groups.values()) for (const group of materials.values())
+        for (const pool of group.pools) { pool.count = 0; for (const mesh of pool.meshes) mesh.count = 0; }
+      for (const tile of SN.cityTiles) {
+        if (tile.merged || !tile.mesh || !tile.mesh.visible) continue;
+        let materials = groups.get(tile.geo);
+        if (!materials) { materials = new Map(); groups.set(tile.geo, materials); }
+        let group = materials.get(tile.material);
+        if (!group) { group = { pools: [{ count: 0, meshes: [] }, { count: 0, meshes: [] }] }; materials.set(tile.material, group); }
+        const matrices = tile.mesh.instanceMatrix.array, colors = tile.mesh.instanceColor.array;
+        for (let i = 0; i < tile.entries.length; i++) {
+          const b = i * 4;
+          sphere.center.set(tile.bounds[b], tile.bounds[b + 1], tile.bounds[b + 2]); sphere.radius = tile.bounds[b + 3];
+          const shadow = tile.mesh.castShadow && Math.hypot(sphere.center.x - px, sphere.center.z - pz) - sphere.radius < (level === 1 ? 100 : 150);
+          const inView = SN.tileFrustum.intersectsSphere(sphere);
+          for (let pass = 0; pass < 2; pass++) {
+            if (pass === 0 ? !inView : !shadow) continue;
+            const pool = group.pools[pass], slot = pool.count++;
+            const page = Math.floor(slot / capacity), index = slot % capacity;
+            let mesh = pool.meshes[page];
+            if (!mesh) {
+              mesh = new SN.T.InstancedMesh(tile.geo.clone(), tile.material, capacity);
+              mesh.instanceMatrix.setUsage(SN.T.DynamicDrawUsage); mesh.instanceColor.setUsage(SN.T.DynamicDrawUsage);
+              mesh.frustumCulled = false; mesh.receiveShadow = pass === 0; mesh.castShadow = pass === 1;
+              Object.assign(mesh.userData, { cityBatch: true, sources: [], indices: new Uint16Array(capacity), dirtyStart: Infinity, dirtyEnd: 0 });
+              if (pass === 1) { mesh.onBeforeRender = SN.skipCityColor; mesh.onAfterRender = SN.restoreCityRange; }
+              pool.meshes.push(mesh); SN.scene.add(mesh);
+            }
+            const data = mesh.userData;
+            // Stable source slots do not need to be recopied when another tile changes.
+            if (data.sources[index] !== tile.mesh || data.indices[index] !== i) {
+              for (let n = 0; n < 16; n++) mesh.instanceMatrix.array[index * 16 + n] = matrices[i * 16 + n];
+              for (let n = 0; n < 3; n++) mesh.instanceColor.array[index * 3 + n] = colors[i * 3 + n];
+              data.sources[index] = tile.mesh; data.indices[index] = i;
+              data.dirtyStart = Math.min(data.dirtyStart, index); data.dirtyEnd = index + 1;
+            }
+            mesh.count = index + 1;
+          }
+        }
+      }
+    }
+    for (const materials of groups.values()) for (const group of materials.values())
+      for (const pool of group.pools) for (let i = pool.meshes.length - 1; i >= 0; i--) {
+        const mesh = pool.meshes[i], data = mesh.userData;
+        mesh.visible = mesh.count > 0;
+        if (!mesh.count) {
+          // Drop references to retired tile transforms even before releasing the page.
+          data.sources.length = 0;
+          if (SN.renderTime - data.lastNear > 3) {
+            SN.scene.remove(mesh); mesh.geometry.dispose(); mesh.dispose(); pool.meshes.splice(i, 1);
+          }
+          continue;
+        }
+        data.lastNear = SN.renderTime; data.sources.length = mesh.count;
+        if (data.dirtyEnd > data.dirtyStart) {
+          SN.markBufferRange(mesh.instanceMatrix, data.dirtyStart * 16, data.dirtyEnd * 16);
+          SN.markBufferRange(mesh.instanceColor, data.dirtyStart * 3, data.dirtyEnd * 3);
+          data.dirtyStart = Infinity; data.dirtyEnd = 0;
+        }
+      }
+  };
+
+  SN.tileDistanceOrder = function tileDistanceOrder(a, b) { return a.distance - b.distance; };
+
   SN.streamCity = function streamCity(force = false) {
-    for (const [source, target] of SN.mergedCityMaterials) {
+    const begin = performance.now();
+    if (!force && SN.renderTime < SN.streamClock) return;
+    SN.streamClock = SN.renderTime + 0.08;
+    for (const registry of [SN.mergedCityMaterials, SN.staticInstanceMaterials]) for (const [source, target] of registry) {
       target.emissiveIntensity = source.emissiveIntensity;
       target.envMapIntensity = source.envMapIntensity;
       target.roughnessMap = source.roughnessMap;
       target.color.copy(source.color);
     }
-    if (!force && SN.renderTime < SN.streamClock)
-      return;
-    SN.streamClock = SN.renderTime + 0.16;
     const px = SN.started ? SN.player.x : SN.camera.position.x,
-      pz = SN.started ? SN.player.z : SN.camera.position.z,
-      level = SN.qualityLevel(),
-      pending = [];
-    SN.streamUrbanDetails(px, pz, force);
+      pz = SN.started ? SN.player.z : SN.camera.position.z, level = SN.qualityLevel(), pending = SN.tileQueue;
+    pending.length = 0;
+    SN.camera.updateMatrixWorld();
+    SN.tileProjection.multiplyMatrices(SN.camera.projectionMatrix, SN.camera.matrixWorldInverse);
+    SN.tileFrustum.setFromProjectionMatrix(SN.tileProjection);
+    SN.streamUrbanDetails(px, pz, false);
     for (const tile of SN.cityTiles) {
-      const distance = Math.max(0, Math.hypot(px - tile.cx, pz - tile.cz) - (tile.detail ? 0 : tile.half)),
-        near = level >= tile.minQ && distance < tile.range * (tile.detail ? (level === 0 ? 0.75 : 1) : (level === 0 ? 0.65 : level === 1 ? 0.8 : 1));
+      const distance = Math.max(0, Math.hypot(px - tile.cx, pz - tile.cz) - (tile.detail ? 0 : tile.half));
+      tile.distance = distance;
+      const lodRange = tile.landmark ? tile.range : tile.detail ? (level === 0 ? 190 : level === 1 ? 280 : 380) : tile.frontage ? (level === 0 ? 460 : level === 1 ? 720 : 1100) : tile.range * (level === 0 ? 0.6 : level === 1 ? 0.75 : 1);
+      const near = level >= tile.minQ && distance < Math.min(tile.range, lodRange);
+      const inView = (tile.shadows && distance < 110 || SN.tileFrustum.intersectsSphere(tile.sphere)) &&
+        !(tile.material.transparent && tile.material.opacity === 0);
       if (near) {
         tile.lastNear = SN.renderTime;
-        if (!tile.mesh)
-          pending.push({ tile, distance });
-        else
-          tile.mesh.visible = true;
-      }
-      else if (tile.mesh) {
+        if (!tile.mesh && inView) pending.push(tile);
+        else if (tile.mesh) {
+          tile.mesh.visible = inView;
+          tile.mesh.castShadow = tile.shadows && level > 0 && distance < (level === 1 ? 100 : 150);
+        }
+      } else if (tile.mesh) {
         tile.mesh.visible = false;
-        if (distance > tile.range + (tile.detail ? 90 : 400) && SN.renderTime - tile.lastNear > 3) {
-          SN.scene.remove(tile.mesh);
-          tile.mesh.geometry.dispose();
-          if (tile.mesh.dispose)
-            tile.mesh.dispose();
+        if (distance > lodRange + 240 && SN.renderTime - tile.lastNear > 3) {
+          SN.scene.remove(tile.mesh); tile.mesh.geometry.dispose();
+          if (tile.mesh.dispose) tile.mesh.dispose();
           tile.mesh = null;
         }
       }
     }
-    pending.sort((a, b) => a.distance - b.distance);
-    const deadline = performance.now() + (force ? 10000 : 4);
-    for (const item of pending) {
-      SN.activateCityTile(item.tile);
-      if (performance.now() > deadline)
-        break;
+    pending.sort(SN.tileDistanceOrder);
+    let built = 0;
+    // A teleport, showcase or initial load uses the same bounded streaming path.
+    for (const tile of pending) {
+      if (built && performance.now() - begin >= 3) break;
+      SN.activateCityTile(tile);
+      tile.mesh.castShadow = tile.shadows && level > 0 && tile.distance < (level === 1 ? 100 : 150);
+      if (++built >= 3) break;
     }
-    for (const page of SN.terrainPages)
-      page.mesh.visible = Math.hypot(page.x - px, page.z - pz) < SN.Q[level].far + 600;
+    SN.perf.pendingTiles = pending.length - built;
+    SN.packCityInstances(px, pz, level);
+    SN.streamTerrain(px, pz, level);
+    SN.perf.streamMs = performance.now() - begin;
     for (const group of SN.cityLandmarks)
       group.visible = Math.hypot(group.position.x - px, group.position.z - pz) < (group.userData.range || 2000);
   };
@@ -1198,7 +1671,7 @@
       normals.set(a.normal.array, offset * 3);
       if (a.uv)
         uvs.set(a.uv.array, offset * 2);
-      tint.set(part.color === null || part.color === undefined ? 0xffffff : part.color);
+      tint.set(part.color === null || part.color === undefined ? 0xffffff : part.color).convertSRGBToLinear();
       for (let i = offset; i < offset + n; i++) {
         colors[i * 3] = tint.r;
         colors[i * 3 + 1] = tint.g;
@@ -1216,30 +1689,56 @@
     return g;
   };
 
-  SN.staticCityTiles = function staticCityTiles(material, list, range = 1650, size = 320, detail = false, shadows = true) {
+  SN.staticCityTiles = function staticCityTiles(material, list, range = 1650, size = 320, detail = false, shadows = true, cameraParts = null) {
     if (!list.length)
       return;
-    let mergedMaterial = SN.mergedCityMaterials.get(material);
+    const geometry = list[0].g || SN.box;
+    const instanced = list.every(p => (p.g || SN.box) === geometry);
+    // Repeated boxes/planes need one transform each, not duplicated vertices and
+    // a draw every 192 parts. Mixed atlas geometry still uses bounded merges.
+    // Keep the two shader layouts on separate materials in r128.
+    const registry = instanced ? SN.staticInstanceMaterials : SN.mergedCityMaterials;
+    let mergedMaterial = registry.get(material);
     if (!mergedMaterial) {
       mergedMaterial = material.clone();
       mergedMaterial.onBeforeCompile = material.onBeforeCompile;
       mergedMaterial.customProgramCacheKey = material.customProgramCacheKey.bind(material);
-      mergedMaterial.vertexColors = true;
-      SN.mergedCityMaterials.set(material, mergedMaterial);
+      mergedMaterial.vertexColors = !instanced || material.vertexColors;
+      registry.set(material, mergedMaterial);
       SN.envMats.push({ material: mergedMaterial, base: material.envMapIntensity });
     }
     const tiles = new Map();
     for (const p of list) {
+      const box = SN.registerCameraPart(p, p.g || SN.box);
+      if (box && cameraParts) cameraParts.push(box);
       const key = Math.floor(p.x / size) + "," + Math.floor(p.z / size);
       if (!tiles.has(key))
         tiles.set(key, []);
       tiles.get(key).push(p);
     }
     for (const [key, entries] of tiles) {
-      SN.registerTile(SN.box, mergedMaterial, entries, shadows, size, key, range);
-      const tile = SN.cityTiles[SN.cityTiles.length - 1];
-      tile.merged = true;
-      tile.detail = detail;
+      if (instanced) {
+        for (let first = 0; first < entries.length; first += 1024) {
+          SN.registerTile(geometry, mergedMaterial, entries.slice(first, first + 1024), shadows, size, key, range);
+          const tile = SN.cityTiles[SN.cityTiles.length - 1];
+          tile.detail = detail;
+          tile.frontage = material === SN.artSignMat || material === SN.storefrontMat || material === SN.urbanSignMaterial || material === SN.detailConcrete;
+        }
+        continue;
+      }
+      let first = 0, vertices = 0;
+      for (let i = 0; i <= entries.length; i++) {
+        const p = entries[i], geometry = p && (p.g || SN.box);
+        const count = geometry ? (geometry.index ? geometry.index.count : geometry.attributes.position.count) : 0;
+        if (i > first && (i === entries.length || i - first >= 192 || vertices + count > 12000)) {
+          SN.registerTile(SN.box, mergedMaterial, entries.slice(first, i), shadows, size, key, range);
+          const tile = SN.cityTiles[SN.cityTiles.length - 1];
+          tile.merged = true; tile.detail = detail;
+          tile.frontage = material === SN.artSignMat || material === SN.storefrontMat || material === SN.urbanSignMaterial || material === SN.detailConcrete;
+          first = i; vertices = 0;
+        }
+        vertices += count;
+      }
     }
   };
 
@@ -1256,22 +1755,88 @@
   // Merge small procedural car parts at construction time to reduce draw calls.
 
   SN.merged = function merged(parts) {
-    const positions = [], normals = [];
+    const positions = [], normals = [], uvs = [];
     for (let i = 0; i < parts.length; i++) {
       const p = parts[i], g = p.g.index ? p.g.toNonIndexed() : p.g.clone();
-      SN.dummy.position.set(p.x, p.y, p.z);
-      SN.dummy.rotation.set(p.rx || 0, p.ry || 0, p.rz || 0);
+      // Parts whose vertices are already placed in local body space omit x/y/z;
+      // defaulting them here keeps the transform matrix finite for every part.
+      SN.dummy.position.set(Number.isFinite(p.x) ? p.x : 0, Number.isFinite(p.y) ? p.y : 0, Number.isFinite(p.z) ? p.z : 0);
+      SN.dummy.rotation.set(p.rx || p.pitch || 0, p.ry || p.yaw || 0, p.rz || 0, "YXZ");
       SN.dummy.scale.set(p.sx || 1, p.sy || 1, p.sz || 1);
       SN.dummy.updateMatrix();
       g.applyMatrix4(SN.dummy.matrix);
-      positions.push(...g.attributes.position.array);
-      normals.push(...g.attributes.normal.array);
+      // Large imported car meshes can exceed the argument limit of push(...array),
+      // so merge with ordinary loops; output is identical.
+      const position = g.attributes.position.array, normal = g.attributes.normal.array;
+      for (let j = 0; j < position.length; j++) positions.push(position[j]);
+      for (let j = 0; j < normal.length; j++) normals.push(normal[j]);
+      if (g.attributes.uv) {
+        const uv = g.attributes.uv.array;
+        for (let j = 0; j < uv.length; j++) uvs.push(uv[j]);
+      } else
+        for (let j = 0; j < g.attributes.position.count; j++)
+          uvs.push(0, 0);
       g.dispose();
     }
     const g = new SN.T.BufferGeometry();
     g.setAttribute("position", new SN.T.Float32BufferAttribute(positions, 3));
     g.setAttribute("normal", new SN.T.Float32BufferAttribute(normals, 3));
+    g.setAttribute("uv", new SN.T.Float32BufferAttribute(uvs, 2));
     return g;
+  };
+  // Weld coincident position/UV pairs, then rebuild smooth vertex normals. Extruded
+  // car shells and tapered limbs arrive non-indexed and flat-shaded; this pass is
+  // what turns the faceted outline into a continuous round surface.
+  SN.weldGeometry = function weldGeometry(geometry, tolerance = 0.0002, positionOnly = false) {
+    const position = geometry.attributes.position, uv = geometry.attributes.uv,
+      index = geometry.index, count = index ? index.count : position.count,
+      keyScale = 1 / tolerance, uvScale = 2048,
+      positions = [], uvs = [], indices = [], lookup = new Map();
+    for (let i = 0; i < count; i++) {
+      const vertex = index ? index.getX(i) : i,
+        x = position.getX(vertex), y = position.getY(vertex), z = position.getZ(vertex),
+        u = uv ? uv.getX(vertex) : 0, v = uv ? uv.getY(vertex) : 0,
+        key = Math.round(x * keyScale) + "," + Math.round(y * keyScale) + "," + Math.round(z * keyScale) +
+          (positionOnly ? "" : "|" + Math.round(u * uvScale) + "," + Math.round(v * uvScale));
+      let found = lookup.get(key);
+      if (found === undefined) {
+        found = positions.length / 3;
+        lookup.set(key, found);
+        positions.push(x, y, z);
+        uvs.push(u, v);
+      }
+      indices.push(found);
+    }
+    const g = new SN.T.BufferGeometry();
+    g.setAttribute("position", new SN.T.Float32BufferAttribute(positions, 3));
+    g.setAttribute("uv", new SN.T.Float32BufferAttribute(uvs, 2));
+    g.setIndex(indices);
+    g.computeVertexNormals();
+    geometry.dispose();
+    return g;
+  };
+  // Comfortable Lathe helper: [[radius, y], ...] from bottom to top.
+  SN.latheProfile = function latheProfile(points, segments = 12) {
+    return new SN.T.LatheGeometry(points.map(point => new SN.T.Vector2(Math.max(0, point[0]), point[1])), segments);
+  };
+  // Extrude a closed 2D outline in the XY plane across the Z depth, then centre it.
+  SN.extrudeOutline = function extrudeOutline(points, depth, bevel = 0.03, curveSegments = 6, bevelSegments = 2) {
+    const shape = new SN.T.Shape();
+    shape.moveTo(points[0][0], points[0][1]);
+    for (let i = 1; i < points.length; i++)
+      shape.lineTo(points[i][0], points[i][1]);
+    shape.closePath();
+    const geometry = new SN.T.ExtrudeGeometry(shape, {
+      depth: Math.max(0.002, depth - bevel * 2),
+      bevelEnabled: bevel > 0,
+      bevelThickness: bevel,
+      bevelSize: bevel,
+      bevelSegments: bevel > 0 ? bevelSegments : 0,
+      curveSegments,
+      steps: 1
+    });
+    geometry.translate(0, 0, -Math.max(0.002, depth - bevel * 2) / 2);
+    return geometry;
   };
   // Startup phase 3: keep this order relative to the other systems.
 
@@ -1282,6 +1847,8 @@
     SN.camTarget = new SN.T.Vector3();
     SN.camWant = new SN.T.Vector3();
     SN.skyDirection = new SN.T.Vector3();
+    SN.cameraPropBins = new Map();
+    SN.cameraPropStamp = 0;
     SN.box = new SN.T.BoxGeometry(1, 1, 1);
     SN.cylinder = new SN.T.CylinderGeometry(1, 1, 1, 7);
     SN.cupGeo = new SN.T.CylinderGeometry(0.78, 1, 1, 10);
@@ -1293,7 +1860,7 @@
     // key light, otherwise every standard material is lifted by a flat white ambient.
     SN.envMats = [];
     SN.mat = (color, extra) => {
-      const opts = Object.assign({ color, roughness: 0.85 }, extra);
+      const opts = Object.assign({ color: typeof color === "number" ? SN.srgb(color) : color, roughness: 0.85 }, extra);
       if (opts.envMapIntensity === undefined)
         opts.envMapIntensity = (opts.metalness || 0) > 0.45 ? 0.9 : 0.3;
       const m = new SN.T.MeshStandardMaterial(opts);
@@ -1308,11 +1875,44 @@
     SN.surfaceCache = new Map();
     SN.facadeCache = new Map();
     SN.surfaceSeed = 917431;
+    SN.wetUniforms = {
+      wet: { value: 0 },
+      time: { value: 0 },
+      night: { value: 0 },
+      puddle: { value: SN.buildWetMaskTexture() },
+      ripple: { value: SN.buildRippleTexture() }
+    };
     // Core street surfaces. Albedo stays inside 0.05-0.4: nothing is pure white or black.
-    SN.asphalt = SN.pbrMat("asphalt", 0xcac4ba, { uvScale: 1 / 6.2, roughness: 1, metalness: 0.03, envMapIntensity: 0.35 });
-    SN.sidewalk = SN.pbrMat("concrete", 0xcfc6b4, { uvScale: 1 / 3.2, roughness: 1, metalness: 0.02, envMapIntensity: 0.28 });
-    SN.stripeMat = SN.pbrMat("paint", 0xbdb69a, { uvScale: 1 / 2.4, roughness: 0.9, metalness: 0.02, envMapIntensity: 0.3 });
-    SN.curbMat = SN.pbrMat("concrete", 0xa9a294, { uvScale: 1 / 2, roughness: 1, metalness: 0.02, envMapIntensity: 0.25 });
+    SN.asphalt = SN.pbrMat("asphalt", 0x8a99ad, { uvScale: 1 / 6.2, roughness: 1, metalness: 0.03, envMapIntensity: 0.35 });
+    SN.applyWorldUV(SN.asphalt, 1 / 6.2, 1 / 6.2, shader => {
+      shader.fragmentShader = "varying vec3 vPbrWorld;\n" + shader.fragmentShader;
+      shader.fragmentShader = shader.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
+        vec2 roadCell = floor(vPbrWorld.xz / 11.);
+        float patchSeed = fract(sin(dot(roadCell,vec2(12.98,78.23)))*43758.5);
+        vec2 patchUV = fract(vPbrWorld.xz / 11.) - vec2(.25 + patchSeed*.45,.45);
+        float oil = (1.-smoothstep(.03,.15,length(patchUV*vec2(1.3,.8))))*step(.72,patchSeed);
+        float repair = (1.-smoothstep(.17,.18,max(abs(patchUV.x),abs(patchUV.y)*1.5)))*step(patchSeed,.17);
+        diffuseColor.rgb *= 1.-oil*.18-repair*.09;`);
+    });
+    SN.applyWetSurface(SN.asphalt, { strength: 1, darken: 0.42 });
+    SN.sidewalk = SN.pbrMat("tile", 0xf4e9d1, { uvScale: 1 / 3.2, roughness: 1, metalness: 0.02, envMapIntensity: 0.28 });
+    SN.applyWorldUV(SN.sidewalk, 1 / 3.2, 1 / 3.2, shader => {
+      shader.fragmentShader = "varying vec3 vPbrWorld;\n" + shader.fragmentShader;
+      shader.fragmentShader = shader.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
+        float south = step(800., vPbrWorld.z);
+        float shopping = (1.-south)*step(285.,vPbrWorld.x)*step(vPbrWorld.x,580.);
+        vec2 paving = vPbrWorld.xz / mix(.8,1.35,south);
+        paving.x += mod(floor(paving.y),2.)*.5*(1.-south);
+        vec2 joint = min(fract(paving),1.-fract(paving));
+        float grout = smoothstep(.012,.035,min(joint.x,joint.y));
+        float tileShade = .92 + .08*fract(sin(dot(floor(paving),vec2(12.98,78.23)))*43758.5);
+        vec3 pavingTint = mix(vec3(1.,.96,.86),vec3(.76,.88,1.),south);
+        pavingTint = mix(pavingTint,vec3(1.12,.78,.68),shopping*.65);
+        diffuseColor.rgb *= pavingTint * tileShade * mix(.68,1.,grout);`);
+    });
+    SN.applyWetSurface(SN.sidewalk, { strength: 0.7, darken: 0.24 });
+    SN.stripeMat = SN.pbrMat("paint", 0xffffff, { uvScale: 1 / 2.4, roughness: 0.9, metalness: 0.02, envMapIntensity: 0.3, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+    SN.curbMat = SN.pbrMat("concrete", 0xe7e4d9, { uvScale: 1 / 2, roughness: 1, metalness: 0.02, envMapIntensity: 0.25 });
     SN.stoneMat = SN.pbrMat("stone", 0xb2a68e, { uvScale: 1 / 3, roughness: 1, metalness: 0.02, envMapIntensity: 0.3 });
     SN.darkMat = SN.pbrMat("metal", 0x3a464c, { uvScale: 1 / 2.2, roughness: 0.82, metalness: 0.45, envMapIntensity: 0.75 });
     SN.asphaltBaseColor = SN.asphalt.color.clone();
@@ -1336,7 +1936,15 @@
     SN.lampPoints = [];
     // Spatial tiles give r128 an explicit bounding sphere for instance-aware culling.
     SN.cityTiles = [];
+    SN.cityInstanceGroups = new Map();
+    SN.cityPacking = { view: new Float64Array(19).fill(NaN), tiles: [], meshes: [], flags: [] };
+    SN.cityInstanceSphere = new SN.T.Sphere(new SN.T.Vector3(), 0);
+    SN.tileQueue = []; SN.urbanRetired = new Set();
+    SN.tileProjection = new SN.T.Matrix4(); SN.tileFrustum = new SN.T.Frustum();
+    SN.actorCullSphere = new SN.T.Sphere(new SN.T.Vector3(), 4);
+    SN.carCullSphere = new SN.T.Sphere(new SN.T.Vector3(), 8);
     SN.streamClock = 0;
     SN.mergedCityMaterials = new Map();
+    SN.staticInstanceMaterials = new Map();
   });
 })(window.SN);

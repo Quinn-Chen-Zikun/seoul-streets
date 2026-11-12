@@ -17,7 +17,7 @@ html,body {
   height: 100%;
   overflow: hidden;
   background: #182f3e;
-  font-family: system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  font-family: system-ui,-apple-system,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
@@ -1684,7 +1684,7 @@ h1 em {
   display: none;
 }
 
-#campaignTools #storyInteract.available {
+#hud #storyInteract.available {
   display: block;
   border-color: #ffcd85;
   color: #ffcd85;
@@ -2439,4 +2439,378 @@ h1 em {
 /* Brand separator */
 .brand-separator {
   opacity: .5;
+}
+
+/* 街头界面：角落状态、单行目标与按需展开的操作页。 */
+:root { --hud-edge: 18px; --map-size: 144px; --ink: #fff8ec; --orange: #ffca45; }
+#vignette { background: linear-gradient(#09234730,transparent 22%,transparent 85%,#06192920); }
+#hud { visibility: hidden; }
+.playing #hud { visibility: visible; }
+#hud .map-wrap { top: var(--hud-edge); left: var(--hud-edge); bottom: auto; width: var(--map-size); height: var(--map-size); padding: 4px; border: 2px solid #f5f4e8c9; background: #0c263c; box-shadow: 0 3px 12px #001d3c55; }
+#minimap { display: block; width: 100%; height: 100%; border-radius: 50%; }
+.map-n,.map-caption,.map-legend,.vital-label,.touchhint,#weaponHint { display: none; }
+#hud .vitals { left: 14px; right: 14px; top: auto; bottom: -12px; gap: 3px; flex-direction: column; }
+.vital { flex: none; height: 5px; border: 1px solid #062337; box-shadow: 0 1px 3px #0007; }
+.vital i { background: #6df06c; }
+.vital.armor i { background: #54c8ff; }
+.topbar { left: auto; right: var(--hud-edge); top: var(--hud-edge); width: 190px; }
+.stats { width: 100%; display: flex; justify-content: flex-end; gap: 16px; align-items: baseline; text-shadow: 0 2px 3px #001c3e; }
+#money { font-size: 22px; color: #a5ff80; font-variant-numeric: tabular-nums; }
+#clock { font-size: 13px; color: #fff; font-variant-numeric: tabular-nums; }
+#wantedWrap { top: 52px; right: var(--hud-edge); }
+#wantedWrap #heat { font-size: 23px; letter-spacing: 3px; color: #ffd35a; }
+#wantedWrap #heat .dim { color: #dae7ed70; text-shadow: 0 1px 3px #001321; }
+#wantedState { font-size: 10px; letter-spacing: 0; max-width: 185px; line-height: 1.4; }
+.weapon-panel { top: 106px; right: var(--hud-edge); bottom: auto; padding: 4px 0; border: 0; min-width: 0; width: 112px; background: none; text-shadow: 0 2px 3px #00182e; }
+.weapon-panel strong { display: block; font-size: 12px; line-height: 18px; }
+.weapon-panel b { display: block; font-size: 20px; line-height: 24px; margin: 0; color: #fff4d4; pointer-events: auto; }
+#weaponSlots { right: 142px; top: 106px; bottom: auto; display: block; pointer-events: auto; }
+#weaponSlots .slot { display: none; width: 46px; height: 46px; border-radius: 50%; background: #08253e9c; border: 1px solid #fff4; box-shadow: none; }
+#weaponSlots .slot.active { display: block; }
+#weaponSlots canvas { width: 44px; height: 44px; }
+#weaponSlots small { display: none; }
+#missionRibbon { position: absolute; top: 20px; left: calc(var(--map-size) + var(--hud-edge) + 24px); right: 222px; margin: 0 auto; max-width: 600px; display: flex; align-items: center; gap: 9px; min-width: 0; padding: 9px 12px; border-radius: 5px; border-left: 3px solid #ffca45; background: #06213bd9; box-shadow: 0 2px 8px #00152320; font-size: 12px; }
+#objectiveText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+#objectiveDistance { color: #ffd467; white-space: nowrap; font-size: 11px; }
+#objectiveTimer { color: #fff; font-variant-numeric: tabular-nums; }
+#objectiveTimer:empty { display: none; }
+#districtToast { position: absolute; top: 72px; left: calc(var(--map-size) + var(--hud-edge) + 24px); right: 222px; text-align: center; opacity: 0; transform: translateY(-5px); transition: opacity .6s,transform .6s; text-shadow: 0 2px 6px #001a38; }
+#districtToast.show { opacity: 1; transform: none; }
+#districtToast b { display: block; font-size: 19px; letter-spacing: 2px; }
+#districtToast small { display: block; margin-top: 4px; font-size: 10px; color: #e3f0ff; }
+#hud .telemetry { display: none; left: var(--hud-edge); top: calc(var(--map-size) + var(--hud-edge) + 30px); bottom: auto; width: var(--map-size); text-shadow: 0 2px 4px #001c32; }
+.driving #hud .telemetry { display: block; }
+.speed { font-size: 29px; font-weight: 700; }
+.mode { font-size: 9px; letter-spacing: 0; margin-top: 4px; }
+.interaction { bottom: 74px; max-width: min(480px,75vw); white-space: normal; padding: 8px 13px; border-radius: 20px; background: #06213be6; border-color: #ffcb5880; text-align: center; font-size: 12px; }
+#toast { top: auto; bottom: 20px; width: max-content; max-width: min(600px,85vw); max-height: 48px; overflow: hidden; padding: 7px 14px; border: 0; border-radius: 5px; background: #06213bdc; font-size: 12px; line-height: 1.5; letter-spacing: 0; }
+#crimeLabel { top: 136px; max-width: 50vw; white-space: normal; text-align: center; letter-spacing: 0; }
+#arrestPrompt { bottom: 120px; max-width: 80vw; white-space: normal; }
+#storyInteract,#rotateHint { display: none; }
+.menu-paused #hud { opacity: .25; }
+.menu-paused .paused-label { display: none; }
+.paused-label { top: auto; bottom: 10px; z-index: 9; }
+.cinematic #missionRibbon,.cinematic #districtToast { visibility: hidden; }
+.story-panel .mission { position: static; width: 100%; max-width: none; max-height: none; padding: 14px; margin: 12px 0; overflow: visible; background: #0a1e31; border: 1px solid #ffd36555; box-shadow: none; backdrop-filter: none; }
+.story-panel .mission p { display: block; }
+.pause-panel { max-width: 780px; }
+.pause-panel h3 { margin: 22px 0 10px; font-size: 14px; color: #ffd467; }
+.pause-actions,#pauseMenu #campaignTools { position: static; display: flex; flex-wrap: wrap; gap: 8px; max-width: none; margin: 12px 0; }
+#pauseMenu #campaignTools button { padding: 8px 11px; font-size: 11px; }
+#pauseMenu #costumeName { align-self: center; width: auto; }
+#pauseMenu #settingsPanel { position: static; width: 100%; max-height: none; padding: 14px; margin: 12px 0; overflow: visible; box-shadow: none; }
+#resumeBtn { background: #ffca45; color: #152c3b; border: 0; font-weight: 700; min-height: 44px; }
+.full-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; font-size: 11px; color: #d5e9f4; line-height: 1.7; }
+.full-controls span { min-width: 0; }
+#pauseMenu { z-index: 24; }
+button:focus-visible { outline: 2px solid #ffce50; outline-offset: 3px; }
+#rotateHint { position: absolute; color: #e0f2ff; font-size: 10px; background: #06213b99; padding: 5px 10px; border-radius: 20px; }
+
+/* 开始页：晴空、剪影与一枚醒目的开始按钮。 */
+.intro { touch-action: pan-y; isolation: isolate; padding: 5vh 7vw; background: linear-gradient(90deg,#142a48eb,#283d6675 45%,#efb27808 75%),linear-gradient(0deg,#20345399,transparent 45%); overflow: auto; }
+.intro:before { content: ""; position: absolute; z-index: -1; left: 40%; right: 0; bottom: 0; height: 62%; background: linear-gradient(#047cb0c4,#063a5cdc); clip-path: polygon(0 100%,0 65%,9% 65%,9% 52%,16% 52%,16% 68%,22% 68%,22% 44%,30% 44%,30% 58%,36% 58%,36% 29%,39% 29%,39% 23%,42% 23%,42% 8%,43% 8%,43% 23%,46% 23%,46% 29%,49% 29%,49% 60%,57% 60%,57% 46%,63% 46%,63% 67%,69% 67%,69% 37%,74% 37%,74% 60%,80% 60%,83% 12%,86% 0,89% 12%,92% 60%,100% 60%,100% 100%); }
+.intro:after { content: ""; position: absolute; z-index: -2; width: 130px; height: 130px; right: 12%; top: 13%; border-radius: 50%; background: #fff0ac; box-shadow: 0 0 70px 30px #ffdf8655; }
+.intro h1 { font-size: clamp(68px,11vw,132px); line-height: .98; font-weight: 900; font-style: italic; letter-spacing: .04em; margin: 22px 0 16px; text-shadow: 4px 5px 0 #00365e88; }
+.intro h1 em { color: #ffcf47; font-weight: 900; }
+.intro .serial,.intro .poem,.intro-badge { color: #d5f2ff; }
+.intro .description { color: #e1f0ff; font-size: 13px; max-width: 330px; margin: 14px 0 20px; }
+.intro .start { background: #ffca45; color: #07385b; width: 280px; min-height: 58px; font-size: 17px; border-radius: 5px; box-shadow: 0 6px 24px #00284d44; }
+.intro .start:hover { background: #ffe386; }
+.intro-controls { margin-top: 14px; color: #e2f1ff; font-size: 11px; }
+.intro-footer,.intro-coord { color: #d5edff; }
+
+@media (pointer:coarse) {
+  :root { --hud-edge: max(14px,env(safe-area-inset-top)); --map-size: 112px; }
+  #hud .map-wrap { left: max(14px,env(safe-area-inset-left)); }
+  #hud #pauseBtn,#hud #openCityMap { display: grid; place-items: center; position: absolute; top: 164px; bottom: auto; width: 40px; height: 36px; padding: 0; color: #fff; background: #082b49b8; border: 1px solid #fff5; border-radius: 8px; font-size: 12px; pointer-events: auto; }
+  #hud #pauseBtn { right: max(14px,env(safe-area-inset-right)); }
+  #hud #openCityMap { left: auto; right: max(62px,calc(env(safe-area-inset-right) + 48px)); }
+  #missionRibbon { left: 150px; right: 210px; font-size: 11px; }
+  #districtToast { left: 150px; right: 210px; }
+  #joystick { left: max(18px,env(safe-area-inset-left)); bottom: max(22px,env(safe-area-inset-bottom)); width: 126px; height: 126px; border: 2px solid #fff7; background: #0a345c66; }
+  .touch-buttons { display: grid; grid-template-columns: 64px 64px; gap: 10px; right: max(18px,env(safe-area-inset-right)); bottom: max(22px,env(safe-area-inset-bottom)); }
+  .touch-buttons button { width: 64px; height: 64px; font-size: 13px; font-weight: 600; background: #082b49b8; border: 2px solid #e6f6ff88; backdrop-filter: none; }
+  #touchAttack { background: #b74522c9; border-color: #ffd76f; grid-column: 2; grid-row: 1; }
+  #touchJump { grid-column: 1; grid-row: 1; }
+  #touchEnter { grid-column: 1; grid-row: 2; }
+  #touchSprint { grid-column: 2; grid-row: 2; }
+  #toast { bottom: 174px; max-width: min(480px,85vw); }
+  .interaction,.full-controls,.touchhint { display: none !important; }
+  #arrestPrompt { bottom: 232px; }
+  .armed #crosshair { display: block; }
+  .intro .desktop-help { display: none; }
+}
+@media (max-width:600px) {
+  :root { --map-size: 112px; --hud-edge: 14px; }
+  #missionRibbon { left: 14px; right: 14px; top: 204px; max-width: none; }
+  #districtToast { left: 14px; right: 14px; top: 280px; }
+  #districtToast b { font-size: 17px; }
+  #crimeLabel { top: 332px; max-width: 90vw; }
+  #rotateHint { display: block; top: 250px; left: 50%; transform: translateX(-50%); white-space: nowrap; }
+  #hud .telemetry { width: 130px; }
+  .full-controls { grid-template-columns: 1fr; }
+  .intro:before { left: 12%; opacity: .65; }
+  .intro:after { right: 9%; width: 90px; height: 90px; }
+  .intro .start { width: min(280px,100%); }
+  .intro h1 { font-size: 82px; }
+  .intro-footer { position: static; margin-top: 28px; }
+  .story-panel { max-height: 92dvh; padding: 16px; }
+  .story-panel h2 { font-size: 20px; letter-spacing: 1px; }
+  .story-panel header { align-items: flex-start; }
+  .story-panel header button { flex-shrink: 0; }
+}
+@media (max-height:620px) {
+  .intro h1 { font-size: 76px; margin: 14px 0 10px; }
+  .intro .description { margin: 10px 0 14px; }
+  .intro .poem { line-height: 1.5; }
+  .intro .start { min-height: 50px; padding: 14px 22px; }
+  .intro-controls { margin-top: 10px; }
+  .intro-footer { display: none; }
+}
+@media (pointer:coarse) and (max-height:480px) {
+  :root { --map-size: 96px; }
+  #hud #pauseBtn,#hud #openCityMap { top: 157px; }
+  #hud .telemetry { display: none; }
+  #toast { bottom: 18px; max-width: calc(100vw - 340px); font-size: 10px; }
+  #crimeLabel { top: 122px; }
+  #arrestPrompt { bottom: 76px; max-width: calc(100vw - 340px); padding: 8px; }
+  .intro h1 { font-size: 60px; }
+  .intro .description { max-width: 380px; font-size: 11px; }
+}
+
+/* 核心循环状态：锁定提示与失败印章。 */
+#crosshair.target-locked { filter: drop-shadow(0 0 5px #ffcc48); }
+#crosshair.target-locked b, #crosshair.target-locked i { background: #ffce4c; }
+#downscreen strong, #arrestScreen strong { font-weight: 900; font-size: clamp(64px, 12vw, 128px); letter-spacing: .16em; transform: rotate(-5deg); border-block: 6px solid currentColor; padding: .06em .16em; }
+#downscreen strong { color: #ef5952; text-shadow: 3px 4px #491d27; }
+#arrestScreen strong { color: #e8edf4; }
+#district:empty { display: none; }
+
+/* 剧情结算、街头档案和地图导航。 */
+[hidden] { display: none !important; }
+.new-game { margin: 10px 0 0 12px; padding: 12px 20px; background: #093e60c9; color: #e5f6ff; border: 1px solid #afdae577; border-radius: 5px; }
+#streetCounter { position: absolute; left: var(--hud-edge); top: calc(var(--hud-edge) + var(--map-size) + 38px); color: #ffdf85; font-size: 10px; text-shadow: 0 1px 3px #000; }
+#tutorialHint { position: absolute; left: 50%; bottom: 110px; transform: translateX(-50%); padding: 10px 18px; border-left: 3px solid #ffd34d; background: #092a43e0; color: #fff2ba; max-width: min(480px,80vw); opacity: 0; transition: opacity .5s; font-size: 13px; text-align: center; }
+#tutorialHint.visible { opacity: 1; }
+#vehicleJob { position: absolute; right: 22px; top: 235px; padding: 10px 16px; color: #123247; background: #75eddb; border: 0; border-radius: 6px; pointer-events: auto; }
+#missionResult { position: fixed; z-index: 22; top: 29%; left: 50%; width: min(700px,92vw); transform: translateX(-50%); padding: 24px; text-align: center; color: #ffe39a; background: linear-gradient(90deg,transparent,#102a39ed 15%,#102a39ed 85%,transparent); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .2s; }
+#missionResult.visible { opacity: 1; visibility: visible; }
+#missionResult strong { display: block; font-size: clamp(38px,7vw,80px); font-weight: 900; font-style: italic; letter-spacing: .1em; text-shadow: 3px 4px #342619; }
+#missionResult p { margin: 10px 0; font-size: 17px; } #missionResult small { display: block; font-size: 12px; line-height: 1.6; }
+#missionResult.failed { color: #ff7a6f; z-index: 27; } #missionResult button { pointer-events: auto; margin: 14px 6px 0; padding: 12px 22px; min-height: 44px; background: #ffe096; color: #193548; border: 0; border-radius: 5px; }
+#streetPanel { z-index: 26; } #streetPanel .story-panel { width: min(650px,94vw); }
+#streetPanelBody { line-height: 1.8; } #streetPanelBody button { min-height: 44px; padding: 10px 14px; margin: 5px; }
+.street-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; }
+.street-stats div { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid #fff2; padding: 10px 0; }
+.street-stats dd { margin: 0; color: #ffda72; } .property-actions { display: flex; flex-wrap: wrap; } .muted { color: #b5c6d2; font-size: 12px; }
+#atlasView { position: relative; overflow: hidden; } #atlasCanvas { touch-action: none; cursor: grab; } #atlasCanvas:active { cursor: grabbing; }
+#atlasTools { position: absolute; z-index: 2; top: 8px; left: 8px; display: flex; gap: 5px; }
+#atlasTools button { min-width: 36px; min-height: 36px; padding: 6px 10px; background: #12384eee; border: 1px solid #82b6c6; color: white; border-radius: 4px; }
+#atlasWaypoint { position: absolute; z-index: 2; bottom: 8px; left: 8px; right: 8px; padding: 5px; background: #0c253ccc; color: #b5f7ef; font-size: 11px; pointer-events: none; }
+@media (pointer:coarse) {
+  .touch-buttons { grid-template-columns: 56px 56px 56px; gap: 8px; }
+  .touch-buttons button { width: 56px; height: 56px; font-size: 12px; }
+  #touchAim { grid-column: 1; grid-row: 1; } #touchAttack { grid-column: 3; grid-row: 1; }
+  #touchHolster { grid-column: 1; grid-row: 2; } #touchJump { grid-column: 2; grid-row: 1; }
+  #touchEnter { grid-column: 2; grid-row: 2; } #touchSprint { grid-column: 3; grid-row: 2; }
+  #hud #storyInteract.available { display: block; position: absolute; right: 22px; bottom: 157px; max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 9px 12px; min-height: 38px; background: #ffda70; color: #14334a; pointer-events: auto; border: 0; border-radius: 8px; font-size: 11px; }
+  #tutorialHint { bottom: 205px; font-size: 11px; }
+  #vehicleJob { top: 205px; font-size: 11px; padding: 8px 12px; }
+}
+@media (max-width:600px) { .street-stats { grid-template-columns: 1fr; } #missionResult p { font-size: 13px; } #vehicleJob { top: 308px; } #streetCounter { font-size: 9px; } }
+@media (pointer:coarse) and (max-height:480px) { #tutorialHint { bottom: 85px; max-width: calc(100vw - 380px); } #vehicleJob { top: 199px; } }
+
+/* 驾驶、受击与结算反馈。 */
+#hurtDirection { position: fixed; z-index: 12; left: 50%; top: 50%; width: 180px; height: 180px; opacity: 0; pointer-events: none; }
+#hurtDirection i { position: absolute; top: 0; left: 58px; width: 64px; height: 14px; background: #ff6357; border-radius: 50% 50% 0 0; box-shadow: 0 -2px 16px #e94436; }
+#heat.gained-star { animation: starGain .45s ease-out 2; }
+#heat.lost-star { animation: starLoss .55s ease-out 2; }
+#money.cash-pop { transform: scale(1.1); color: #9affcf; }
+#money { transition: transform .15s, color .2s; }
+@keyframes starGain { 50% { transform: scale(1.2); filter: brightness(1.6); } }
+@keyframes starLoss { 50% { opacity: .35; transform: translateY(-3px); } }
+#touchRear { position: fixed; right: max(18px,env(safe-area-inset-right)); bottom: 216px; width: 48px; height: 48px; }
+#touchRear[hidden] { display: none; }
+.check-setting { display: flex; align-items: center; gap: 10px; }
+#settingsPanel .check-setting input { width: 18px; height: 18px; margin: 0; }
+.menu-paused #toast, .menu-paused #crimeLabel { visibility: hidden; }
+@media (pointer: coarse) { .driving #tutorialHint { left: 18px; transform: none; max-width: calc(100vw - 110px); bottom: 216px; } }
+@media (min-width: 600px) and (pointer: coarse) { #touchRear { bottom: 24px; right: 218px; } .driving #tutorialHint { left: 50%; transform: translateX(-50%); bottom: 170px; max-width: calc(100vw - 380px); } }
+
+/* 横屏触控、浮动摇杆与加载状态。 */
+html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
+body, canvas, button { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+#loadingProgress { display: block; width: min(320px, 85vw); height: 8px; margin: 10px 0 20px; accent-color: #ffca45; }
+#loadingStatus { color: #e7f5ff; font-size: 13px; }
+#contextStatus { position: fixed; inset: 35% 12% auto; padding: 24px; z-index: 40; text-align: center; background: #082b49ed; color: #fff; border-radius: 12px; }
+#contextStatus[hidden] { display: none; }
+#fullscreenBtn { position: absolute; right: 18px; bottom: 18px; min-width: 56px; min-height: 56px; color: #fff; border: 1px solid #fff5; border-radius: 10px; background: #082b4999; pointer-events: auto; }
+#fps { white-space: pre-line; line-height: 1.5; max-width: min(420px, 90vw); pointer-events: none; }
+@media (any-pointer: coarse) {
+  .mobile { display: block; }
+  #joyZone { position: absolute; left: env(safe-area-inset-left, 0px); bottom: env(safe-area-inset-bottom, 0px); width: calc(44% - env(safe-area-inset-left, 0px)); height: calc(60% - env(safe-area-inset-bottom, 0px)); pointer-events: auto; touch-action: none; }
+  #joystick { pointer-events: none; opacity: .45; left: max(22px, env(safe-area-inset-left)); bottom: max(18px, env(safe-area-inset-bottom)); }
+  #joystick.active { opacity: 1; }
+  #hud .touch-buttons { display: grid; grid-template-columns: repeat(3, 56px) 80px; grid-template-rows: 56px 80px; gap: 8px; align-items: center; right: max(12px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); }
+  #hud .touch-buttons button { width: 56px; height: 56px; min-width: 56px; min-height: 56px; margin: 0; padding: 0; background: #082b498f; border: 2px solid #e6f6ff88; backdrop-filter: none; font-size: 12px; }
+  #hud .touch-buttons button.held { background: #4c9079c9; }
+  #hud #touchAttack { grid-column: 4; grid-row: 1 / 3; width: 80px; height: 104px; border-color: #ffd76f; background: #b745228f; }
+  #touchJump { grid-column: 3; grid-row: 1; } #touchEnter { grid-column: 3; grid-row: 2; }
+  #touchAim { grid-column: 2; grid-row: 1; } #touchSprint { grid-column: 2; grid-row: 2; }
+  #touchWeapon { grid-column: 1; grid-row: 1; } #touchHolster { grid-column: 1; grid-row: 2; }
+  #hud #touchRear { position: static; grid-column: 1; grid-row: 1; }
+  #touchAccel, #touchBrake, #touchRear { display: none; }
+  .driving #touchAccel, .driving #touchBrake, .driving #touchRear { display: block; }
+  .driving #touchAim, .driving #touchHolster { display: none; }
+  .driving #touchWeapon { grid-column: 1; grid-row: 2; }
+  .driving #touchEnter { grid-column: 2; grid-row: 2; }
+  .driving #touchSprint { grid-column: 2; grid-row: 1; }
+  .driving #hud #touchAttack { grid-column: 4; grid-row: 1; height: 56px; }
+  .driving #hud #touchAccel { grid-column: 4; grid-row: 2; width: 80px; height: 80px; border-radius: 20px; }
+  .driving #hud #touchBrake { grid-column: 3; grid-row: 2; height: 80px; border-radius: 20px; }
+  #hud #pauseBtn, #hud #openCityMap, #hud #fullscreenBtn { display: grid; place-items: center; position: absolute; top: max(6px, env(safe-area-inset-top)); bottom: auto; width: 56px; height: 56px; padding: 0; border-radius: 10px; font-size: 12px; }
+  #hud #pauseBtn { right: max(10px, env(safe-area-inset-right)); }
+  #hud #openCityMap { left: auto; right: max(72px, calc(env(safe-area-inset-right) + 62px)); }
+  #hud #fullscreenBtn { right: max(134px, calc(env(safe-area-inset-right) + 124px)); }
+  .topbar { right: max(202px, calc(env(safe-area-inset-right) + 192px)); top: max(8px, env(safe-area-inset-top)); }
+  #money { font-size: 18px; } #wantedWrap { top: max(34px, calc(env(safe-area-inset-top) + 26px)); right: 202px; }
+  #wantedWrap #heat { font-size: 18px; }
+  .weapon-panel { top: max(68px, calc(env(safe-area-inset-top) + 60px)); right: max(12px, env(safe-area-inset-right)); }
+  #ammo { min-height: 56px; min-width: 56px; }
+  #weaponSlots { top: max(68px, calc(env(safe-area-inset-top) + 60px)); right: 134px; }
+  #weaponSlots .slot { width: 56px; height: 56px; }
+  #missionRibbon { top: max(70px, calc(env(safe-area-inset-top) + 62px)); left: 144px; right: 202px; }
+  #districtToast { top: 116px; left: 144px; right: 202px; }
+  #hud #storyInteract.available { display: block; position: absolute; min-height: 56px; min-width: 56px; width: max-content; max-width: min(210px, calc(100vw - 310px)); right: auto; bottom: max(12px, env(safe-area-inset-bottom)); left: 44%; transform: translateX(-50%); }
+  #toast { bottom: 168px; max-width: 60vw; }
+  #rotateHint { display: none; }
+  .pause-panel button, .story-panel button, #vehicleJob { min-height: 56px; min-width: 56px; }
+  #fps { top: 135px; left: max(12px, env(safe-area-inset-left)); font-size: 10px; }
+}
+@media (any-pointer: coarse) and (orientation: portrait) {
+  #rotateHint { display: block; position: fixed; top: 42%; left: 50%; transform: translate(-50%, -50%); padding: 18px; font-size: 15px; background: #082b49e8; }
+  #missionRibbon { left: 14px; right: 14px; top: 180px; }
+  #districtToast { top: 226px; left: 14px; right: 14px; }
+  .topbar { top: 134px; right: 14px; } #wantedWrap { top: 154px; right: 14px; }
+}
+
+/* 城市天气、车载电台与任务外偶遇。 */
+.city-weather-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:12px 0; border-top:1px solid #ffffff24; }
+.city-weather-controls label { display:flex; align-items:center; gap:8px; color:#cee2ec; }
+.city-weather-controls select { min-height:44px; background:#173747; color:#fff1d6; border:1px solid #ffffff35; border-radius:8px; padding:6px 10px; }
+.city-weather-controls small { width:100%; color:#a7bdcc; }
+#cityRadio { display:none; position:fixed; left: max(22px, env(safe-area-inset-left)); bottom: max(28px, env(safe-area-inset-bottom)); width:min(370px, 34vw); z-index:18; color:#e0f1f2; pointer-events:none; text-shadow:0 1px 3px #00121c; }
+#cityRadio.visible { display:flex; flex-direction:column; gap:6px; }
+#radioStation { align-self:flex-start; pointer-events:auto; border:1px solid #7fdace60; border-radius:8px; background:#0b2936d9; color:#91efd7; min-height:44px; padding:8px 12px; }
+#radioNews { font-size:12px; line-height:1.7; background:#102b38b8; border-radius:6px; padding:0 8px; }
+#cityEvent { display:none; position:fixed; top: max(112px, calc(env(safe-area-inset-top) + 90px)); left:50%; transform:translateX(-50%); z-index:18; max-width:min(490px, 58vw); padding:10px 16px; min-height:44px; border:1px solid #80e5be66; border-radius:8px; background:#112f35d9; color:#9bf5ce; font-size:13px; }
+#cityEvent.visible { display:block; }
+.menu-paused #cityRadio, .menu-paused #cityEvent { display:none; }
+@media (pointer:coarse) {
+  .city-weather-controls button, .city-weather-controls select, #radioStation, #cityEvent { min-height:56px; }
+  #cityRadio { left:50%; transform:translateX(-50%); bottom: max(12px, env(safe-area-inset-bottom)); width: min(290px, 32vw); }
+  #radioStation { font-size:10px; padding:6px; }
+  #radioNews { font-size:10px; max-height:52px; overflow:hidden; }
+  #cityEvent { top:max(84px, calc(env(safe-area-inset-top) + 70px)); font-size:11px; max-width:45vw; }
+}
+
+/* 短屏与窄屏保留完整目标及可滚动的结算操作。 */
+button, input, select { font-family: inherit; }
+#objectiveText { white-space: normal; overflow-wrap: anywhere; line-height: 1.5; }
+#objectiveDistance, #objectiveTimer { flex-shrink: 0; }
+#missionRibbon { align-items: flex-start; }
+#districtToast { top: 98px; }
+#districtToast b { line-height: 1.4; letter-spacing: 1px; }
+#toast { max-height: none; white-space: normal; overflow-wrap: anywhere; }
+#hud:has(#toast.show) #tutorialHint { visibility: hidden; }
+#missionResult { max-height: 80vh; max-height: 80dvh; overflow-y: auto; touch-action: pan-y; }
+#missionResult.visible { pointer-events: auto; }
+.story-panel, .shop-card { max-height: calc(100vh - 40px); max-height: calc(100dvh - 40px); overflow-wrap: anywhere; }
+.story-panel header > div, .shop-card header > div { min-width: 0; }
+.story-panel header button, .shop-card header button { flex-shrink: 0; }
+#crimeLabel { top: 160px; }
+#cityEvent { top: 200px; }
+@media (any-pointer: fine) {
+  #cityRadio { top: 270px; bottom: auto; width: min(220px,26vw); }
+}
+@media (any-pointer: coarse) and (orientation: landscape) {
+  #hud #missionRibbon { top: max(68px, calc(env(safe-area-inset-top) + 60px)); left: 144px; right: 202px; }
+  #districtToast { top: 124px; left: 144px; right: 306px; }
+  #districtToast b { font-size: 14px; } #districtToast small { font-size: 10px; }
+  #crimeLabel { top: 168px; max-width: calc(100vw - 460px); font-size: 10px; }
+  #cityEvent { top: 204px; left: 144px; right: 306px; transform: none; max-width: none; min-height: 44px; padding: 6px 10px; font-size: 11px; }
+  #cityRadio { top: auto; bottom: max(12px, env(safe-area-inset-bottom)); left: 164px; right: auto; transform: none; width: calc(44vw - 176px); gap: 3px; }
+  #radioStation { min-height: 44px; padding: 6px 10px; }
+  #radioNews { font-size: 10px; line-height: 1.4; max-height: none; overflow: visible; }
+  #hud #storyInteract.available { max-width: calc(56vw - 310px); left: 44%; transform: none; white-space: normal; overflow: visible; font-size: 11px; }
+  #toast, #tutorialHint, .driving #tutorialHint { left: 44%; right: 306px; transform: none; width: auto; max-width: none; bottom: 92px; font-size: 11px; }
+  #vehicleJob { top: auto; bottom: 104px; right: 306px; min-height: 44px; }
+  #missionResult { top: 6%; max-height: 88vh; max-height: 88dvh; padding: 14px 20px; }
+}
+@media (any-pointer: coarse) and (max-height: 480px) {
+  #radioStation { min-height: 44px; }
+  #radioNews { line-height: 1.3; }
+  #cityEvent { top: 204px; min-height: 44px; }
+  #districtToast { top: 124px; }
+  #crimeLabel { top: 168px; }
+  #missionResult strong { font-size: 42px; }
+  #missionResult p { font-size: 13px; margin: 6px 0; }
+  #missionResult button { min-height: 44px; margin-top: 8px; }
+}
+@media (any-pointer: coarse) and (orientation: portrait) {
+  #districtToast { top: 246px; }
+  #crimeLabel { top: 300px; }
+  #cityEvent { top: 340px; max-width: calc(100vw - 28px); }
+}
+
+/* 驾驶信息固定分区；电台只在切台与播报时短暂显示。 */
+#hud .telemetry { top: auto; left: auto; right: max(90px, calc(env(safe-area-inset-right) + 80px)); bottom: max(24px, env(safe-area-inset-bottom)); width: 220px; text-align: right; padding: 8px 12px; border-right: 3px solid #ffca45; background: linear-gradient(90deg, transparent, #08263fc9); }
+#hud .telemetry .speed { font-size: 36px; line-height: 1; }
+#hud .telemetry .mode { margin-top: 6px; font-size: 11px; }
+#cityRadio { top: auto; left: 50%; right: auto; bottom: max(130px, calc(env(safe-area-inset-bottom) + 120px)); transform: translateX(-50%); width: min(680px, 58vw); }
+#cityRadio.visible { align-items: center; gap: 4px; }
+#radioStation { display: none; align-self: center; min-height: 38px; padding: 8px 14px; font-size: 12px; }
+#cityRadio.show-station #radioStation { display: block; }
+#radioNews { display: none; box-sizing: border-box; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; line-height: 28px; padding: 0 12px; }
+#cityRadio.show-news #radioNews { display: block; }
+.start-actions { display: flex; flex-direction: column; align-items: stretch; gap: 10px; width: min(280px, 100%); }
+.intro .start-actions button { position: relative; box-sizing: border-box; flex: none; width: 100%; min-height: 54px; margin: 0; padding: 16px 20px; text-align: left; }
+.intro .start #startLabel { float: none; font-size: 15px; letter-spacing: 1px; line-height: 22px; }
+.intro .start .start-arrow { float: right; }
+.intro #loadingProgress { position: absolute; left: 0; bottom: 0; display: block; width: 100%; height: 5px; margin: 0; border: none; accent-color: #178a93; }
+.intro #loadingProgress::-webkit-progress-bar { background: #b8862f55; }
+.intro #loadingProgress::-webkit-progress-value { background: #127e8b; }
+.intro .start.ready #loadingProgress { display: none; }
+.intro .new-game:disabled { opacity: .45; }
+@media (any-pointer: coarse) {
+  .driving #hud .telemetry { display: block; right: 306px; bottom: max(12px, env(safe-area-inset-bottom)); width: 146px; padding: 5px 8px; }
+  #hud .telemetry .speed { font-size: 26px; }
+  #hud .telemetry .mode { font-size: 10px; line-height: 1.2; }
+  #cityRadio { left: 50%; right: auto; top: auto; bottom: 182px; width: min(560px, 60vw); transform: translateX(-50%); }
+  #radioStation { min-height: 44px; font-size: 11px; }
+  #radioNews { font-size: 10px; line-height: 24px; max-height: 24px; overflow: hidden; }
+}
+@media (any-pointer: coarse) and (orientation: portrait) {
+  .driving #hud .telemetry { right: 14px; bottom: 340px; width: 160px; }
+  #cityRadio { width: calc(100vw - 28px); bottom: 410px; }
+}
+
+/* 首次指引与驾驶接单分开占位，短句在横屏触控区保持一行。 */
+#tutorialHint.onboarding { white-space: nowrap; }
+@media (any-pointer: coarse) and (orientation: landscape) {
+  #tutorialHint.onboarding { padding: 8px 6px; }
+  #vehicleJob { left: 164px; right: auto; bottom: max(12px, env(safe-area-inset-bottom)); max-width: calc(44vw - 180px); }
+}
+@media (pointer: fine) {
+  body:has(#tutorialHint.visible) #cityRadio { bottom: 166px; }
+}
+
+/* 短时操作提示优先，保留车内交互条下方的完整点击区域。 */
+body:has(#toast.show) #cityRadio { visibility: hidden; }
+@media (any-pointer: coarse) and (orientation: landscape) {
+  .driving #hud:has(#storyInteract.available) .telemetry { left: 164px; right: 306px; bottom: 76px; width: auto; padding: 3px 8px; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .driving #hud:has(#storyInteract.available) .telemetry .speed { font-size: 22px; }
+  .driving #hud:has(#storyInteract.available) .telemetry .mode { margin: 0; }
+  .driving #hud:has(#storyInteract.available) #tutorialHint,
+  .driving #hud:has(#storyInteract.available) #toast { bottom: 116px; }
 }

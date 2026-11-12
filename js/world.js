@@ -1,6 +1,97 @@
 /* 地形、河流、道路、空间索引与碰撞。 */
 "use strict";
 (function (SN) {
+  // Keep the collision heightfield intact; only the visible index list changes.
+  // Coarse patches retain every edge vertex, so adjacent LODs cannot open cracks.
+  SN.terrainIndexPattern = function terrainIndexPattern(nx, nz, stride) {
+    const row = SN.terrainDivisions + 1, indices = [];
+    for (let z = 0; z < nz; z += stride)
+      for (let x = 0; x < nx; x += stride) {
+        const a = z * row + x;
+        if (stride === 1) { indices.push(a, a + row, a + 1, a + row, a + row + 1, a + 1); continue; }
+        const edge = [], center = a + stride / 2 * (row + 1);
+        for (let n = 0; n < stride; n += x === 0 ? 1 : stride) edge.push(a + n * row);
+        for (let n = 0; n < stride; n += z + stride === nz ? 1 : stride) edge.push(a + stride * row + n);
+        for (let n = 0; n < stride; n += x + stride === nx ? 1 : stride) edge.push(a + (stride - n) * row + stride);
+        for (let n = 0; n < stride; n += z === 0 ? 1 : stride) edge.push(a + stride - n);
+        for (let n = 0; n < edge.length; n++) indices.push(center, edge[n], edge[(n + 1) % edge.length]);
+      }
+    return new Uint32Array(indices);
+  };
+
+  SN.prepareTerrainDraw = function prepareTerrainDraw() {
+    const geo = SN.groundGeo, patterns = new Map();
+    // Reuse the full heightfield vertices, normals, colours and existing index storage.
+    geo.index.setUsage(SN.T.DynamicDrawUsage);
+    geo.setDrawRange(0, 0);
+    SN.terrainDraw = new SN.T.Mesh(geo, SN.terrainMaterial);
+    SN.terrainDraw.frustumCulled = false;
+    SN.terrainDraw.receiveShadow = true;
+    SN.scene.add(SN.terrainDraw);
+    for (const page of SN.terrainPages) {
+      let low = Infinity, high = -Infinity;
+      for (let z = 0; z <= page.nz; z++)
+        for (let x = 0; x <= page.nx; x++) {
+          const y = SN.gp.getY((page.tz + z) * (SN.terrainDivisions + 1) + page.tx + x);
+          low = Math.min(low, y); high = Math.max(high, y);
+        }
+      page.sphere = new SN.T.Sphere(new SN.T.Vector3(page.x, (low + high) / 2, page.z),
+        Math.hypot(page.nx * 5, page.nz * 5, (high - low) / 2));
+      page.drawOffset = -1; page.drawLod = -1;
+      page.patterns = [1, 2, 4].map(stride => {
+        const key = page.nx + "," + page.nz + "," + stride;
+        if (!patterns.has(key)) patterns.set(key, SN.terrainIndexPattern(page.nx, page.nz, stride));
+        return patterns.get(key);
+      });
+    }
+  };
+
+  SN.streamTerrain = function streamTerrain(px, pz, level) {
+    if (!SN.terrainDraw) return;
+    const geo = SN.terrainDraw.geometry, indices = geo.index.array;
+    let count = 0, dirtyStart = Infinity, dirtyEnd = 0;
+    for (const page of SN.terrainPages) {
+      const distance = Math.max(0, Math.hypot(page.x - px, page.z - pz) - Math.hypot(page.nx, page.nz) * 5);
+      if (distance > SN.Q[level].far || !SN.tileFrustum.intersectsSphere(page.sphere)) {
+        page.drawLod = -1;
+        continue;
+      }
+      const lod = distance < [220, 360, 600][level] ? 0 : distance < [600, 850, 1200][level] ? 1 : 2;
+      const pattern = page.patterns[lod], offset = page.tz * (SN.terrainDivisions + 1) + page.tx;
+      // Unchanged page membership, LOD and packed offset need no copies or upload.
+      if (page.drawLod !== lod || page.drawOffset !== count) {
+        dirtyStart = Math.min(dirtyStart, count); dirtyEnd = count + pattern.length;
+        for (let i = 0; i < pattern.length; i++) indices[count + i] = pattern[i] + offset;
+        page.drawLod = lod; page.drawOffset = count;
+      }
+      count += pattern.length;
+    }
+    geo.setDrawRange(0, count);
+    SN.terrainDraw.visible = count > 0;
+    if (dirtyEnd > dirtyStart) SN.markBufferRange(geo.index, dirtyStart, dirtyEnd);
+
+  };
+
+  SN.clipStreetStrip = function clipStreetStrip(p, clipped) {
+    if (p.sy > 0.6 || p.sx > 5 || p.sz < 5) { clipped.push(p); return; }
+    const pieces = Math.ceil(p.sz / 1.6), length = p.sz / pieces;
+    const dx = Math.sin(p.yaw), dz = Math.cos(p.yaw), pitch = p.pitch || 0;
+    let first = -1;
+    for (let i = 0; i <= pieces; i++) {
+      const along = -p.sz / 2 + (i + 0.5) * length;
+      const free = i < pieces && !SN.inDrivingLane(p.x + dx * along, p.z + dz * along, -0.02);
+      if (free && first < 0) first = i;
+      // Sampling keeps junction openings exact. Flat, contiguous samples are one
+      // slab; slopes keep their original short pieces and ground alignment.
+      if (first >= 0 && (!free || Math.abs(pitch) > 0.000001)) {
+        const end = free ? i + 1 : i, middle = -p.sz / 2 + (first + end) * length / 2;
+        clipped.push({ ...p, x: p.x + dx * middle, z: p.z + dz * middle,
+          y: p.y - Math.sin(pitch) * middle, sz: (end - first) * length + 0.012 });
+        first = -1;
+      }
+    }
+  };
+
   SN.riverNorth = function riverNorth(x) {
     return SN.RIVER_N + Math.sin(x * 0.0037) * 13 + Math.sin(x * 0.011 + 1.2) * 6;
   };
@@ -40,7 +131,7 @@
   };
 
   SN.bridgeHeight = function bridgeHeight(x, z) {
-    const b = SN.causewayAt(x, z);
+    const b = SN.bridges.find(b => Math.abs(x - b.x) < b.w * 0.5 && z >= b.z0 && z <= b.z1);
     return b ? SN.bridgeProfile(b, z) : -1;
   };
 
@@ -66,6 +157,9 @@
     // The palace courtyard is an excavated urban terrace, with blended forest edges.
     const palaceDistance = Math.max(Math.abs(x - 10) - 330, Math.abs(z + 962) - 150);
     height *= SN.smoothRange(0, 80, palaceDistance);
+    // Cut a level shopping terrace into the foot of Namsan; buildings stay upright.
+    const shoppingEdge = Math.max(290 - x, x - 550, Math.abs(z + 430) - 42);
+    height *= SN.smoothRange(0, 55, shoppingEdge);
     return height;
   };
 
@@ -96,7 +190,8 @@
       heights = [];
     for (let i = 0; i <= steps; i++) {
       const x = SN.lerp(a[0], b[0], i / steps), z = SN.lerp(a[1], b[1], i / steps);
-      heights.push(bridge ? SN.bridgeHeight(x, z) : SN.hillHeight(x, z));
+      const deck = SN.bridgeHeight(x, z);
+      heights.push(deck >= 0 ? deck : SN.onIsland(x, z) ? 0.8 : SN.hillHeight(x, z));
     }
     if (!bridge && !elevated) {
       for (let pass = 0; pass < 3; pass++)
@@ -105,9 +200,9 @@
       const rise = length / steps * 0.24;
       for (let pass = 0; pass < 4; pass++) {
         for (let i = 1; i <= steps; i++)
-          heights[i] = SN.clamp(heights[i], heights[i - 1] - rise, heights[i - 1] + rise);
+          heights[i] = Math.min(heights[i], heights[i - 1] + rise);
         for (let i = steps - 1; i >= 0; i--)
-          heights[i] = SN.clamp(heights[i], heights[i + 1] - rise, heights[i + 1] + rise);
+          heights[i] = Math.min(heights[i], heights[i + 1] + rise);
       }
     }
     const profile = { a, b, dx, dz, length, steps, heights, ...metrics, bridge, elevated };
@@ -234,65 +329,8 @@
 
   SN.addRoad = function addRoad(name, points, width = 14, pedestrian = false) {
     const metrics = SN.roadMetrics(width, /남산순환/.test(name) ? "골목" : name, pedestrian);
-    width = metrics.width;
-    const sidewalkW = metrics.sidewalkW, road = { name, points, ...metrics, pedestrian };
+    const road = { name, points, ...metrics, pedestrian, bridge: false };
     SN.roads.push(road);
-    for (let i = 1; i < points.length; i++)
-      SN.registerRoadProfile(points[i - 1], points[i], metrics, false, /江边北路|奥林匹克|匝道/.test(name));
-    for (let k = 0; k < points.length - 1; k++) {
-      const a = points[k],
-        b = points[k + 1],
-        dx = b[0] - a[0],
-        dz = b[1] - a[1],
-        len = Math.hypot(dx, dz),
-        nx = dz / len,
-        nz = -dx / len,
-        yaw = Math.atan2(dx, dz);
-      SN.terrainStrip(SN.roadBatch, a[0], a[1], b[0], b[1], width, 0.09, 0.16);
-      for (const side of [-1, 1]) {
-        const off = (width / 2 + 0.3 + sidewalkW / 2) * side;
-        SN.terrainStrip(SN.sideBatch, a[0] + nx * off, a[1] + nz * off, b[0] + nx * off, b[1] + nz * off, sidewalkW, 0.19, 0.32);
-        SN.terrainStrip(SN.curbBatch, a[0] + nx * (width / 2 + 0.15) * side, a[1] + nz * (width / 2 + 0.15) * side, b[0] + nx * (width / 2 + 0.15) * side, b[1] + nz * (width / 2 + 0.15) * side, 0.3, 0.27, 0.16);
-      }
-      if (!pedestrian && road.lanes >= 2) {
-        const lanes = road.lanes, laneWidth = 3.2;
-        for (let lane = 1; lane < lanes; lane++) {
-          const centre = lane === lanes / 2,
-            off = (lane - lanes / 2) * laneWidth + (centre ? 0 : Math.sign(lane - lanes / 2) * road.median / 2);
-          if (centre && road.median)
-            continue;
-          for (let t = 4; t < len - 4; t += centre ? 10 : 12) {
-            const x = a[0] + dx * t / len + nx * off, z = a[1] + dz * t / len + nz * off;
-            for (const double of (centre ? [-0.13, 0.13] : [0])) {
-              SN.record(SN.markBatch, x + nx * double, SN.roadHeight(x, z) + 0.19, z + nz * double, centre ? 0.1 : 0.12, 0.018, centre ? 9.9 : 4, yaw, centre ? 0xcda451 : 0xffffff);
-              SN.markBatch[SN.markBatch.length - 1].pitch = -Math.atan2(SN.roadHeight(x + dx / len * 2, z + dz / len * 2) - SN.roadHeight(x - dx / len * 2, z - dz / len * 2), 4);
-            }
-          }
-        }
-      }
-      if (road.median)
-        for (let t = 10; t < len - 10; t += 6) {
-          const x = a[0] + dx * t / len, z = a[1] + dz * t / len;
-          SN.record(SN.medianBatch, x, SN.roadHeight(x, z) + 0.28, z, road.median, 0.38, 5.8, yaw);
-          SN.medianSolids.push({ x, z, yaw, w: road.median, d: 5.8 });
-        }
-      for (let t = 7; t < len - 7; t += 12)
-        for (const side of [-1, 1]) {
-          const off = (width / 2 + sidewalkW + 0.4) * side,
-            x = a[0] + nx * off + dx * t / len,
-            z = a[1] + nz * off + dz * t / len,
-            top = SN.roadHeight(x, z),
-            bottom = SN.hillHeight(x, z);
-          if (Math.abs(top - bottom) > 0.7)
-            SN.record(SN.retainingBatch, x, (top + bottom) / 2 - 0.1, z, 0.38, Math.abs(top - bottom) + 0.4, 12.2, yaw);
-        }
-      if (width >= 7)
-        for (let t = 27; t < len - 14; t += 66) {
-          const x = a[0] + dx * t / len, z = a[1] + dz * t / len;
-          for (const side of [-1, 1])
-            SN.addLamp(x + nx * (width / 2 + 0.3 + Math.min(1.1, sidewalkW * 0.45)) * side, z + nz * (width / 2 + 0.3 + Math.min(1.1, sidewalkW * 0.45)) * side, yaw);
-        }
-    }
     return road;
   };
 
@@ -312,8 +350,8 @@
       SN.propOBBs.push([x, z, w, d, h, yaw]);
   };
 
-  SN.addLamp = function addLamp(x, z, yaw = 0) {
-    const y = SN.roadHeight(x, z) + 0.35;
+  SN.addLamp = function addLamp(x, z, yaw = 0, base = null) {
+    const y = (base === null ? SN.roadHeight(x, z) : base) + 0.35;
     SN.record(SN.lampBatch, x, y + 4.6, z, 0.2, 9.2, 0.2);
     SN.record(SN.lampBatch, x, y + 9, z, 3.2, 0.15, 0.18, yaw);
     SN.record(SN.lampHeadBatch, x, y + 8.9, z, 3.1, 0.13, 0.65, yaw);
@@ -328,62 +366,7 @@
     deckW = metrics.width;
     const b = { name, x, z0, z1, w: deckW + 8.6 };
     SN.bridges.push(b);
-    SN.roads.push({ name, points: [[x, z0], [x, z1]], ...metrics, bridge: true });
-    SN.registerRoadProfile([x, z0], [x, z1], metrics, true);
-    const half = deckW * 0.5;
-    for (let z = z0; z < z1; z += 10) {
-      const yc = (SN.bridgeProfile(b, z) + SN.bridgeProfile(b, z + 10)) * 0.5;
-      SN.record(SN.sideBatch, x, yc - 0.16, z + 5, deckW + 8, 0.3, 10.3);
-      SN.sideBatch[SN.sideBatch.length - 1].fixedHeight = true;
-      SN.sideBatch[SN.sideBatch.length - 1].pitch = -Math.atan2(SN.bridgeProfile(b, z + 10) - SN.bridgeProfile(b, z), 10);
-      SN.record(SN.roadBatch, x, yc + 0.09, z + 5, deckW, 0.16, 10.3);
-      SN.roadBatch[SN.roadBatch.length - 1].pitch = -Math.atan2(SN.bridgeProfile(b, z + 10) - SN.bridgeProfile(b, z), 10);
-      for (const s of [-1, 1]) {
-        SN.record(SN.sideBatch, x + s * (half + 2.1), yc + 0.13, z + 5, 4, 0.22, 10.3);
-        SN.sideBatch[SN.sideBatch.length - 1].pitch = SN.roadBatch[SN.roadBatch.length - 1].pitch;
-        SN.record(SN.curbBatch, x + s * (half + 0.15), yc + 0.19, z + 5, 0.3, 0.16, 10.3);
-        SN.curbBatch[SN.curbBatch.length - 1].pitch = SN.roadBatch[SN.roadBatch.length - 1].pitch;
-        SN.record(SN.railBatch, x + s * (half - 0.45), yc + 0.58, z + 5, 0.32, 0.7, 10.1);
-        SN.railBatch[SN.railBatch.length - 1].pitch = SN.roadBatch[SN.roadBatch.length - 1].pitch;
-        for (const level of [0.55, 1.22]) {
-          SN.record(SN.bridgeGirders, x + s * (half + 4.05), yc + level, z + 5, 0.075, 0.075, 10.1);
-          SN.bridgeGirders[SN.bridgeGirders.length - 1].pitch = SN.roadBatch[SN.roadBatch.length - 1].pitch;
-        }
-        for (const off of [-0.6, 0.6]) {
-          SN.record(SN.bridgeGirders, x + s * half * 0.48 + off, yc - 1.2, z + 5, 0.12, 1.8, 10.15);
-          SN.bridgeGirders[SN.bridgeGirders.length - 1].pitch = SN.roadBatch[SN.roadBatch.length - 1].pitch;
-        }
-        SN.record(SN.bridgeGirders, x + s * half * 0.48, yc - 2.05, z + 5, 1.5, 0.16, 10.15);
-        SN.bridgeGirders[SN.bridgeGirders.length - 1].pitch = SN.roadBatch[SN.roadBatch.length - 1].pitch;
-      }
-      for (const side of [-1, 1])
-        for (let lane = 1; lane < metrics.lanes / 2; lane++) {
-          const off = side * (metrics.median / 2 + lane * 3.2);
-          SN.record(SN.markBatch, x + off, yc + 0.185, z + 5, 0.12, 0.02, 4);
-          SN.markBatch[SN.markBatch.length - 1].pitch = SN.roadBatch[SN.roadBatch.length - 1].pitch;
-        }
-      SN.record(SN.medianBatch, x, yc + 0.3, z + 5, metrics.median, 0.4, 10.1);
-      SN.medianBatch[SN.medianBatch.length - 1].pitch = SN.roadBatch[SN.roadBatch.length - 1].pitch;
-      SN.medianSolids.push({ x, z: z + 5, w: metrics.median, d: 10, yaw: 0 });
-      if (Math.round((z - z0) / 10) % 6 === 0)
-        for (const s of [-1, 1]) {
-          const lx = x + s * (half + 2.6);
-          SN.record(SN.lampBatch, lx, yc + 4.4, z + 5, 0.18, 8.8, 0.18);
-          SN.record(SN.lampHeadBatch, lx, yc + 8.6, z + 5, 2.6, 0.12, 0.55);
-          SN.lampPoints.push({ x: lx, z: z + 5, y: yc + 8.3 });
-          SN.addProp(lx, z + 5, 0.45, 0.45, 8.8);
-        }
-    }
-    for (let z = z0 + 75; z < z1 - 60; z += 46) {
-      const top = SN.bridgeProfile(b, z) - 2.1;
-      for (const side of [-1, 1])
-        SN.record(SN.sideBatch, x + side * half * 0.55, (top - 2.5) / 2, z, 2.2, top + 2.5, 3.6);
-      SN.record(SN.sideBatch, x, top - 0.3, z, deckW * 0.77, 0.8, 3.9);
-    }
-    for (let z = z0 + 80; z < z1 - 80; z += 30)
-      if (!SN.onIsland(x, z))
-        for (const s of [-1, 1])
-          SN.addPropOBB(x + s * (half - 0.45), z + 15, 0.5, 30.4, 1.5, 0);
+    SN.roads.push({ name, points: [[x, z0], [x, z1]], ...metrics, bridge: true, bridgeDef: b });
     return b;
   };
 
@@ -420,7 +403,7 @@
       }
   };
 
-  SN.surfaceHeight = function surfaceHeight(x, z) {
+  SN.surfaceHeight = function surfaceHeight(x, z, floorHint = null) {
     if (!Number.isFinite(x) || !Number.isFinite(z))
       return 0;
     let precise = -Infinity;
@@ -429,10 +412,10 @@
         precise = Math.max(precise, p.height(x, z));
     if (Number.isFinite(precise))
       return precise;
-    const sample = SN.roadSample(x, z);
+    const sample = SN.roadSample(x, z, 0, floorHint);
     if (sample) {
       const road = sample.profile, carriageway = sample.distance < road.width / 2;
-      return SN.roadHeight(x, z) + (carriageway ? 0.17 : 0.35) + (carriageway ? Math.max(0, 1 - Math.abs(sample.across) / (road.width / 2)) * 0.025 : 0);
+      return sample.height + (carriageway ? 0.17 : 0.35) + (carriageway ? Math.max(0, 1 - Math.abs(sample.across) / (road.width / 2)) * 0.025 : 0);
     }
     const gx = SN.clamp((x - SN.SURFACE_ORIGIN) / SN.SURFACE_CELL, 0, SN.SURFACE_SIZE - 1.00001),
       gz = SN.clamp((z - SN.SURFACE_ORIGIN) / SN.SURFACE_CELL, 0, SN.SURFACE_SIZE - 1.00001),
@@ -452,9 +435,9 @@
   // Highest surface inside the foot disc: keeps a planted sole from sinking when
   // the character straddles a kerb or a stair edge.
 
-  SN.groundUnder = function groundUnder(x, z, r = 0.2) {
-    let h = SN.surfaceHeight(x, z);
-    h = Math.max(h, SN.surfaceHeight(x + r, z), SN.surfaceHeight(x - r, z), SN.surfaceHeight(x, z + r), SN.surfaceHeight(x, z - r));
+  SN.groundUnder = function groundUnder(x, z, r = 0.2, floorHint = null) {
+    let h = SN.surfaceHeight(x, z, floorHint);
+    h = Math.max(h, SN.surfaceHeight(x + r, z, floorHint), SN.surfaceHeight(x - r, z, floorHint), SN.surfaceHeight(x, z + r, floorHint), SN.surfaceHeight(x, z - r, floorHint));
     return h;
   };
 
@@ -506,8 +489,8 @@
   };
 
   SN.inDrivingLane = function inDrivingLane(x, z, pad = 0) {
-    for (const r of SN.roadProfileCells.get(Math.floor(x / 100) + "," + Math.floor(z / 100)) || [])
-      if (SN.segmentDistance(x, z, ...r.a, ...r.b) < r.width / 2 + pad)
+    for (const profile of SN.roadProfileCells.get(Math.floor(x / 100) + "," + Math.floor(z / 100)) || [])
+      if (SN.closestRoadPoint(profile.road, x, z).distance < profile.width / 2 + pad)
         return true;
     return false;
   };
@@ -593,7 +576,7 @@
   };
   // Resolve penetration and slide: position is pushed out along the contact normal.
 
-  SN.resolveCircle = function resolveCircle(x, z, r) {
+  SN.resolveCircle = function resolveCircle(x, z, r, feetY = -Infinity) {
     let nx = 0, nz = 0, hit = false;
     for (let iter = 0; iter < 2; iter++) {
       let moved = false,
@@ -604,7 +587,7 @@
           const cell = SN.bins[(iz + dz) * SN.BIN_COUNT + ix + dx];
           for (let i = 0; i < cell.length; i++) {
             const b = cell[i];
-            if (SN.aabbPush(x, z, r, b)) {
+            if ((feetY === -Infinity || b.height > feetY + 0.28 && b.minY < feetY + 1.75) && SN.aabbPush(x, z, r, b)) {
               x += SN.circlePush.nx * (SN.circlePush.depth + 0.002);
               z += SN.circlePush.nz * (SN.circlePush.depth + 0.002);
               nx += SN.circlePush.nx;
@@ -616,7 +599,7 @@
           const oc = SN.obbBins[(iz + dz) * SN.BIN_COUNT + ix + dx];
           for (let i = 0; i < oc.length; i++) {
             const b = oc[i];
-            if (SN.obbPush(x, z, r, b)) {
+            if ((feetY === -Infinity || b.height > feetY + 0.28 && b.minY < feetY + 1.75) && SN.obbPush(x, z, r, b)) {
               x += SN.circlePush.nx * (SN.circlePush.depth + 0.002);
               z += SN.circlePush.nz * (SN.circlePush.depth + 0.002);
               nx += SN.circlePush.nx;
@@ -642,7 +625,9 @@
     return SN.orientedPush(x, z, r, c.x, c.z, c.spec.width / 2 + pad, c.spec.length / 2 + pad, Math.cos(c.yaw), Math.sin(c.yaw));
   };
 
-  SN.blocked = function blocked(x, z, r) {
+  SN.blocked = function blocked(x, z, r, feetY = -Infinity) {
+    if (!Number.isFinite(x) || !Number.isFinite(z))
+      return true;
     if (Math.abs(x) > SN.WORLD - r || Math.abs(z) > SN.WORLD - r)
       return true;
     if (SN.isWater(x, z, r) || SN.isWater(x + r, z, r) || SN.isWater(x - r, z, r) || SN.isWater(x, z + r, r) || SN.isWater(x, z - r, r))
@@ -654,122 +639,158 @@
         const cell = SN.bins[(iz + dz) * SN.BIN_COUNT + ix + dx];
         for (let i = 0; i < cell.length; i++) {
           const b = cell[i];
-          if (x + r > b.minX && x - r < b.maxX && z + r > b.minZ && z - r < b.maxZ)
+          if ((feetY === -Infinity || b.height > feetY + 0.28 && b.minY < feetY + 1.75) && x + r > b.minX && x - r < b.maxX && z + r > b.minZ && z - r < b.maxZ)
             return true;
         }
         const oc = SN.obbBins[(iz + dz) * SN.BIN_COUNT + ix + dx];
         for (let i = 0; i < oc.length; i++) {
           const b = oc[i];
-          if (SN.obbPush(x, z, r, b))
+          if ((feetY === -Infinity || b.height > feetY + 0.28 && b.minY < feetY + 1.75) && SN.obbPush(x, z, r, b))
             return true;
         }
       }
     return false;
   };
 
-  SN.safePosition = function safePosition(x, z, r = 0.3, car = null) {
+  SN.safePosition = function safePosition(x, z, r = 0.3, car = null, id = "spawn") {
+    const original = { x, z };
     const valid = (px, pz) => SN.terrainSlope(px, pz) < 0.48 && (car ? !SN.carBlocked(px, pz, car.yaw, car) && !SN.carWater(px, pz, car.yaw, car) : !SN.blocked(px, pz, r));
+    const corrected = (px, pz) => {
+      SN.reportContentProblem(id, original.x, original.z, "位置不可通行", "移至可通行位置", { to: { x: px, z: pz } });
+      return { x: px, z: pz };
+    };
     if (Number.isFinite(x) && Number.isFinite(z) && valid(x, z))
       return { x, z };
     if (!Number.isFinite(x) || !Number.isFinite(z)) {
       x = -40;
       z = -770;
+      if (valid(x, z))
+        return corrected(x, z);
     }
     for (let radius = 2; radius <= 320; radius += 2) {
       const steps = Math.max(12, Math.ceil(radius * SN.TAU / 3));
       for (let i = 0; i < steps; i++) {
         const angle = i * SN.TAU / steps, px = x + Math.sin(angle) * radius, pz = z + Math.cos(angle) * radius;
         if (valid(px, pz))
-          return { x: px, z: pz };
+          return corrected(px, pz);
       }
     }
-    throw new Error("无法找到可通行的出生位置");
+    // Search the existing road graph before trying sparse, bounded world positions.
+    for (const p of [{ x: -40, z: -770 }, ...(SN.roadNodes || [])])
+      if (valid(p.x, p.z))
+        return corrected(p.x, p.z);
+    for (let pz = -SN.WORLD + 40; pz < SN.WORLD; pz += 80)
+      for (let px = -SN.WORLD + 40; px < SN.WORLD; px += 80)
+        if (valid(px, pz))
+          return corrected(px, pz);
+    SN.reportContentProblem(id, original.x, original.z, "未找到可通行位置", "保留有限坐标，等待后续恢复");
+    return { x: SN.clamp(x, -SN.WORLD + 10, SN.WORLD - 10), z: SN.clamp(z, -SN.WORLD + 10, SN.WORLD - 10), unsafe: true };
   };
 
   SN.validateSpawns = function validateSpawns() {
-    for (const c of SN.cars) {
-      const p = SN.safePosition(c.x, c.z, 1.2, c);
+    for (const c of SN.cars) SN.validateContent("car-" + c.serial, c, () => {
+      if (!Number.isFinite(c.yaw)) {
+        SN.reportContentProblem("car-" + c.serial, c.x, c.z, "车辆朝向无效", "重置朝向");
+        c.yaw = 0;
+      }
+      const p = SN.safePosition(c.x, c.z, 1.2, c, "car-" + c.serial);
       c.x = p.x;
       c.z = p.z;
+      if (p.unsafe) {
+        c.active = false;
+        c.root.visible = false;
+      }
       SN.resetVehicleGround(c);
       c.root.position.set(c.x, c.y, c.z);
       if (c.occupant) {
         c.occupant.x = c.x;
         c.occupant.z = c.z;
       }
-    }
+    });
     for (const a of SN.actors) {
-      if (a.inCar || a.shopId)
+      if (!a || a.inCar || a.shopId)
         continue;
-      const p = SN.safePosition(a.x, a.z);
-      a.x = a.homeX = p.x;
-      a.z = a.homeZ = p.z;
+      SN.validateContent("actor-" + a.index, a, () => {
+        const p = SN.safePosition(a.x, a.z, 0.3, null, "actor-" + a.index);
+        a.x = a.homeX = p.x;
+        a.z = a.homeZ = p.z;
+        if (p.unsafe)
+          a.active = false;
+      });
     }
-    for (const p of SN.pickups) {
-      const safe = SN.safePosition(p.x, p.z, 0.55);
+    for (const p of SN.pickups) SN.validateContent("pickup-" + SN.pickups.indexOf(p), p, () => {
+      const safe = SN.safePosition(p.x, p.z, 0.55, null, "pickup-" + SN.pickups.indexOf(p));
       p.x = safe.x;
       p.z = safe.z;
       p.root.position.set(p.x, SN.surfaceHeight(p.x, p.z) + 0.06, p.z);
-    }
+    });
     for (const h of SN.hospitals)
-      Object.assign(h, SN.safePosition(h.x, h.z, 0.35));
-    const p = SN.safePosition(SN.player.x, SN.player.z);
-    SN.player.x = p.x;
-    SN.player.z = p.z;
-    SN.player.y = SN.surfaceHeight(p.x, p.z);
-    SN.player.fallPeak = SN.player.y;
-    SN.playerRoot.position.set(SN.player.x, SN.player.y, SN.player.z);
-    SN.validateCampaignLocations();
+      SN.validateContent("hospital-" + SN.hospitals.indexOf(h), h, () => Object.assign(h, SN.safePosition(h.x, h.z, 0.35, null, "hospital-" + SN.hospitals.indexOf(h))));
+    SN.validateContent("player", SN.player, () => {
+      const p = SN.safePosition(SN.player.x, SN.player.z, 0.3, null, "player");
+      SN.player.x = p.x;
+      SN.player.z = p.z;
+      SN.player.y = SN.surfaceHeight(p.x, p.z);
+      SN.player.fallPeak = SN.player.y;
+      SN.playerRoot.position.set(SN.player.x, SN.player.y, SN.player.z);
+    });
+    SN.validateContent("campaign", SN.player, SN.validateCampaignLocations);
   };
 
   SN.validateCity = function validateCity() {
+    const check = (id, p, valid, message) => SN.validateContent(id, p, () => {
+      if (!valid())
+        SN.reportContentProblem(id, p.x, p.z, message);
+    });
     for (const d of SN.cityDistricts) {
-      const p = SN.safePosition(d.travel[0], d.travel[1], 1.3);
-      d.travel = [p.x, p.z];
-      if (SN.blocked(p.x, p.z, 0.5))
-        throw new Error("城区接驳点不可通行：" + d.id);
+      SN.validateContent("travel-" + d.id, { x: d.x, z: d.z }, () => {
+        const p = SN.safePosition(d.travel[0], d.travel[1], 1.3, null, "travel-" + d.id);
+        d.travel = [p.x, p.z];
+        check("travel-" + d.id, p, () => !SN.blocked(p.x, p.z, 0.5), "城区接驳点不可通行");
+      });
     }
     for (const h of SN.hospitals)
-      if (SN.blocked(h.x, h.z, 0.3))
-        throw new Error("医疗转运点不可通行");
+      check("hospital-" + SN.hospitals.indexOf(h), h, () => !SN.blocked(h.x, h.z, 0.3), "医疗转运点不可通行");
     for (const contact of SN.contacts)
-      if (SN.blocked(contact.x, contact.z, 0.3))
-        throw new Error("联系人不可到达：" + contact.id);
+      check("contact-" + contact.id, contact, () => !SN.blocked(contact.x, contact.z, 0.3), "联系人不可到达");
     for (const b of SN.placedBuildings) {
-      const ground = SN.footprintTerrain(b.x, b.z, b.w, b.d, b.yaw);
-      if (!ground.buildable || b.foundationBase > ground.low + 0.02 || b.base < ground.high)
-        throw new Error("建筑地基未贴合地形");
+      check("building-" + b.seed, b, () => {
+        const ground = SN.footprintTerrain(b.x, b.z, b.w, b.d, b.yaw);
+        return ground.buildable && b.foundationBase <= ground.low + 0.02 && b.base >= ground.high;
+      }, "建筑地基未贴合地形");
     }
     for (const site of SN.authoredBuildingSites)
-      if (!site.ground.buildable || site.floor < site.ground.high)
-        throw new Error("地标地基未贴合地形");
+      check(site.id, site, () => {
+        const ground = SN.footprintTerrain(site.x, site.z, site.w, site.d);
+        return ground.buildable && site.floor >= ground.high && Number.isFinite(site.floor);
+      }, "地标地基未贴合地形");
     for (const spec of SN.enterableSpecs.concat(SN.shopSpecs, SN.smallShopSpecs))
-      if (!SN.authoredTerrain(spec).buildable)
-        throw new Error("商店地基位于陡坡");
+      check(spec.id, spec, () => SN.authoredTerrain(spec).buildable, "商店地基位于陡坡");
     for (const c of SN.cars)
-      if (SN.carBlocked(c.x, c.z, c.yaw, c) || SN.carWater(c.x, c.z, c.yaw, c))
-        throw new Error("车辆出生点不可通行");
+      check("car-" + c.serial, c, () => Number.isFinite(c.x) && Number.isFinite(c.z) && !SN.carBlocked(c.x, c.z, c.yaw, c) && !SN.carWater(c.x, c.z, c.yaw, c), "车辆出生点不可通行");
     for (const a of SN.actors)
-      if (!a.inCar && !a.shopId && SN.blocked(a.x, a.z, 0.3))
-        throw new Error("角色出生点不可通行");
-    if (SN.blocked(SN.player.x, SN.player.z, 0.3))
-      throw new Error("玩家出生点不可通行");
-    if (SN.bridges.length !== 9)
-      throw new Error("跨江路网缺失");
-    const root = SN.nearestRoadNode(-40, -770), seen = new Set([root]), queue = [root];
+      if (a && !a.inCar && !a.shopId)
+        check("actor-" + a.index, a, () => !SN.blocked(a.x, a.z, 0.3), "角色出生点不可通行");
+    check("player", SN.player, () => !SN.blocked(SN.player.x, SN.player.z, 0.3), "玩家出生点不可通行");
+    check("bridges", { x: 0, z: (SN.RIVER_N + SN.RIVER_S) / 2 }, () => SN.bridges.length === 9, "跨江路网缺失");
+    const root = SN.nearestRoadNode(-40, -770), seen = new Set(), queue = [];
+    if (SN.roadNodes[root]) {
+      seen.add(root);
+      queue.push(root);
+    }
     for (let i = 0; i < queue.length; i++)
       for (const link of SN.roadNodes[queue[i]].links)
-        if (!seen.has(link.index)) {
+        if (SN.roadNodes[link.index] && !seen.has(link.index)) {
           seen.add(link.index);
           queue.push(link.index);
         }
     for (const d of SN.cityDistricts)
-      if (!seen.has(SN.nearestRoadNode(...d.travel)))
-        throw new Error("城区道路未连通：" + d.id);
+      check("road-" + d.id, { x: d.travel[0], z: d.travel[1] }, () => seen.has(SN.nearestRoadNode(...d.travel)), "城区道路未连通");
+    return SN.validationProblems;
   };
   // Startup phase 4: keep this order relative to the other systems.
 
-  SN.registerInit(4, function initializeWorld4() {
+  SN.registerInit(4, function* initializeWorld4() {
     // Seoul layout: the Han River runs west-east across the south, Namsan sits in the centre.
     SN.RIVER_N = 60;
     SN.RIVER_S = 860;
@@ -956,7 +977,10 @@
       policeX: d.travel[0] + 90,
       policeZ: d.travel[1] - 48
     }));
+    // This level plot clears both the eastern foothill and the Dongho bridge approach.
+    SN.ddpSite = { id: "ddp", x: 1330, z: -710, w: 200, d: 132 };
     SN.landmarkReserves = [
+      { x: SN.ddpSite.x, z: SN.ddpSite.z, r: 122 },
       { x: -2840, z: -1900, r: 970 },
       { x: 500, z: -1360, r: 270 },
       { x: -1230, z: -610, r: 155 },
@@ -997,17 +1021,6 @@
       for (const z of [-105, 970]) {
         SN.elevatedSegments.push({ a: [x, z - 85], b: [x, z], w: 34, y0: 0.2, y1: 8 }, { a: [x, z], b: [x, z + 85], w: 34, y0: 8, y1: 0.2 });
       }
-    for (const [batch, lift] of [[SN.roadBatch, 0.09], [SN.sideBatch, 0.13], [SN.curbBatch, 0.19], [SN.markBatch, 0.195]])
-      for (const p of batch) {
-        if (p.fixedHeight || p.sy > 0.6)
-          continue;
-        const h = SN.roadHeight(p.x, p.z);
-        if (Number.isFinite(h)) {
-          p.y = h + lift;
-          const dx = Math.sin(p.yaw) * p.sz / 2, dz = Math.cos(p.yaw) * p.sz / 2;
-          p.pitch = -Math.atan2(SN.roadHeight(p.x + dx, p.z + dz) - SN.roadHeight(p.x - dx, p.z - dz), p.sz);
-        }
-      }
     for (let x = -3520; x < 3520; x += 160)
       SN.paths.push({ a: [x, SN.riverSouth(x) + 12], b: [x + 160, SN.riverSouth(x + 160) + 12], w: 8, name: "한강공원 남측 산책로" });
     SN.terrainDivisions = 740;
@@ -1017,10 +1030,12 @@
     SN.gc = new Float32Array(SN.gp.count * 3);
     SN.terrainColor = new SN.T.Color();
     for (let i = 0; i < SN.gp.count; i++) {
+      if (i % 4096 === 0) yield "地形";
       const x = SN.gp.getX(i), z = SN.gp.getZ(i);
       SN.gp.setY(i, (SN.pointInRiver(x, z) || SN.inLake(x, z)) ? -2.2 : SN.hillHeight(x, z) - 0.12);
     }
     for (let i = 0; i < SN.gp.count; i++) {
+      if (i % 4096 === 0) yield "地形";
       const x = SN.gp.getX(i),
         z = SN.gp.getZ(i),
         h = SN.gp.getY(i),
@@ -1028,7 +1043,7 @@
         spacing = SN.EXTENT * 2 / SN.terrainDivisions;
       const slope = Math.hypot(SN.gp.getY(Math.min(SN.gp.count - 1, i + 1)) - SN.gp.getY(Math.max(0, i - 1)), SN.gp.getY(Math.min(SN.gp.count - 1, i + row)) - SN.gp.getY(Math.max(0, i - row))) / (spacing * 2),
         grain = SN.terrainNoise(x / 45, z / 45);
-      SN.terrainColor.setHex(slope > 0.64 ? 0x8b9083 : slope > 0.4 ? 0x6b765d : h > 24 ? 0x3e6749 : 0x718b56).convertSRGBToLinear();
+      SN.terrainColor.setHex(slope > 0.64 ? 0x8b9083 : slope > 0.4 ? 0x54734d : h > 24 ? 0x267443 : 0x58a146).convertSRGBToLinear();
       SN.terrainColor.multiplyScalar(0.9 + grain * 0.2);
       SN.gc[i * 3] = SN.terrainColor.r;
       SN.gc[i * 3 + 1] = SN.terrainColor.g;
@@ -1037,35 +1052,13 @@
     SN.groundGeo.setAttribute("color", new SN.T.BufferAttribute(SN.gc, 3));
     SN.groundGeo.computeVertexNormals();
     SN.terrainPages = [];
-    SN.terrainMaterial = SN.mat(0xffffff, { vertexColors: true, flatShading: false });
+    SN.terrainMaterial = SN.pbrMat("grass", 0xc4d5ae, { vertexColors: true, flatShading: false, uvScale: 0.22, normalStrength: 0.3, roughness: 1 });
     for (let tz = 0; tz < SN.terrainDivisions; tz += 40)
       for (let tx = 0; tx < SN.terrainDivisions; tx += 40) {
-        const nx = Math.min(40, SN.terrainDivisions - tx),
-          nz = Math.min(40, SN.terrainDivisions - tz),
-          positions = [],
-          colors = [],
-          indices = [];
-        for (let z = 0; z <= nz; z++)
-          for (let x = 0; x <= nx; x++) {
-            const i = (tz + z) * (SN.terrainDivisions + 1) + tx + x;
-            positions.push(SN.gp.getX(i), SN.gp.getY(i), SN.gp.getZ(i));
-            colors.push(SN.gc[i * 3], SN.gc[i * 3 + 1], SN.gc[i * 3 + 2]);
-          }
-        for (let z = 0; z < nz; z++)
-          for (let x = 0; x < nx; x++) {
-            const a = z * (nx + 1) + x, b = a + nx + 1;
-            indices.push(a, b, a + 1, b, b + 1, a + 1);
-          }
-        const geo = new SN.T.BufferGeometry();
-        geo.setAttribute("position", new SN.T.Float32BufferAttribute(positions, 3));
-        geo.setAttribute("color", new SN.T.Float32BufferAttribute(colors, 3));
-        geo.setIndex(indices);
-        geo.computeVertexNormals();
-        geo.computeBoundingSphere();
-        const mesh = SN.meshAt(geo, SN.terrainMaterial, 0, 0, 0);
-        mesh.castShadow = false;
+        yield "地形分块";
+        const nx = Math.min(40, SN.terrainDivisions - tx), nz = Math.min(40, SN.terrainDivisions - tz);
         SN.terrainPages.push({
-          mesh,
+          mesh: null,
           tx,
           tz,
           nx,
@@ -1126,9 +1119,9 @@
     SN.propSolids = [];
     SN.propOBBs = [];
     SN.collidersReady = false;
-    SN.addBridge("한강대교", -130, -70, 930, 30);
+    SN.addBridge("반포대교", -130, -70, 930, 30);
     SN.addBridge("양화대교", -780, -70, 930, 30);
-    SN.addBridge("성수대교", 560, -70, 930, 28);
+    SN.addBridge("한남대교", 560, -70, 930, 28);
     // Downtown grid: Sejong-daero sweeps around the west flank of Namsan to the main bridge.
     SN.addRoad("세종대로", [
       [0, -840],
@@ -1172,7 +1165,7 @@
     SN.addRoad("양화로 남단", [[-780, 930], [-780, 1245]], 28);
     SN.addRoad("여의대로", [[-1040, 450], [-520, 450]], 26);
     // Nine crossings, with approach roads connecting the two banks and western island.
-    for (const [name, x] of [["가양대교", -2700], ["성산대교", -2100], ["서강대교", -1450], ["동호대교", 1150], ["청담대교", 1900], ["잠실대교", 2750]])
+    for (const [name, x] of [["가양대교", -2700], ["성산대교", -2100], ["서강대교", -1450], ["동호대교", 1150], ["성수대교", 1900], ["잠실대교", 2750]])
       SN.addBridge(name, x, -70, 930, 28);
     for (const x of [-2700, -2100, -1450, -780, -130, 560, 1150, 1900, 2750]) {
       SN.addRoad("北岸桥头", [[x, -800], [x, -70]], 20);
@@ -1240,36 +1233,17 @@
       for (const z of [-105, 970]) {
         SN.elevatedSegments.push({ a: [x, z - 85], b: [x, z], w: 34, y0: 0.2, y1: 8 }, { a: [x, z], b: [x, z + 85], w: 34, y0: 8, y1: 0.2 });
       }
-    for (const [batch, lift] of [[SN.roadBatch, 0.09], [SN.sideBatch, 0.13], [SN.curbBatch, 0.19], [SN.markBatch, 0.195]])
-      for (const p of batch) {
-        if (p.fixedHeight || p.sy > 0.6)
-          continue;
-        const h = SN.roadHeight(p.x, p.z);
-        if (Number.isFinite(h)) {
-          p.y = h + lift;
-          const dx = Math.sin(p.yaw) * p.sz / 2, dz = Math.cos(p.yaw) * p.sz / 2;
-          p.pitch = -Math.atan2(SN.roadHeight(p.x + dx, p.z + dz) - SN.roadHeight(p.x - dx, p.z - dz), p.sz);
-        }
-      }
+    SN.buildRoadNetwork();
     for (let x = -3520; x < 3520; x += 160)
       SN.paths.push({ a: [x, SN.riverNorth(x) - 18], b: [x + 160, SN.riverNorth(x + 160) - 18], w: 9, name: "汉江北岸公园" });
     // Cut/fill is baked into both render terrain and the sampled surface.
     for (let i = 0; i < SN.gp.count; i++) {
+      if (i % 4096 === 0) yield "地形";
       const x = SN.gp.getX(i), z = SN.gp.getZ(i);
       SN.gp.setY(i, (SN.pointInRiver(x, z) || SN.inLake(x, z)) ? -2.2 : SN.roadTerrainHeight(x, z, SN.gp.getY(i) + 0.12) - 0.12);
     }
     SN.groundGeo.computeVertexNormals();
-    for (const page of SN.terrainPages) {
-      const position = page.mesh.geometry.attributes.position;
-      let index = 0;
-      for (let z = 0; z <= page.nz; z++)
-        for (let x = 0; x <= page.nx; x++) {
-          position.setY(index++, SN.gp.getY((page.tz + z) * (SN.terrainDivisions + 1) + page.tx + x));
-        }
-      position.needsUpdate = true;
-      page.mesh.geometry.computeVertexNormals();
-      page.mesh.geometry.computeBoundingSphere();
-    }
+    SN.prepareTerrainDraw();
     // Open medians at every junction, preserving turning space and pedestrian crossings.
     for (let i = SN.medianBatch.length - 1; i >= 0; i--) {
       const p = SN.medianBatch[i];
@@ -1280,25 +1254,16 @@
         return Math.abs(Math.sin(yaw - p.yaw)) > 0.2 && SN.segmentDistance(p.x, p.z, ...a, ...b) < r.width / 2 + 7;
       }))) {
         SN.medianBatch.splice(i, 1);
-        SN.medianSolids.splice(i, 1);
       }
     }
+    SN.medianSolids = [];
+    for (const piece of SN.medianBatch)
+      if (piece.median)
+        SN.medianSolids.push(piece.median);
     // Kerbs stop at junctions; the road remains level through the crossing.
     for (const list of [SN.sideBatch, SN.curbBatch]) {
       const clipped = [];
-      for (const p of list) {
-        if (p.sy > 0.6 || p.sx > 5 || p.sz < 5) {
-          clipped.push(p);
-          continue;
-        }
-        const pieces = Math.ceil(p.sz / 1.6), length = p.sz / pieces;
-        for (let i = 0; i < pieces; i++) {
-          const along = -p.sz / 2 + (i + 0.5) * length, x = p.x + Math.sin(p.yaw) * along, z = p.z + Math.cos(p.yaw) * along;
-          if (SN.inDrivingLane(x, z, -0.02))
-            continue;
-          clipped.push({ ...p, x, z, y: p.y - Math.sin(p.pitch || 0) * along, sz: length + 0.012 });
-        }
-      }
+      for (const p of list) SN.clipStreetStrip(p, clipped);
       list.length = 0;
       for (const p of clipped)
         list.push(p);
@@ -1311,9 +1276,11 @@
     SN.localSurfacePatches = [];
     SN.surfaceGrid = new Float32Array(SN.SURFACE_SIZE * SN.SURFACE_SIZE);
     SN.surfaceTypes = new Uint8Array(SN.surfaceGrid.length);
-    for (let iz = 0; iz < SN.SURFACE_SIZE; iz++)
+    for (let iz = 0; iz < SN.SURFACE_SIZE; iz++) {
+      if (iz % 4 === 0) yield "步行表面 " + Math.round(iz / SN.SURFACE_SIZE * 100) + "%";
       for (let ix = 0; ix < SN.SURFACE_SIZE; ix++)
         SN.surfaceGrid[iz * SN.SURFACE_SIZE + ix] = SN.terrainHeight(SN.SURFACE_ORIGIN + ix * SN.SURFACE_CELL, SN.SURFACE_ORIGIN + iz * SN.SURFACE_CELL) + 0.01;
+    }
     for (const r of SN.roads)
       for (let j = 0; j < r.points.length - 1; j++) {
         const a = r.points[j], b = r.points[j + 1], w = r.width / 2 + (r.sidewalkW || 3.5) + 0.3;
