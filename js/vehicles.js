@@ -873,7 +873,9 @@
     if (c.exploded || c.health <= 0) throttle = 0;
     const oldSpeed = c.speed;
     // Steering reaches full lock in roughly a tenth of a second; throttle is much sharper than before.
-    c.steer = SN.lerp(c.steer, steer, 1 - Math.exp(-dt * 17));
+    // A motorcycle leans into a curve instead of snapping to a heading, so its
+    // lock builds slower and tightens less at speed than a car's.
+    c.steer = SN.lerp(c.steer, steer, 1 - Math.exp(-dt * (c.spec.bike ? 7.5 : 17)));
     const spec = c.spec,
       speedAbs = Math.abs(c.speed),
       braking = 24 / Math.sqrt(spec.mass),
@@ -886,8 +888,9 @@
       c.speed *= Math.exp(-dt * 0.85);
     if (c.health <= 0)
       c.speed *= Math.exp(-dt * 2);
-    // Speed-sensitive lock: easy parking control, calmer at top speed.
-    const steerAngle = c.steer * (spec.bike ? 0.42 : 0.62) / (1 + speedAbs * 0.034);
+    // Speed-sensitive lock: easy parking control, calmer at top speed. Two
+    // wheels need a much smaller lock than a car or the bike whips sideways.
+    const steerAngle = c.steer * (spec.bike ? 0.24 : 0.62) / (1 + speedAbs * (spec.bike ? 0.16 : 0.034));
     const previousYaw = c.yaw;
     c.yaw -= Math.tan(steerAngle) * c.speed / (spec.length * 0.64) * dt * (handbrake ? 1.45 : 1);
     if (SN.carBlocked(c.x, c.z, c.yaw, c)) c.yaw = previousYaw;
@@ -1060,7 +1063,7 @@
     r.root.rotation.order = "YXZ";
     r.root.rotation.set(c.pitch, c.root.rotation.y, c.terrainRoll + c.roll);
     r.root.position.copy(c.root.position);
-    r.root.position.y += 0.32;
+    r.root.position.y += 0.32 + (c.body ? c.body.position.y : 0);
     r.torso.position.set(0, 0.53, -0.08);
     r.torso.rotation.set(0.18, c.steer * 0.08, 0);
     r.head.rotation.set(-0.09, Math.sin(time * 0.6 + seed) * 0.03, 0);

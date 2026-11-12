@@ -712,8 +712,11 @@
       return;
     }
     const side = -c.spec.width * 0.23,
-      forward = c.spec.shape === "bus" ? c.spec.length * 0.33 : c.spec.shape === "van" ? c.spec.length * 0.3 : 0.05;
-    r.root.position.set(c.root.position.x + Math.cos(c.root.rotation.y) * side + Math.sin(c.root.rotation.y) * forward, c.root.position.y + 0.14, c.root.position.z - Math.sin(c.root.rotation.y) * side + Math.cos(c.root.rotation.y) * forward);
+      forward = c.spec.shape === "bus" ? c.spec.length * 0.33 : c.spec.shape === "van" ? c.spec.length * 0.3 : c.spec.length * 0.09;
+    // c.body carries the suspension bob; without it the seated body visibly
+    // shivers against the cabin while driving over uneven ground.
+    const bob = c.body ? c.body.position.y : 0;
+    r.root.position.set(c.root.position.x + Math.cos(c.root.rotation.y) * side + Math.sin(c.root.rotation.y) * forward, c.root.position.y + bob + 0.14, c.root.position.z - Math.sin(c.root.rotation.y) * side + Math.cos(c.root.rotation.y) * forward);
     r.root.rotation.order = "YXZ";
     r.root.rotation.set(c.pitch, c.root.rotation.y, c.terrainRoll + c.roll);
   };

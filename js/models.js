@@ -782,9 +782,12 @@
         const normal = new SN.T.Vector3().crossVectors(axis, up);
         const wristR = (proto.armGauge && proto.armGauge.wrist) || 0.042;
         const bicepR = (proto.armGauge && proto.armGauge.bicep) || 0.052;
-        // Fit the sleeve to the measured arm (plus cloth ease) instead of the old
-        // fixed 7.5-10 cm radius that left the thin hand floating in the opening.
-        const endRadius = long ? wristR + 0.014 + pad * 0.1 : bicepR + 0.025 + pad * 0.2;
+        // Fit the sleeve to the measured arm. A wrist is about 2.9 cm in radius;
+        // the old 1.4 cm ease made a 4.6 cm bell, so the hand looked pasted into
+        // the opening. Six millimetres sits like a real shirt cuff and still
+        // clears the skin while the wrist bends. Short sleeves get the same
+        // treatment at the bicep instead of the old flared 8 cm mouth.
+        const endRadius = long ? wristR + 0.006 + pad * 0.04 : bicepR + 0.010 + pad * 0.05;
         const ringList = [];
         for (let i = 0; i <= sleeveStations; i++) {
           const f = i / sleeveStations;
@@ -806,9 +809,12 @@
           point => sleeveWeightsFor(proto, point, side, armSegments), 0, 0.28);
         stitchGarmentRings(builder, lastStation, cuff);
         // Fold the cuff back inside so the sleeve end reads as a hem instead of
-        // an open paper tube. The arm still leaves through the middle.
+        // an open paper tube. The folded lip now stops just outside the wrist
+        // (2 mm of clearance) so it hugs the arm instead of leaving a ring of
+        // daylight between the cuff and the hand.
+        const foldRadius = long ? wristR + 0.004 : endRadius * 0.9;
         const innerCuff = addGarmentRing(builder, { x: cuffX - side * 0.045, y: endY - 0.006, z: endZ },
-          up, normal, cuffRadius * 0.72, cuffRadius * 0.72, sleeveSegments, 1,
+          up, normal, foldRadius, foldRadius, sleeveSegments, 1,
           point => sleeveWeightsFor(proto, point, side, armSegments), 0, 0.28);
         stitchGarmentRings(builder, cuff, innerCuff);
         const indices = [];
@@ -2489,7 +2495,7 @@
     const shoes = agent.garments && agent.garments.shoes;
     const offGround = SN.player.car || SN.player.bail || SN.player.swimming || !SN.player.grounded;
     if (offGround || !shoes || !shoes.isSkinnedMesh || !shoes.geometry || !shoes.geometry.attributes.position) {
-      if (agent.footLift) {
+      if (agent.footLift !== 0 || agent.root.position.y !== 0) {
         agent.footLift = 0;
         agent.root.position.y = 0;
       }
@@ -2520,6 +2526,15 @@
     attachPlayerWeapon();
     animatePlayer(M.playerAgent, dt);
     plantPlayerFeet(M.playerAgent, dt);
+    // Seated driver: the player rig root is parked at the seat by poseDriver
+    // (car centre + 0.14 m); drop the full-body model so its hips land on the
+    // cushion instead of standing upright through the roof. Bike seats sit
+    // higher and the rider pose keeps the body above the frame.
+    const car = SN.player.car;
+    if (car && !SN.carjack) {
+      const spec = car.spec || {};
+      M.playerAgent.root.position.y = spec.bike ? -0.285 : (spec.height || 1.43) * 0.38 - 0.855;
+    }
     if (!M.playerPartsHidden) hidePlayerParts();
   }
 

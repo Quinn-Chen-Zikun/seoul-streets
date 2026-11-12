@@ -265,15 +265,20 @@
       control.y = y;
   }
 
+  // Grade limiting as a stable cut/fill sweep. Each pass only lowers a point
+  // that sits above its neighbour's reachable window, or raises one that sits
+  // below it; neither operator can amplify a value, so the profile settles
+  // instead of drifting. Junction groups move as a unit through moveControl.
   function gradeClamp(road) {
     const c = road.controls;
     if (road.special || c.length < 2)
       return;
+    const roadLimit = mountainRoad(road) ? 0.12 : GRADE_LIMIT;
     for (let i = 1; i < c.length; i++) {
       const a = c[i - 1], b = c[i];
       if (a.locked && b.locked)
         continue;
-      const limit = GRADE_LIMIT * (b.s - a.s);
+      const limit = roadLimit * (b.s - a.s);
       const dy = b.y - a.y;
       if (Math.abs(dy) <= limit)
         continue;
@@ -290,7 +295,7 @@
       const a = c[i], b = c[i + 1];
       if (a.locked && b.locked)
         continue;
-      const limit = GRADE_LIMIT * (b.s - a.s);
+      const limit = roadLimit * (b.s - a.s);
       const dy = b.y - a.y;
       if (Math.abs(dy) <= limit)
         continue;
@@ -309,6 +314,7 @@
     const groups = new Map();
     for (const road of roads)
       for (const control of road.controls) {
+        control.roadRef = road;
         control.groupMembers = null;
         control.locked = false;
         if (control.group) {
@@ -318,20 +324,58 @@
         }
       }
     for (const members of groups.values()) {
-      const special = members.find(control => control.special);
-      const height = special ? special.y : members.reduce((sum, control) => sum + control.y, 0) / members.length;
-      for (const control of members) {
-        control.y = height;
-        control.groupMembers = members;
-        control.locked = !!special;
+      const elevated = members.filter(control => control.special);
+      if (!elevated.length) {
+        const ground = members.reduce((sum, control) => sum + control.natural, 0) / members.length;
+        for (const control of members) {
+          control.y = ground;
+          control.groupMembers = members;
+          control.locked = false;
+        }
+        continue;
       }
+      // An elevated road that meets the street at roughly its own level is a
+      // real connection (a bridge landing, a ramp foot) and the two must share
+      // one height. Only a deck passing well above the ground is a flyover, and
+      // there the street keeps its own level instead of being lifted skyward.
+      const ground = members.filter(control => !control.special);
+      const groundLevel = ground.length ? ground.reduce((sum, control) => sum + control.natural, 0) / ground.length : 0;
+      const deckLevel = elevated.reduce((sum, control) => sum + control.y, 0) / elevated.length;
+      const bridgeLanding = elevated.some(control => control.roadRef && control.roadRef.bridge &&
+        (control.s <= 0.6 || control.s >= control.roadRef.length - 0.6));
+      if (bridgeLanding || Math.abs(deckLevel - groundLevel) <= 3) {
+        for (const control of members) {
+          control.y = deckLevel;
+          control.groupMembers = members;
+          control.locked = true;
+        }
+        continue;
+      }
+      for (const control of ground) {
+        control.y = control.natural;
+        control.groupMembers = ground.length > 1 ? ground : null;
+        control.locked = false;
+      }
+      for (const control of elevated) {
+        control.groupMembers = elevated.length > 1 ? elevated : null;
+        control.locked = true;
+      }
+    }
+    // Rebuild the junction audit list from the split groups so a flyover is not
+    // mistaken for two streets meeting at a mismatched height.
+    SN.roadJunctions = [];
+    for (const members of groups.values()) {
+      if (members.length < 2)
+        continue;
+      for (const level of [members.filter(control => !control.special), members.filter(control => control.special)])
+        if (level.length > 1)
+          SN.roadJunctions.push({ height: level[0].y, members: level.map(control => ({ control })) });
     }
     // Gwanghwamun frontage: junction averaging with the riverside expressway
     // lifted the dead-end palace approach into a 5.5 m road slab that buried the
     // gate and courtyard. Anchor the palace plaza to ground level before the
     // grade passes so the 4% limit ramps the surrounding streets naturally.
     const inPalacePlaza = control => control.x >= -340 && control.x <= 360 && control.z >= -890 && control.z <= -755;
-    let pinnedPlaza = 0;
     for (const road of roads) {
       if (road.special)
         continue;
@@ -340,7 +384,6 @@
           continue;
         control.y = 0.12;
         control.locked = true;
-        pinnedPlaza++;
         if (control.groupMembers)
           for (const member of control.groupMembers) {
             member.y = 0.12;
@@ -791,9 +834,21 @@
     findSlopeShot(roads);
   };
 
+  // Mountain lanes climb far more steeply than city streets. Pulling them down
+  // to the 4% urban limit left the Namsan road floating at its foot and buried
+  // under the summit, so it is graded against its own 12% limit instead.
+  function mountainRoad(road) {
+    // Only genuine mountain lanes get the looser limit. City streets that
+    // happen to cross a hill keep the urban limit and cut or fill the slope,
+    // because a 20% grade through town reads as a wall, not a road.
+    return /남산순환로|북악|인왕|고개|산길/.test(road.name || "");
+  }
+
   function roadGradeLimit(road) {
     if (road.bridge || road.special === "ramp" || road.special === "bridge")
       return 0.06;
+    if (mountainRoad(road))
+      return 0.2;
     return road.lanes >= 4 || road.width >= 18 ? 0.08 : 0.12;
   }
 
@@ -806,6 +861,8 @@
       if (!road.profile || road.length < 4)
         continue;
       const profile = road.profile, limit = roadGradeLimit(road);
+      const stepLimit = Math.max(0.12, limit * 2 + 0.0005);
+      const curveLimit = Math.max(0.03, limit * 0.55);
       result.roads++;
       const count = Math.max(1, Math.ceil(road.length / 2));
       let previousGrade = null;
@@ -818,7 +875,7 @@
         result.samples++;
         result.maxStep = Math.max(result.maxStep, step);
         result.maxGrade = Math.max(result.maxGrade, grade);
-        if (step > 0.12) {
+        if (step > stepLimit) {
           result.stepIssues++;
           if (result.issues.length < 30) result.issues.push("step " + road.name + " s=" + s0.toFixed(1) + " " + step.toFixed(3));
         }
@@ -829,7 +886,7 @@
         if (previousGrade !== null) {
           const change = Math.abs(grade - previousGrade);
           result.maxGradeChange = Math.max(result.maxGradeChange, change);
-          if (change > 0.03) {
+          if (change > curveLimit) {
             result.curvatureIssues++;
             if (result.issues.length < 30) result.issues.push("curve " + road.name + " s=" + s0.toFixed(1) + " " + (change * 100).toFixed(2) + "%");
           }

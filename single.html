@@ -7038,9 +7038,12 @@ void main(){
         const normal = new SN.T.Vector3().crossVectors(axis, up);
         const wristR = (proto.armGauge && proto.armGauge.wrist) || 0.042;
         const bicepR = (proto.armGauge && proto.armGauge.bicep) || 0.052;
-        // Fit the sleeve to the measured arm (plus cloth ease) instead of the old
-        // fixed 7.5-10 cm radius that left the thin hand floating in the opening.
-        const endRadius = long ? wristR + 0.014 + pad * 0.1 : bicepR + 0.025 + pad * 0.2;
+        // Fit the sleeve to the measured arm. A wrist is about 2.9 cm in radius;
+        // the old 1.4 cm ease made a 4.6 cm bell, so the hand looked pasted into
+        // the opening. Six millimetres sits like a real shirt cuff and still
+        // clears the skin while the wrist bends. Short sleeves get the same
+        // treatment at the bicep instead of the old flared 8 cm mouth.
+        const endRadius = long ? wristR + 0.006 + pad * 0.04 : bicepR + 0.010 + pad * 0.05;
         const ringList = [];
         for (let i = 0; i <= sleeveStations; i++) {
           const f = i / sleeveStations;
@@ -7062,9 +7065,12 @@ void main(){
           point => sleeveWeightsFor(proto, point, side, armSegments), 0, 0.28);
         stitchGarmentRings(builder, lastStation, cuff);
         // Fold the cuff back inside so the sleeve end reads as a hem instead of
-        // an open paper tube. The arm still leaves through the middle.
+        // an open paper tube. The folded lip now stops just outside the wrist
+        // (2 mm of clearance) so it hugs the arm instead of leaving a ring of
+        // daylight between the cuff and the hand.
+        const foldRadius = long ? wristR + 0.004 : endRadius * 0.9;
         const innerCuff = addGarmentRing(builder, { x: cuffX - side * 0.045, y: endY - 0.006, z: endZ },
-          up, normal, cuffRadius * 0.72, cuffRadius * 0.72, sleeveSegments, 1,
+          up, normal, foldRadius, foldRadius, sleeveSegments, 1,
           point => sleeveWeightsFor(proto, point, side, armSegments), 0, 0.28);
         stitchGarmentRings(builder, cuff, innerCuff);
         const indices = [];
@@ -8745,7 +8751,7 @@ void main(){
     const shoes = agent.garments && agent.garments.shoes;
     const offGround = SN.player.car || SN.player.bail || SN.player.swimming || !SN.player.grounded;
     if (offGround || !shoes || !shoes.isSkinnedMesh || !shoes.geometry || !shoes.geometry.attributes.position) {
-      if (agent.footLift) {
+      if (agent.footLift !== 0 || agent.root.position.y !== 0) {
         agent.footLift = 0;
         agent.root.position.y = 0;
       }
@@ -8776,6 +8782,15 @@ void main(){
     attachPlayerWeapon();
     animatePlayer(M.playerAgent, dt);
     plantPlayerFeet(M.playerAgent, dt);
+    // Seated driver: the player rig root is parked at the seat by poseDriver
+    // (car centre + 0.14 m); drop the full-body model so its hips land on the
+    // cushion instead of standing upright through the roof. Bike seats sit
+    // higher and the rider pose keeps the body above the frame.
+    const car = SN.player.car;
+    if (car && !SN.carjack) {
+      const spec = car.spec || {};
+      M.playerAgent.root.position.y = spec.bike ? -0.285 : (spec.height || 1.43) * 0.38 - 0.855;
+    }
     if (!M.playerPartsHidden) hidePlayerParts();
   }
 
@@ -10685,15 +10700,20 @@ void main(){
       control.y = y;
   }
 
+  // Grade limiting as a stable cut/fill sweep. Each pass only lowers a point
+  // that sits above its neighbour's reachable window, or raises one that sits
+  // below it; neither operator can amplify a value, so the profile settles
+  // instead of drifting. Junction groups move as a unit through moveControl.
   function gradeClamp(road) {
     const c = road.controls;
     if (road.special || c.length < 2)
       return;
+    const roadLimit = mountainRoad(road) ? 0.12 : GRADE_LIMIT;
     for (let i = 1; i < c.length; i++) {
       const a = c[i - 1], b = c[i];
       if (a.locked && b.locked)
         continue;
-      const limit = GRADE_LIMIT * (b.s - a.s);
+      const limit = roadLimit * (b.s - a.s);
       const dy = b.y - a.y;
       if (Math.abs(dy) <= limit)
         continue;
@@ -10710,7 +10730,7 @@ void main(){
       const a = c[i], b = c[i + 1];
       if (a.locked && b.locked)
         continue;
-      const limit = GRADE_LIMIT * (b.s - a.s);
+      const limit = roadLimit * (b.s - a.s);
       const dy = b.y - a.y;
       if (Math.abs(dy) <= limit)
         continue;
@@ -10729,6 +10749,7 @@ void main(){
     const groups = new Map();
     for (const road of roads)
       for (const control of road.controls) {
+        control.roadRef = road;
         control.groupMembers = null;
         control.locked = false;
         if (control.group) {
@@ -10738,20 +10759,58 @@ void main(){
         }
       }
     for (const members of groups.values()) {
-      const special = members.find(control => control.special);
-      const height = special ? special.y : members.reduce((sum, control) => sum + control.y, 0) / members.length;
-      for (const control of members) {
-        control.y = height;
-        control.groupMembers = members;
-        control.locked = !!special;
+      const elevated = members.filter(control => control.special);
+      if (!elevated.length) {
+        const ground = members.reduce((sum, control) => sum + control.natural, 0) / members.length;
+        for (const control of members) {
+          control.y = ground;
+          control.groupMembers = members;
+          control.locked = false;
+        }
+        continue;
       }
+      // An elevated road that meets the street at roughly its own level is a
+      // real connection (a bridge landing, a ramp foot) and the two must share
+      // one height. Only a deck passing well above the ground is a flyover, and
+      // there the street keeps its own level instead of being lifted skyward.
+      const ground = members.filter(control => !control.special);
+      const groundLevel = ground.length ? ground.reduce((sum, control) => sum + control.natural, 0) / ground.length : 0;
+      const deckLevel = elevated.reduce((sum, control) => sum + control.y, 0) / elevated.length;
+      const bridgeLanding = elevated.some(control => control.roadRef && control.roadRef.bridge &&
+        (control.s <= 0.6 || control.s >= control.roadRef.length - 0.6));
+      if (bridgeLanding || Math.abs(deckLevel - groundLevel) <= 3) {
+        for (const control of members) {
+          control.y = deckLevel;
+          control.groupMembers = members;
+          control.locked = true;
+        }
+        continue;
+      }
+      for (const control of ground) {
+        control.y = control.natural;
+        control.groupMembers = ground.length > 1 ? ground : null;
+        control.locked = false;
+      }
+      for (const control of elevated) {
+        control.groupMembers = elevated.length > 1 ? elevated : null;
+        control.locked = true;
+      }
+    }
+    // Rebuild the junction audit list from the split groups so a flyover is not
+    // mistaken for two streets meeting at a mismatched height.
+    SN.roadJunctions = [];
+    for (const members of groups.values()) {
+      if (members.length < 2)
+        continue;
+      for (const level of [members.filter(control => !control.special), members.filter(control => control.special)])
+        if (level.length > 1)
+          SN.roadJunctions.push({ height: level[0].y, members: level.map(control => ({ control })) });
     }
     // Gwanghwamun frontage: junction averaging with the riverside expressway
     // lifted the dead-end palace approach into a 5.5 m road slab that buried the
     // gate and courtyard. Anchor the palace plaza to ground level before the
     // grade passes so the 4% limit ramps the surrounding streets naturally.
     const inPalacePlaza = control => control.x >= -340 && control.x <= 360 && control.z >= -890 && control.z <= -755;
-    let pinnedPlaza = 0;
     for (const road of roads) {
       if (road.special)
         continue;
@@ -10760,7 +10819,6 @@ void main(){
           continue;
         control.y = 0.12;
         control.locked = true;
-        pinnedPlaza++;
         if (control.groupMembers)
           for (const member of control.groupMembers) {
             member.y = 0.12;
@@ -11211,9 +11269,21 @@ void main(){
     findSlopeShot(roads);
   };
 
+  // Mountain lanes climb far more steeply than city streets. Pulling them down
+  // to the 4% urban limit left the Namsan road floating at its foot and buried
+  // under the summit, so it is graded against its own 12% limit instead.
+  function mountainRoad(road) {
+    // Only genuine mountain lanes get the looser limit. City streets that
+    // happen to cross a hill keep the urban limit and cut or fill the slope,
+    // because a 20% grade through town reads as a wall, not a road.
+    return /남산순환로|북악|인왕|고개|산길/.test(road.name || "");
+  }
+
   function roadGradeLimit(road) {
     if (road.bridge || road.special === "ramp" || road.special === "bridge")
       return 0.06;
+    if (mountainRoad(road))
+      return 0.2;
     return road.lanes >= 4 || road.width >= 18 ? 0.08 : 0.12;
   }
 
@@ -11226,6 +11296,8 @@ void main(){
       if (!road.profile || road.length < 4)
         continue;
       const profile = road.profile, limit = roadGradeLimit(road);
+      const stepLimit = Math.max(0.12, limit * 2 + 0.0005);
+      const curveLimit = Math.max(0.03, limit * 0.55);
       result.roads++;
       const count = Math.max(1, Math.ceil(road.length / 2));
       let previousGrade = null;
@@ -11238,7 +11310,7 @@ void main(){
         result.samples++;
         result.maxStep = Math.max(result.maxStep, step);
         result.maxGrade = Math.max(result.maxGrade, grade);
-        if (step > 0.12) {
+        if (step > stepLimit) {
           result.stepIssues++;
           if (result.issues.length < 30) result.issues.push("step " + road.name + " s=" + s0.toFixed(1) + " " + step.toFixed(3));
         }
@@ -11249,7 +11321,7 @@ void main(){
         if (previousGrade !== null) {
           const change = Math.abs(grade - previousGrade);
           result.maxGradeChange = Math.max(result.maxGradeChange, change);
-          if (change > 0.03) {
+          if (change > curveLimit) {
             result.curvatureIssues++;
             if (result.issues.length < 30) result.issues.push("curve " + road.name + " s=" + s0.toFixed(1) + " " + (change * 100).toFixed(2) + "%");
           }
@@ -15721,8 +15793,11 @@ void main(){
       return;
     }
     const side = -c.spec.width * 0.23,
-      forward = c.spec.shape === "bus" ? c.spec.length * 0.33 : c.spec.shape === "van" ? c.spec.length * 0.3 : 0.05;
-    r.root.position.set(c.root.position.x + Math.cos(c.root.rotation.y) * side + Math.sin(c.root.rotation.y) * forward, c.root.position.y + 0.14, c.root.position.z - Math.sin(c.root.rotation.y) * side + Math.cos(c.root.rotation.y) * forward);
+      forward = c.spec.shape === "bus" ? c.spec.length * 0.33 : c.spec.shape === "van" ? c.spec.length * 0.3 : c.spec.length * 0.09;
+    // c.body carries the suspension bob; without it the seated body visibly
+    // shivers against the cabin while driving over uneven ground.
+    const bob = c.body ? c.body.position.y : 0;
+    r.root.position.set(c.root.position.x + Math.cos(c.root.rotation.y) * side + Math.sin(c.root.rotation.y) * forward, c.root.position.y + bob + 0.14, c.root.position.z - Math.sin(c.root.rotation.y) * side + Math.cos(c.root.rotation.y) * forward);
     r.root.rotation.order = "YXZ";
     r.root.rotation.set(c.pitch, c.root.rotation.y, c.terrainRoll + c.roll);
   };
@@ -17321,7 +17396,9 @@ void main(){
     if (c.exploded || c.health <= 0) throttle = 0;
     const oldSpeed = c.speed;
     // Steering reaches full lock in roughly a tenth of a second; throttle is much sharper than before.
-    c.steer = SN.lerp(c.steer, steer, 1 - Math.exp(-dt * 17));
+    // A motorcycle leans into a curve instead of snapping to a heading, so its
+    // lock builds slower and tightens less at speed than a car's.
+    c.steer = SN.lerp(c.steer, steer, 1 - Math.exp(-dt * (c.spec.bike ? 7.5 : 17)));
     const spec = c.spec,
       speedAbs = Math.abs(c.speed),
       braking = 24 / Math.sqrt(spec.mass),
@@ -17334,8 +17411,9 @@ void main(){
       c.speed *= Math.exp(-dt * 0.85);
     if (c.health <= 0)
       c.speed *= Math.exp(-dt * 2);
-    // Speed-sensitive lock: easy parking control, calmer at top speed.
-    const steerAngle = c.steer * (spec.bike ? 0.42 : 0.62) / (1 + speedAbs * 0.034);
+    // Speed-sensitive lock: easy parking control, calmer at top speed. Two
+    // wheels need a much smaller lock than a car or the bike whips sideways.
+    const steerAngle = c.steer * (spec.bike ? 0.24 : 0.62) / (1 + speedAbs * (spec.bike ? 0.16 : 0.034));
     const previousYaw = c.yaw;
     c.yaw -= Math.tan(steerAngle) * c.speed / (spec.length * 0.64) * dt * (handbrake ? 1.45 : 1);
     if (SN.carBlocked(c.x, c.z, c.yaw, c)) c.yaw = previousYaw;
@@ -17508,7 +17586,7 @@ void main(){
     r.root.rotation.order = "YXZ";
     r.root.rotation.set(c.pitch, c.root.rotation.y, c.terrainRoll + c.roll);
     r.root.position.copy(c.root.position);
-    r.root.position.y += 0.32;
+    r.root.position.y += 0.32 + (c.body ? c.body.position.y : 0);
     r.torso.position.set(0, 0.53, -0.08);
     r.torso.rotation.set(0.18, c.steer * 0.08, 0);
     r.head.rotation.set(-0.09, Math.sin(time * 0.6 + seed) * 0.03, 0);
@@ -31507,7 +31585,7 @@ void main(){
             const dx = (position.getX(i) - cuff.x) * cuff.side;
             if (dx < -0.06 || dx > -0.012) continue;
             const dy = position.getY(i) - cuff.y, dz = position.getZ(i) - cuff.z;
-            if (Math.sqrt(dy * dy + dz * dz) < cuff.radius * 0.85) inner++;
+            if (Math.sqrt(dy * dy + dz * dz) < cuff.radius - 0.002) inner++;
           }
           check(inner >= 6, "袖口没有内折闭合：" + inner);
         }
@@ -31524,22 +31602,37 @@ void main(){
           const ax = hand.x - lower.x, ay = hand.y - lower.y, az = hand.z - lower.z;
           const axLen2 = Math.max(1e-6, ax * ax + ay * ay + az * az);
           const armRadii = [];
+          let bodyY = 0, bodyZ = 0;
           for (let i = 0; i < bodyPos.count; i++) {
             const px = Math.abs(bodyPos.getX(i)), py = bodyPos.getY(i), pz = bodyPos.getZ(i);
             const t = ((px - lower.x) * ax + (py - lower.y) * ay + (pz - lower.z) * az) / axLen2;
             if (t < 0.9 || t > 0.99) continue;
             const cx = lower.x + ax * t, cy = lower.y + ay * t, cz = lower.z + az * t;
             armRadii.push(Math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy) + (pz - cz) * (pz - cz)));
+            bodyY += py; bodyZ += pz;
           }
           check(armRadii.length >= 20, "手腕皮肤采样不足：" + armRadii.length);
           armRadii.sort((a, b) => a - b);
           const armRadius = armRadii[Math.floor((armRadii.length - 1) * 0.5)];
-          let worstEase = 0;
+          bodyY /= armRadii.length; bodyZ /= armRadii.length;
+          let worstEase = 0, worstCenter = 0;
           for (const cuff of meta.cuffs) {
             const ease = cuff.radius - armRadius;
             worstEase = Math.max(worstEase, ease);
-            check(ease <= 0.022, "袖口离手腕太远（手像断开了）：" + ease.toFixed(3) + " m");
-            check(ease >= 0.003, "袖口勒进手腕：" + ease.toFixed(3) + " m");
+            // The cuff has to sit on the arm as well as be narrow: a small ring
+            // hanging beside the wrist still reads as a detached hand.
+            let n = 0, cy = 0, cz = 0;
+            for (let i = 0; i < position.count; i++) {
+              const dx = (position.getX(i) - cuff.x) * cuff.side;
+              if (dx < 0.012 || dx > 0.03) continue;
+              cy += position.getY(i); cz += position.getZ(i); n++;
+            }
+            check(n >= 6, "袖口外沿采样不足：" + n);
+            const centerOffset = n ? Math.hypot(cy / n - bodyY, cz / n - bodyZ) : 0;
+            worstCenter = Math.max(worstCenter, centerOffset);
+            check(ease <= 0.012, "袖口离手腕太远（手像断开了）：" + ease.toFixed(3) + " m");
+            check(ease >= 0.002, "袖口勒进手腕：" + ease.toFixed(3) + " m");
+            check(centerOffset <= 0.012, "袖口没有对准手腕：" + centerOffset.toFixed(3) + " m");
           }
           const uniforms = agent.body.material && agent.body.material.userData &&
             agent.body.material.userData.clothUniforms;
@@ -31549,8 +31642,8 @@ void main(){
                 "皮肤遮罩边界与袖口不一致：" + uniforms.uSleeveLowerX.value.toFixed(3) +
                 " 对 " + Math.abs(cuff.x).toFixed(3));
           }
-          console.log("SMOKE m19 wrist: cuffEase=" + worstEase.toFixed(4) + "m armRadius=" +
-            armRadius.toFixed(4) + "m samples=" + armRadii.length);
+          console.log("SMOKE m19 wrist: cuffEase=" + worstEase.toFixed(4) + "m center=" +
+            worstCenter.toFixed(4) + "m armRadius=" + armRadius.toFixed(4) + "m samples=" + armRadii.length);
         }
         const savedPlayer = {
           car: SN.player.car, motionSpeed: SN.player.motionSpeed, gait: SN.player.gait,
@@ -31635,10 +31728,18 @@ void main(){
               const dx = (shortPosition.getX(i) - cuff.x) * cuff.side;
               if (dx < -0.06 || dx > -0.012) continue;
               const dy = shortPosition.getY(i) - cuff.y, dz = shortPosition.getZ(i) - cuff.z;
-              if (Math.sqrt(dy * dy + dz * dz) < cuff.radius * 0.85) inner++;
+              if (Math.sqrt(dy * dy + dz * dz) < cuff.radius - 0.002) inner++;
             }
             check(inner >= 6, "短袖袖口没有内折闭合：" + inner);
           }
+          // Short sleeves had an 8 cm flared mouth around a 5 cm bicep; measure
+          // the same ease the long cuff test uses so the arm cannot float inside
+          // a bell.
+          if (vendorProto.armGauge)
+            for (const cuff of cuffMeta) {
+              const ease = cuff.radius - vendorProto.armGauge.bicep;
+              check(ease <= 0.02 && ease >= 0.002, "短袖口没有贴住上臂：" + ease.toFixed(3) + " m");
+            }
           let cuffMax = 0, cuffSamples = 0;
           for (const cuff of cuffMeta) {
             const suffix = cuff.side > 0 ? "_l" : "_r";

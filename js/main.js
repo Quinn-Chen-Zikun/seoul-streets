@@ -1562,7 +1562,7 @@
             const dx = (position.getX(i) - cuff.x) * cuff.side;
             if (dx < -0.06 || dx > -0.012) continue;
             const dy = position.getY(i) - cuff.y, dz = position.getZ(i) - cuff.z;
-            if (Math.sqrt(dy * dy + dz * dz) < cuff.radius * 0.85) inner++;
+            if (Math.sqrt(dy * dy + dz * dz) < cuff.radius - 0.002) inner++;
           }
           check(inner >= 6, "袖口没有内折闭合：" + inner);
         }
@@ -1579,22 +1579,37 @@
           const ax = hand.x - lower.x, ay = hand.y - lower.y, az = hand.z - lower.z;
           const axLen2 = Math.max(1e-6, ax * ax + ay * ay + az * az);
           const armRadii = [];
+          let bodyY = 0, bodyZ = 0;
           for (let i = 0; i < bodyPos.count; i++) {
             const px = Math.abs(bodyPos.getX(i)), py = bodyPos.getY(i), pz = bodyPos.getZ(i);
             const t = ((px - lower.x) * ax + (py - lower.y) * ay + (pz - lower.z) * az) / axLen2;
             if (t < 0.9 || t > 0.99) continue;
             const cx = lower.x + ax * t, cy = lower.y + ay * t, cz = lower.z + az * t;
             armRadii.push(Math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy) + (pz - cz) * (pz - cz)));
+            bodyY += py; bodyZ += pz;
           }
           check(armRadii.length >= 20, "手腕皮肤采样不足：" + armRadii.length);
           armRadii.sort((a, b) => a - b);
           const armRadius = armRadii[Math.floor((armRadii.length - 1) * 0.5)];
-          let worstEase = 0;
+          bodyY /= armRadii.length; bodyZ /= armRadii.length;
+          let worstEase = 0, worstCenter = 0;
           for (const cuff of meta.cuffs) {
             const ease = cuff.radius - armRadius;
             worstEase = Math.max(worstEase, ease);
-            check(ease <= 0.022, "袖口离手腕太远（手像断开了）：" + ease.toFixed(3) + " m");
-            check(ease >= 0.003, "袖口勒进手腕：" + ease.toFixed(3) + " m");
+            // The cuff has to sit on the arm as well as be narrow: a small ring
+            // hanging beside the wrist still reads as a detached hand.
+            let n = 0, cy = 0, cz = 0;
+            for (let i = 0; i < position.count; i++) {
+              const dx = (position.getX(i) - cuff.x) * cuff.side;
+              if (dx < 0.012 || dx > 0.03) continue;
+              cy += position.getY(i); cz += position.getZ(i); n++;
+            }
+            check(n >= 6, "袖口外沿采样不足：" + n);
+            const centerOffset = n ? Math.hypot(cy / n - bodyY, cz / n - bodyZ) : 0;
+            worstCenter = Math.max(worstCenter, centerOffset);
+            check(ease <= 0.012, "袖口离手腕太远（手像断开了）：" + ease.toFixed(3) + " m");
+            check(ease >= 0.002, "袖口勒进手腕：" + ease.toFixed(3) + " m");
+            check(centerOffset <= 0.012, "袖口没有对准手腕：" + centerOffset.toFixed(3) + " m");
           }
           const uniforms = agent.body.material && agent.body.material.userData &&
             agent.body.material.userData.clothUniforms;
@@ -1604,8 +1619,8 @@
                 "皮肤遮罩边界与袖口不一致：" + uniforms.uSleeveLowerX.value.toFixed(3) +
                 " 对 " + Math.abs(cuff.x).toFixed(3));
           }
-          console.log("SMOKE m19 wrist: cuffEase=" + worstEase.toFixed(4) + "m armRadius=" +
-            armRadius.toFixed(4) + "m samples=" + armRadii.length);
+          console.log("SMOKE m19 wrist: cuffEase=" + worstEase.toFixed(4) + "m center=" +
+            worstCenter.toFixed(4) + "m armRadius=" + armRadius.toFixed(4) + "m samples=" + armRadii.length);
         }
         const savedPlayer = {
           car: SN.player.car, motionSpeed: SN.player.motionSpeed, gait: SN.player.gait,
@@ -1690,10 +1705,18 @@
               const dx = (shortPosition.getX(i) - cuff.x) * cuff.side;
               if (dx < -0.06 || dx > -0.012) continue;
               const dy = shortPosition.getY(i) - cuff.y, dz = shortPosition.getZ(i) - cuff.z;
-              if (Math.sqrt(dy * dy + dz * dz) < cuff.radius * 0.85) inner++;
+              if (Math.sqrt(dy * dy + dz * dz) < cuff.radius - 0.002) inner++;
             }
             check(inner >= 6, "短袖袖口没有内折闭合：" + inner);
           }
+          // Short sleeves had an 8 cm flared mouth around a 5 cm bicep; measure
+          // the same ease the long cuff test uses so the arm cannot float inside
+          // a bell.
+          if (vendorProto.armGauge)
+            for (const cuff of cuffMeta) {
+              const ease = cuff.radius - vendorProto.armGauge.bicep;
+              check(ease <= 0.02 && ease >= 0.002, "短袖口没有贴住上臂：" + ease.toFixed(3) + " m");
+            }
           let cuffMax = 0, cuffSamples = 0;
           for (const cuff of cuffMeta) {
             const suffix = cuff.side > 0 ? "_l" : "_r";
