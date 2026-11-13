@@ -631,6 +631,13 @@
         if (o.type === "vehicle") {
           assert(a.contractCar && a.contractCar.active && !SN.carBlocked(a.contractCar.x, a.contractCar.z, a.contractCar.yaw, a.contractCar), "任务车无法驾驶");
           move(a.contractCar.x, a.contractCar.z, a.contractCar); tick(0.1);
+        } else if (o.boat) {
+          const boat = (SN.riverBoats || []).find(b => b.active);
+          assert(boat, "缺少可用于水上赛段的快艇");
+          SN.player.car = boat;
+          Object.assign(boat, { x: o.x, z: o.z, y: SN.WATER_Y + 0.18, speed: 0, vx: 0, vz: 0 });
+          Object.assign(SN.player, { x: o.x, z: o.z, y: boat.y });
+          tick(0.1);
         } else if (["drive", "race", "taxiPickup", "taxiDrop"].includes(o.type)) {
           const car = o.escortCar ? a.taxi : o.contract ? a.contractCar : SN.player.car || SN.loanCar;
           assert(car && !SN.isWater(o.x, o.z), "缺少可达的驾驶终点");
@@ -690,7 +697,14 @@
       assert(!SN.campaign.active && (kind === "story" ? SN.campaign.progress === index + 1 : SN.campaign.jobWins[index] === saved.wins + 1), "任务未通关");
       assert(SN.money === saved.money + m.reward && SN.progression.stats[stat] === saved.passed + 1, "通关奖励重复或丢失");
     } finally {
-      reset(); SN.campaign.progress = saved.progress; SN.money = saved.money; SN.completed = saved.completed;
+      reset();
+      for (const boat of SN.riverBoats || [])
+        if (boat.riverHome) {
+          Object.assign(boat, { x: boat.riverHome.x, z: boat.riverHome.z, yaw: boat.riverHome.yaw,
+            speed: 0, vx: 0, vz: 0 });
+          SN.resetVehicleGround(boat);
+        }
+      SN.campaign.progress = saved.progress; SN.money = saved.money; SN.completed = saved.completed;
       SN.progression.respect = saved.respect; SN.progression.stats[stat] = saved.passed;
       if (kind === "side") SN.campaign.jobWins[index] = saved.wins;
       SN.slowMotion = 0; move(saved.x, saved.z); SN.snapPlayer(); SN.snapCars();
@@ -801,7 +815,7 @@
     SN.storyMissions.forEach((m, index) => SN.smoke.stages.push(
       [19.05 + index * 0.025, "main-mission-" + m.id, () => SN.smokeMainMission(index)]));
     SN.sideJobs.forEach((m, index) => SN.smoke.stages.push(
-      [18.85 + index * 0.025, "side-mission-" + m.id, () => SN.smokeMainMission(index, "side")]));
+      [m.id === "riverrun" ? 23.35 : 18.85 + index * 0.025, "side-mission-" + m.id, () => SN.smokeMainMission(index, "side")]));
     SN.smoke.stages.sort((a, b) => a[0] - b[0]);
   };
 

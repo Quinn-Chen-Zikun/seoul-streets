@@ -10,6 +10,7 @@
     const vehicle = (text, x, z, vehicleType, extra = {}) => Object.assign({ type: "vehicle", text, x, z, vehicleType, r: 6 }, extra);
     const chase = (text, x, z, route) => ({ type: "chase", text, x, z, route });
     const race = (text, x, z) => ({ type: "race", text, x, z, r: 17 });
+    const boatRace = (text, x, z) => ({ type: "race", text, x, z, r: 22, boat: true });
     const mission = (id, title, giver, district, x, z, reward, brief, dialogue, objectives, extra = {}) => Object.assign({
       id, title, giver, district, start: { x, z }, reward, respect: Math.round(reward / 20),
       brief, dialogue, objectives, limit: 360, totalLimit: 360,
@@ -188,7 +189,16 @@
           go("到弘大夜店门口找店长", -1867, -570, { r: 6 }),
           fight("击退三名闹事醉客", -1867, -570, 3, true),
           go("回吧台拿看场费", -1860, -560, { r: 4 })
-        ], { totalLimit: 240, outro: "店长把现金塞进你手里，顺便把闹事者的酒钱也记在你头上。" })
+        ], { totalLimit: 240, outro: "店长把现金塞进你手里，顺便把闹事者的酒钱也记在你头上。" }),
+      mission("riverrun", "汉江快艇赛", "mentor", "汉江", -30, -765, 1600,
+        "开快艇沿汉江中段穿过四道浮标，全程计时；撞桥墩或开上岸都会中断比赛。",
+        ["韩序温：江面比马路宽，也比马路不讲道理。", "韩序温：船在东南岸边，四道浮标，别把螺旋桨缠了。"], [
+          go("到汉江东南岸找一艘快艇", 1450, 862, { r: 9 }),
+          boatRace("浮标 1 · 东段", 1400, 450),
+          boatRace("浮标 2 · 中段", 1000, 450),
+          boatRace("浮标 3 · 桥下", 600, 450),
+          boatRace("浮标 4 · 终点", 200, 450)
+        ], { totalLimit: 320, outro: "你把船靠回岸边，韩序温在电话里只说了句：别把螺旋桨缠了。" })
     );
     for (const [i, m] of SN.storyMissions.entries()) {
       m.district = m.district || ["钟路 · 光化门", "明洞", "江南", "首尔 · 南山", "乙支路", "汉江", "汉江"][i];

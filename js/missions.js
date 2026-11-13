@@ -299,7 +299,7 @@
           const c = SN.contacts.find(item => item.id === o.contact);
           if (c) { o.x = c.x; o.z = c.z; }
         }
-        else if (Number.isFinite(o.x) && o.type !== "tail" && o.type !== "chase")
+        else if (Number.isFinite(o.x) && o.type !== "tail" && o.type !== "chase" && !o.boat)
           Object.assign(o, SN.safePosition(o.x, o.z, 0.42, null, "objective-" + m.id + "-" + m.objectives.indexOf(o)));
       }
   };
@@ -792,7 +792,7 @@
       SN.stageLoanCar();
       if (o.type === "ambush") SN.stageConvoy(o);
     }
-    if (o.type === "taxiPickup" && !SN.player.car || o.type === "race" && !SN.player.car)
+    if ((o.type === "taxiPickup" || o.type === "race") && !o.boat && !SN.player.car)
       SN.stageLoanCar();
     if (o.type === "taxiDrop" && !a.taxi) {
       SN.stageLoanCar();
@@ -1058,16 +1058,31 @@
       done = SN.player.car === a.taxi && distance < o.r && Math.abs(SN.player.car.speed) < 1;
     }
     else if (o.type === "race") {
-      if (a.step === 0 && !a.raceCar && SN.player.car)
-        a.raceCar = SN.player.car;
-      if (!a.raceCar && SN.player.car)
-        a.raceCar = SN.player.car;
-      a.outside = a.raceCar && SN.player.car !== a.raceCar ? a.outside + dt : 0;
-      if (a.raceCar && a.raceCar.health <= 0 || a.outside > 15) {
-        SN.failMission("赛车无法继续");
-        return;
+      if (o.boat) {
+        const boat = SN.player.car;
+        if (!boat || !boat.spec.boat) {
+          a.outside += dt;
+          if (a.outside > 20) {
+            SN.failMission("需要驾驶快艇完成水上赛段");
+            return;
+          }
+        } else {
+          a.outside = 0;
+          a.raceCar = boat;
+        }
+        done = !!boat && boat.spec.boat && distance < o.r;
+      } else {
+        if (a.step === 0 && !a.raceCar && SN.player.car)
+          a.raceCar = SN.player.car;
+        if (!a.raceCar && SN.player.car)
+          a.raceCar = SN.player.car;
+        a.outside = a.raceCar && SN.player.car !== a.raceCar ? a.outside + dt : 0;
+        if (a.raceCar && a.raceCar.health <= 0 || a.outside > 15) {
+          SN.failMission("赛车无法继续");
+          return;
+        }
+        done = !!SN.player.car && distance < o.r;
       }
-      done = !!SN.player.car && distance < o.r;
     }
     else if (o.type === "fight" || o.type === "defend") {
       a.outside = distance > (o.type === "fight" ? 45 : 40) ? a.outside + dt : 0;
