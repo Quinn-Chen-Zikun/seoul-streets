@@ -2963,7 +2963,7 @@ body:has(#toast.show) #cityRadio { visibility: hidden; }
         <span><kbd>R</kbd>换弹 / 车辆复位</span><span><kbd>G</kbd>鸣笛 / 扬招出租车</span><span><kbd>X</kbd>按住后视</span>
         <span><kbd>U</kbd>工作车辆接单</span><span><kbd>Y</kbd>参与街头偶遇</span><span><kbd>[ / ]</kbd>切换电台</span>
         <span><kbd>H</kbd>收起</span>
-        <span><kbd>N</kbd>地图</span>
+        <span><kbd>N</kbd> / <kbd>Tab</kbd> 地图</span>
         <span><kbd>J</kbd>日志</span>
         <span><kbd>E</kbd>对话</span>
         <span><kbd>K</kbd>换装</span>
@@ -17449,15 +17449,15 @@ void main(){
         driver.meleeOnly = driver.kind === "civilian";
         SN.carjack = { car: c, time: 0.6, x: SN.player.x, z: SN.player.z };
         if (c.role === "police")
-          SN.commitCrime(3, "抢夺警车 ★3", "policeCarjack", 55);
+          SN.commitCrime(3, "抢夺警车 ★3", "policeCarjack", 55, true);
         else
-          SN.commitCrime(1, "劫车 ★1", "carjack", 45);
+          SN.commitCrime(2, "劫车 ★2", "carjack", 45, true);
         if (c.role === "gang")
           SN.crews[c.team].anger = 40;
         SN.toast("已拉出驾驶员并接管车辆 · 目击者可能报警", 3);
       }
       else if (c !== SN.loanCar && c !== SN.missionCar && c.role !== "mission" && c.role !== "boat")
-        SN.commitCrime(1, "盗窃车辆 ★1", "cartheft", 38);
+        SN.commitCrime(1, "盗窃车辆 ★1", "cartheft", 38, true);
       if (c !== SN.loanCar && c.role !== "mission" && c.role !== "boat" && !c.stolenOnce) { SN.progression.stats.carsStolen++; c.stolenOnce = true; }
       if (!SN.carjack) SN.carjack = { car: c, time: 0.6, x: SN.player.x, z: SN.player.z };
       SN.player.vault = null;
@@ -21453,7 +21453,7 @@ void main(){
     SN.spawnClock = 0;
   };
 
-  SN.commitCrime = function commitCrime(severity, label, key = "general", radius = 42) {
+  SN.commitCrime = function commitCrime(severity, label, key = "general", radius = 42, policeOnly = false) {
     if (severity <= 0)
       return false;
     if (!SN.started || SN.arrestState)
@@ -21479,12 +21479,12 @@ void main(){
       else
         civilSeen.push(a);
     }
-    if (!policeSeen.length && !civilSeen.length)
+    if (!policeSeen.length && (!civilSeen.length || policeOnly))
       return false;
     if (policeSeen.length) {
       SN.pendingReports.push({ timer: SN.rand(0.45, 0.9), severity, label, key, caller: policeSeen[0], icon: null, police: true });
     }
-    else if (civilSeen.length) {
+    else if (civilSeen.length && !policeOnly) {
       const caller = civilSeen[0], icon = SN.acquirePhoneIcon();
       SN.pendingReports.push({ timer: SN.rand(2.1, 4.1), severity, label, key, caller, icon, police: false });
     }
@@ -22731,7 +22731,7 @@ void main(){
         a.meleeOnly = a.armedWeapon === 0;
       }
       SN.speakBubble(a, SN.bumpLinesAngry[Math.floor(SN.rnd() * SN.bumpLinesAngry.length)], "angry");
-      SN.commitCrime(1, "街头斗殴 ★1", "brawl", 32);
+      SN.commitCrime(1, "街头斗殴 ★1", "brawl", 32, true);
     }
     for (const other of SN.actors) {
       if (other === a || !other.active || other.down || other.inCar || other.kind !== "civilian" || other.interior)
@@ -26198,7 +26198,21 @@ void main(){
           boatRace("浮标 2 · 中段", 1000, 450),
           boatRace("浮标 3 · 桥下", 600, 450),
           boatRace("浮标 4 · 终点", 200, 450)
-        ], { totalLimit: 320, outro: "你把船靠回岸边，韩序温在电话里只说了句：别把螺旋桨缠了。" })
+        ], { totalLimit: 320, outro: "你把船靠回岸边，韩序温在电话里只说了句：别把螺旋桨缠了。" }),
+      mission("airport", "机场夜班", "informant", "江西 · 金浦机场", 902, -674, 1500,
+        "把一只贴着夜班标签的箱子从金浦机场送到首尔站，别问里面是什么。",
+        ["蔡娜凛：机场那边只认提货码，不认脸。", "蔡娜凛：箱子别放后备箱，放副驾，它怕颠。"], [
+          drive("到金浦机场货运口", -2300, -1500, { r: 15 }),
+          collect("取走夜班标签的箱子", -2300, -1500),
+          drive("把箱子送到首尔站", -1115, -430, { r: 15 })
+        ], { totalLimit: 480, outro: "箱子交接完，手机收到一条没有署名的转账。" }),
+      mission("bukchon", "北村夜访", "detective", "钟路 · 北村", 346, -752, 1300,
+        "有人把一支录音笔塞进北村老宅的门缝，取回来，别惊动住户。",
+        ["尹海率：北村的墙比人耳朵多。", "尹海率：拿到了就回来，别在巷子里开手电。"], [
+          go("到北村巷口", 360, -1360, { r: 6 }),
+          collect("从门缝取回录音笔", 360, -1360),
+          go("回光化门把录音笔交给尹海率", 346, -752, { r: 4 })
+        ], { totalLimit: 360, outro: "录音笔里只有一段雨声。尹海率说，够了。" })
     );
     for (const [i, m] of SN.storyMissions.entries()) {
       m.district = m.district || ["钟路 · 光化门", "明洞", "江南", "首尔 · 南山", "乙支路", "汉江", "汉江"][i];
@@ -27031,7 +27045,7 @@ void main(){
     SN.storyMissions.forEach((m, index) => SN.smoke.stages.push(
       [19.05 + index * 0.025, "main-mission-" + m.id, () => SN.smokeMainMission(index)]));
     SN.sideJobs.forEach((m, index) => SN.smoke.stages.push(
-      [m.id === "riverrun" ? 23.35 : 18.85 + index * 0.025, "side-mission-" + m.id, () => SN.smokeMainMission(index, "side")]));
+      [["riverrun", "airport", "bukchon"].includes(m.id) ? 23.35 + index * 0.02 : 18.85 + index * 0.025, "side-mission-" + m.id, () => SN.smokeMainMission(index, "side")]));
     SN.smoke.stages.sort((a, b) => a[0] - b[0]);
   };
 
@@ -30810,6 +30824,21 @@ void main(){
       Z = z => oz + (z + SN.EXTENT) * k;
     SN.atlasTransform = { k, ox, oz };
     g.drawImage(SN.mapCanvas, ox, oz, size, size);
+    // Tint each district so the city reads as distinct neighbourhoods.
+    for (let i = 0; i < SN.cityDistricts.length; i++) {
+      const d = SN.cityDistricts[i];
+      g.globalAlpha = i === SN.selectedDistrict ? 0.3 : 0.14;
+      g.fillStyle = d.color;
+      g.beginPath();
+      g.ellipse(X(d.x), Z(d.z), d.rx * k, d.rz * k, 0, 0, SN.TAU);
+      g.fill();
+      g.globalAlpha = i === SN.selectedDistrict ? 0.8 : 0.42;
+      g.strokeStyle = d.color;
+      g.lineWidth = i === SN.selectedDistrict ? 1.6 : 1;
+      g.stroke();
+    }
+    g.globalAlpha = 1;
+    g.lineWidth = 1;
     SN.drawGPS(g, X, Z, 3);
     g.strokeStyle = "#ccdfca12";
     g.lineWidth = 1;
@@ -31796,7 +31825,7 @@ void main(){
         return;
       }
       if (SN.streetPanelOpen) { if (e.code === "Escape") SN.closeStreetPanel(); return; }
-      if (e.code === "KeyN" && !e.repeat) {
+      if ((e.code === "KeyN" || e.code === "Tab") && !e.repeat) {
         e.preventDefault();
         SN.toggleCityMap();
         return;

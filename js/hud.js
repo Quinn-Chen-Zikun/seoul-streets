@@ -249,6 +249,21 @@
       Z = z => oz + (z + SN.EXTENT) * k;
     SN.atlasTransform = { k, ox, oz };
     g.drawImage(SN.mapCanvas, ox, oz, size, size);
+    // Tint each district so the city reads as distinct neighbourhoods.
+    for (let i = 0; i < SN.cityDistricts.length; i++) {
+      const d = SN.cityDistricts[i];
+      g.globalAlpha = i === SN.selectedDistrict ? 0.3 : 0.14;
+      g.fillStyle = d.color;
+      g.beginPath();
+      g.ellipse(X(d.x), Z(d.z), d.rx * k, d.rz * k, 0, 0, SN.TAU);
+      g.fill();
+      g.globalAlpha = i === SN.selectedDistrict ? 0.8 : 0.42;
+      g.strokeStyle = d.color;
+      g.lineWidth = i === SN.selectedDistrict ? 1.6 : 1;
+      g.stroke();
+    }
+    g.globalAlpha = 1;
+    g.lineWidth = 1;
     SN.drawGPS(g, X, Z, 3);
     g.strokeStyle = "#ccdfca12";
     g.lineWidth = 1;

@@ -356,7 +356,7 @@
         return;
       }
       if (SN.streetPanelOpen) { if (e.code === "Escape") SN.closeStreetPanel(); return; }
-      if (e.code === "KeyN" && !e.repeat) {
+      if ((e.code === "KeyN" || e.code === "Tab") && !e.repeat) {
         e.preventDefault();
         SN.toggleCityMap();
         return;

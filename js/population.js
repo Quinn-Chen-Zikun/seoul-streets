@@ -161,7 +161,7 @@
     SN.spawnClock = 0;
   };
 
-  SN.commitCrime = function commitCrime(severity, label, key = "general", radius = 42) {
+  SN.commitCrime = function commitCrime(severity, label, key = "general", radius = 42, policeOnly = false) {
     if (severity <= 0)
       return false;
     if (!SN.started || SN.arrestState)
@@ -187,12 +187,12 @@
       else
         civilSeen.push(a);
     }
-    if (!policeSeen.length && !civilSeen.length)
+    if (!policeSeen.length && (!civilSeen.length || policeOnly))
       return false;
     if (policeSeen.length) {
       SN.pendingReports.push({ timer: SN.rand(0.45, 0.9), severity, label, key, caller: policeSeen[0], icon: null, police: true });
     }
-    else if (civilSeen.length) {
+    else if (civilSeen.length && !policeOnly) {
       const caller = civilSeen[0], icon = SN.acquirePhoneIcon();
       SN.pendingReports.push({ timer: SN.rand(2.1, 4.1), severity, label, key, caller, icon, police: false });
     }
@@ -1439,7 +1439,7 @@
         a.meleeOnly = a.armedWeapon === 0;
       }
       SN.speakBubble(a, SN.bumpLinesAngry[Math.floor(SN.rnd() * SN.bumpLinesAngry.length)], "angry");
-      SN.commitCrime(1, "街头斗殴 ★1", "brawl", 32);
+      SN.commitCrime(1, "街头斗殴 ★1", "brawl", 32, true);
     }
     for (const other of SN.actors) {
       if (other === a || !other.active || other.down || other.inCar || other.kind !== "civilian" || other.interior)

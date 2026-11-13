@@ -444,15 +444,15 @@
         driver.meleeOnly = driver.kind === "civilian";
         SN.carjack = { car: c, time: 0.6, x: SN.player.x, z: SN.player.z };
         if (c.role === "police")
-          SN.commitCrime(3, "抢夺警车 ★3", "policeCarjack", 55);
+          SN.commitCrime(3, "抢夺警车 ★3", "policeCarjack", 55, true);
         else
-          SN.commitCrime(1, "劫车 ★1", "carjack", 45);
+          SN.commitCrime(2, "劫车 ★2", "carjack", 45, true);
         if (c.role === "gang")
           SN.crews[c.team].anger = 40;
         SN.toast("已拉出驾驶员并接管车辆 · 目击者可能报警", 3);
       }
       else if (c !== SN.loanCar && c !== SN.missionCar && c.role !== "mission" && c.role !== "boat")
-        SN.commitCrime(1, "盗窃车辆 ★1", "cartheft", 38);
+        SN.commitCrime(1, "盗窃车辆 ★1", "cartheft", 38, true);
       if (c !== SN.loanCar && c.role !== "mission" && c.role !== "boat" && !c.stolenOnce) { SN.progression.stats.carsStolen++; c.stolenOnce = true; }
       if (!SN.carjack) SN.carjack = { car: c, time: 0.6, x: SN.player.x, z: SN.player.z };
       SN.player.vault = null;
