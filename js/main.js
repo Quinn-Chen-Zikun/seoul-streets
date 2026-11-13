@@ -492,9 +492,9 @@
       SN.camera.position.set(p.x - 2.6, y + 2.7, p.z + 1.2);
       SN.lookTarget.set(-1861.8, y + 1.55, -552.6);
     } else if (shot.name === "base" && SN.military) {
-      SN.camera.fov = 60;
-      SN.camera.position.set(SN.military.cx - 94, SN.military.y + 12, SN.military.cz + 42);
-      SN.lookTarget.set(SN.military.cx + 16, SN.military.y + 3, SN.military.cz - 18);
+      SN.camera.fov = 64;
+      SN.camera.position.set(SN.military.cx + 78, SN.military.y + 10, SN.military.cz + 18);
+      SN.lookTarget.set(SN.military.cx - 35, SN.military.y + 2, SN.military.cz - 22);
     } else {
       const distance = p.car ? 10.5 : 6.7, yaw = shot.yaw;
       SN.camera.position.set(p.x - Math.sin(yaw) * distance, y + (p.car ? 4.4 : 3.1), p.z - Math.cos(yaw) * distance);
@@ -602,7 +602,7 @@
     }
     SN.showcaseActors = [];
     const identities = ["office", "student", "tourist", "elder", "delivery", "vendor", "nightlife", "couple", "jogger", "worker"];
-    const crowd = name === "street" || name === "map" ? 24 : 12;
+    const crowd = name === "street" || name === "map" ? 24 : name === "base" ? 0 : 12;
     for (let n = 0; n < crowd; n++) {
       const eligible = a => a.kind === "civilian" && !SN.showcaseActors.includes(a) && a.index < SN.pedCount;
       const actor = SN.actors.find(a => eligible(a) && a.archetype === identities[n % identities.length]) || SN.actors.find(eligible);
@@ -765,6 +765,7 @@
       [12.8, "feel-military-base", () => {
         const M = SN.military;
         assert(M && M.tanks.length === 2 && M.aircraft.length === 2 && M.guards.length === 4, "军营内容缺失");
+        assert(!SN.actors.some(a => a.active && a.kind === "civilian" && !a.guard && SN.inMilitaryZone(a.x, a.z, 0)), "平民进入军事禁区");
         const heights = [[-100, -60], [90, -50], [-10, 38], [40, 60], [0, 0]]
           .map(([lx, lz]) => SN.surfaceHeight(M.cx + lx, M.cz + lz));
         const spread = Math.max(...heights) - Math.min(...heights);

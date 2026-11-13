@@ -932,6 +932,7 @@
     SN.pedNodeNearest = function pedNodeNearest(x, z, radius = 8) {
       let best = null, bestDistance = radius;
       for (const node of query(x, z, radius)) {
+        if (SN.inMilitaryZone(node.x, node.z, 0.5)) continue;
         const d = Math.hypot(node.x - x, node.z - z);
         if (d < bestDistance) { bestDistance = d; best = node; }
       }
@@ -2062,7 +2063,7 @@
           nearbyCount++;
         continue;
       }
-      const retire = a.active && (distance > 150 || (a.pedDespawn && distance > 45 && SN.crowdOffscreen(a.x, a.z)) || ((nearbyCount >= SN.crowdTarget || SN.simTime > (a.residentUntil || 0)) && SN.crowdOffscreen(a.x, a.z) && distance > 50));
+      const retire = a.active && (distance > 150 || (a.kind === "civilian" && SN.inMilitaryZone(a.x, a.z, 0)) || (a.pedDespawn && distance > 45 && SN.crowdOffscreen(a.x, a.z)) || ((nearbyCount >= SN.crowdTarget || SN.simTime > (a.residentUntil || 0)) && SN.crowdOffscreen(a.x, a.z) && distance > 50));
       if (retire) {
         a.active = false;
         if (a.partner) {
@@ -2087,7 +2088,7 @@
       // New pedestrians arrive behind the camera; the initial seed occurs before the first frame.
       if (SN.crowdBootstrapped && !SN.crowdOffscreen(x, z))
         continue;
-      if (SN.blocked(x, z, 0.35) || SN.isWater(x, z, 0.35) || SN.pedOnCarriageway(x, z) || SN.actors.some(a => a.active && !a.inCar && Math.hypot(a.x - x, a.z - z) < 1.25) || SN.cars.some(c => c.active && SN.carCirclePush(x, z, 0.45, c)))
+      if (SN.blocked(x, z, 0.35) || SN.isWater(x, z, 0.35) || SN.inMilitaryZone(x, z, 1) || SN.pedOnCarriageway(x, z) || SN.actors.some(a => a.active && !a.inCar && Math.hypot(a.x - x, a.z - z) < 1.25) || SN.cars.some(c => c.active && SN.carCirclePush(x, z, 0.45, c)))
         continue;
       let best = null, bestScore = -1;
       for (const candidate of available) {

@@ -8,6 +8,8 @@
   // Filled once the terrain exists; the module itself must load before any world init runs.
   let Y = 0;
   const WORLD = (lx, lz) => ({ x: CX + lx, z: CZ + lz });
+  // Civilians and street pedestrians must never be placed inside the wire.
+  SN.inMilitaryZone = (x, z, r = 0) => x > X0 - r && x < X1 + r && z > Z0 - r && z < Z1 + r;
 
   SN.military = {
     x0: X0, x1: X1, z0: Z0, z1: Z1, cx: CX, cz: CZ, y: Y,

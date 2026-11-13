@@ -22224,6 +22224,7 @@ void main(){
     SN.pedNodeNearest = function pedNodeNearest(x, z, radius = 8) {
       let best = null, bestDistance = radius;
       for (const node of query(x, z, radius)) {
+        if (SN.inMilitaryZone(node.x, node.z, 0.5)) continue;
         const d = Math.hypot(node.x - x, node.z - z);
         if (d < bestDistance) { bestDistance = d; best = node; }
       }
@@ -23354,7 +23355,7 @@ void main(){
           nearbyCount++;
         continue;
       }
-      const retire = a.active && (distance > 150 || (a.pedDespawn && distance > 45 && SN.crowdOffscreen(a.x, a.z)) || ((nearbyCount >= SN.crowdTarget || SN.simTime > (a.residentUntil || 0)) && SN.crowdOffscreen(a.x, a.z) && distance > 50));
+      const retire = a.active && (distance > 150 || (a.kind === "civilian" && SN.inMilitaryZone(a.x, a.z, 0)) || (a.pedDespawn && distance > 45 && SN.crowdOffscreen(a.x, a.z)) || ((nearbyCount >= SN.crowdTarget || SN.simTime > (a.residentUntil || 0)) && SN.crowdOffscreen(a.x, a.z) && distance > 50));
       if (retire) {
         a.active = false;
         if (a.partner) {
@@ -23379,7 +23380,7 @@ void main(){
       // New pedestrians arrive behind the camera; the initial seed occurs before the first frame.
       if (SN.crowdBootstrapped && !SN.crowdOffscreen(x, z))
         continue;
-      if (SN.blocked(x, z, 0.35) || SN.isWater(x, z, 0.35) || SN.pedOnCarriageway(x, z) || SN.actors.some(a => a.active && !a.inCar && Math.hypot(a.x - x, a.z - z) < 1.25) || SN.cars.some(c => c.active && SN.carCirclePush(x, z, 0.45, c)))
+      if (SN.blocked(x, z, 0.35) || SN.isWater(x, z, 0.35) || SN.inMilitaryZone(x, z, 1) || SN.pedOnCarriageway(x, z) || SN.actors.some(a => a.active && !a.inCar && Math.hypot(a.x - x, a.z - z) < 1.25) || SN.cars.some(c => c.active && SN.carCirclePush(x, z, 0.45, c)))
         continue;
       let best = null, bestScore = -1;
       for (const candidate of available) {
@@ -29925,6 +29926,8 @@ void main(){
   // Filled once the terrain exists; the module itself must load before any world init runs.
   let Y = 0;
   const WORLD = (lx, lz) => ({ x: CX + lx, z: CZ + lz });
+  // Civilians and street pedestrians must never be placed inside the wire.
+  SN.inMilitaryZone = (x, z, r = 0) => x > X0 - r && x < X1 + r && z > Z0 - r && z < Z1 + r;
 
   SN.military = {
     x0: X0, x1: X1, z0: Z0, z1: Z1, cx: CX, cz: CZ, y: Y,
@@ -32541,9 +32544,9 @@ void main(){
       SN.camera.position.set(p.x - 2.6, y + 2.7, p.z + 1.2);
       SN.lookTarget.set(-1861.8, y + 1.55, -552.6);
     } else if (shot.name === "base" && SN.military) {
-      SN.camera.fov = 60;
-      SN.camera.position.set(SN.military.cx - 94, SN.military.y + 12, SN.military.cz + 42);
-      SN.lookTarget.set(SN.military.cx + 16, SN.military.y + 3, SN.military.cz - 18);
+      SN.camera.fov = 64;
+      SN.camera.position.set(SN.military.cx + 78, SN.military.y + 10, SN.military.cz + 18);
+      SN.lookTarget.set(SN.military.cx - 35, SN.military.y + 2, SN.military.cz - 22);
     } else {
       const distance = p.car ? 10.5 : 6.7, yaw = shot.yaw;
       SN.camera.position.set(p.x - Math.sin(yaw) * distance, y + (p.car ? 4.4 : 3.1), p.z - Math.cos(yaw) * distance);
@@ -32651,7 +32654,7 @@ void main(){
     }
     SN.showcaseActors = [];
     const identities = ["office", "student", "tourist", "elder", "delivery", "vendor", "nightlife", "couple", "jogger", "worker"];
-    const crowd = name === "street" || name === "map" ? 24 : 12;
+    const crowd = name === "street" || name === "map" ? 24 : name === "base" ? 0 : 12;
     for (let n = 0; n < crowd; n++) {
       const eligible = a => a.kind === "civilian" && !SN.showcaseActors.includes(a) && a.index < SN.pedCount;
       const actor = SN.actors.find(a => eligible(a) && a.archetype === identities[n % identities.length]) || SN.actors.find(eligible);
@@ -32814,6 +32817,7 @@ void main(){
       [12.8, "feel-military-base", () => {
         const M = SN.military;
         assert(M && M.tanks.length === 2 && M.aircraft.length === 2 && M.guards.length === 4, "军营内容缺失");
+        assert(!SN.actors.some(a => a.active && a.kind === "civilian" && !a.guard && SN.inMilitaryZone(a.x, a.z, 0)), "平民进入军事禁区");
         const heights = [[-100, -60], [90, -50], [-10, 38], [40, 60], [0, 0]]
           .map(([lx, lz]) => SN.surfaceHeight(M.cx + lx, M.cz + lz));
         const spread = Math.max(...heights) - Math.min(...heights);
