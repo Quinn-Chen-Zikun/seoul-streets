@@ -93,7 +93,7 @@
   };
 
   SN.canControl = function canControl() {
-    return SN.started && !SN.contextLost && !SN.contextRestorePending && !SN.paused && !SN.pauseOpen && !SN.player.dead && !SN.arrestState && !SN.carjack && !SN.player.vault && !SN.cityMapOpen && !SN.journalOpen && !SN.storyDialogue && !SN.cinematic && !SN.shopMenuOpen && !SN.streetPanelOpen && !(SN.campaign.active && SN.campaign.active.status === "failed");
+    return SN.started && !SN.contextLost && !SN.contextRestorePending && !SN.paused && !SN.pauseOpen && !SN.player.dead && !SN.arrestState && !SN.carjack && !SN.cableRide && !SN.player.vault && !SN.cityMapOpen && !SN.journalOpen && !SN.storyDialogue && !SN.cinematic && !SN.shopMenuOpen && !SN.streetPanelOpen && !(SN.campaign.active && SN.campaign.active.status === "failed");
   };
 
   SN.toggleGait = function toggleGait() {

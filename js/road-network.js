@@ -162,7 +162,10 @@
     const sample = SN.roadSample(x, z, BLEND_WIDTH);
     if (!sample)
       return natural;
-    if (sample.profile.bridge || sample.profile.elevated && Math.abs(sample.height - natural) > 2.5)
+    const lifted = sample.profile.bridge || sample.profile.elevated;
+    // A deck above open ground stays a bridge. A deck lower than the hillside
+    // is a cut, or the mountain swallows the road at its approach.
+    if (lifted && natural <= sample.height + 0.4)
       return natural;
     const inner = sample.edge + 0.3, outer = inner + BLEND_WIDTH;
     if (sample.distance <= inner)
@@ -613,6 +616,17 @@
     const profile = road.profile, lanes = road.lanes, laneWidth = 3.2;
     if (road.pedestrian || lanes < 2)
       return;
+    // Solid edge lines just inside the kerb read the carriageway width at a glance.
+    for (const side of [-1, 1])
+      for (let s = 2; s < road.length - 2; s += 9) {
+        const a = pointOnPolyline(road, s), b = pointOnPolyline(road, s + 9),
+          y0 = SN.roadProfileHeight(profile, s), y1 = SN.roadProfileHeight(profile, s + 9),
+          off = side * (road.width / 2 - 0.55);
+        recordPiece(SN.markBatch,
+          a.x + a.nx * off, a.z + a.nz * off, y0,
+          b.x + b.nx * off, b.z + b.nz * off, y1,
+          0.1, 0.167, 0.018, 0xdce2e6);
+      }
     for (let lane = 1; lane < lanes; lane++) {
       const centre = lane === lanes / 2,
         off = (lane - lanes / 2) * laneWidth + (centre ? 0 : Math.sign(lane - lanes / 2) * road.median / 2);

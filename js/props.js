@@ -219,6 +219,71 @@
     }
   };
 
+  // The cable line is also a way up the mountain: board at either station and
+  // ride the cabin instead of fighting the slope.
+  SN.updateCable = function updateCable() {
+    SN.cableTarget = null;
+    if (SN.cableRide || SN.player.car || SN.player.aircraft || SN.player.dead || !SN.cableStations)
+      return;
+    for (const station of SN.cableStations) {
+      const ground = SN.surfaceHeight(station.x, station.z);
+      if (Math.hypot(SN.player.x - station.x, SN.player.z - station.z) < 9 && Math.abs(SN.player.y - ground) < 5) {
+        SN.cableTarget = station;
+        return;
+      }
+    }
+  };
+
+  SN.startCableRide = function startCableRide() {
+    const from = SN.cableTarget;
+    if (!from || SN.cableRide)
+      return false;
+    if (SN.campaign.active && SN.campaign.active.status === "running") {
+      SN.toast("任务进行中，缆车暂停载客", 3);
+      return false;
+    }
+    if (SN.heat > 0) {
+      SN.toast("通缉期间缆车停运", 3);
+      return false;
+    }
+    const to = SN.cableStations.find(station => station !== from);
+    if (!to)
+      return false;
+    SN.clearInput();
+    SN.player.car = null; SN.player.bail = null; SN.player.vault = null;
+    SN.playerRoot.visible = false;
+    SN.cableTarget = null;
+    SN.cableRide = { from, to, time: 0, duration: 9 };
+    SN.toast("缆车进站 · " + to.name, 3.2);
+    return true;
+  };
+
+  SN.updateCableRide = function updateCableRide(dt) {
+    const ride = SN.cableRide;
+    if (!ride)
+      return false;
+    ride.time += dt;
+    const t = SN.clamp(ride.time / ride.duration, 0, 1), eased = t * t * (3 - 2 * t);
+    SN.player.x = SN.lerp(ride.from.ride.x, ride.to.ride.x, eased);
+    SN.player.z = SN.lerp(ride.from.ride.z, ride.to.ride.z, eased);
+    SN.player.y = SN.lerp(ride.from.ride.y, ride.to.ride.y, eased) + 1.2;
+    SN.player.yaw = Math.atan2(ride.to.ride.x - ride.from.ride.x, ride.to.ride.z - ride.from.ride.z);
+    SN.camYaw = SN.player.yaw;
+    SN.lookDelay = 0;
+    if (t < 1)
+      return true;
+    const landing = SN.safePosition(ride.to.x, ride.to.z, 0.4);
+    Object.assign(SN.player, {
+      x: landing.x, z: landing.z, y: SN.surfaceHeight(landing.x, landing.z),
+      vy: 0, speed: 0, motionSpeed: 0, bail: null
+    });
+    SN.playerRoot.visible = true;
+    SN.snapPlayer();
+    SN.cableRide = null;
+    SN.toast("缆车已抵达 · " + ride.to.name, 3);
+    return false;
+  };
+
   SN.surfaceTypeAt = function surfaceTypeAt(x, z) {
     const ix = SN.clamp(Math.floor((x + SN.EXTENT) / SN.SURFACE_CELL), 0, SN.SURFACE_SIZE - 1),
       iz = SN.clamp(Math.floor((z + SN.EXTENT) / SN.SURFACE_CELL), 0, SN.SURFACE_SIZE - 1);
@@ -955,6 +1020,12 @@
       SN.finishCityGroup(g, true);
       SN.cityTransit.push({ kind: "cable", root: g, phase: i });
     }
+    SN.cableTarget = null;
+    SN.cableRide = null;
+    SN.cableStations = [
+      { x: SN.cableStart.x, z: SN.cableStart.z, name: "南山缆车 · 山下站", ride: SN.cableStart },
+      { x: SN.cableEnd.x, z: SN.cableEnd.z, name: "南山缆车 · 山顶站", ride: SN.cableEnd }
+    ];
     // Stair entrances are real stepped surfaces descending from a raised landing.
     for (const d of SN.cityDistricts) {
       const x = d.travel[0] - 25, z = d.travel[1] - 21;

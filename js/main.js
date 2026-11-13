@@ -222,7 +222,10 @@
       SN.minutes = (SN.minutes + dt * 1440 / (SN.cycleMinutes * 60)) % 1440;
       SN.lookDelay = Math.max(0, SN.lookDelay - dt);
       SN.impactCooldown = Math.max(0, SN.impactCooldown - dt);
-      if (SN.arrestState)
+      if (!SN.cableRide && !SN.arrestState) SN.updateCable();
+      if (SN.cableRide)
+        SN.updateCableRide(dt);
+      else if (SN.arrestState)
         SN.updateArrest(dt);
       else if (!SN.player.dead) {
         if (SN.player.aircraft)
@@ -2769,6 +2772,27 @@
         move(o.x, o.z); SN.updateMission(0.1);
         assert(!SN.campaign.active, "夜班代驾送达后未结算");
         if (car) { car.active = false; car.root.visible = false; }
+        reset();
+      }],
+      [19.75, "living-road-cut", () => {
+        for (const [x, z] of [[-130, -348], [1150, 1322], [-1162, -134]]) {
+          const road = SN.roadSample(x, z, 30);
+          assert(road, "道路采样缺失 " + x + "," + z);
+          assert(SN.terrainHeight(x, z) < road.height + 1.2, "山体仍埋住道路 " + x + "," + z);
+        }
+      }],
+      [19.70, "living-cable-ride", () => {
+        reset();
+        const lower = SN.cableStations[0], p = SN.safePosition(lower.x, lower.z, 0.4);
+        move(p.x, p.z); SN.updateCable();
+        assert(SN.cableTarget === lower, "缆车站未识别");
+        assert(SN.startCableRide(), "缆车未启动");
+        assert(SN.cableRide && !SN.playerRoot.visible, "缆车状态错误");
+        SN.updateCableRide(5); SN.updateCableRide(5);
+        assert(!SN.cableRide, "缆车未抵达");
+        const upper = SN.cableStations[1];
+        assert(Math.hypot(SN.player.x - upper.x, SN.player.z - upper.z) < 30, "缆车落点错误");
+        assert(SN.playerRoot.visible, "下车后人物未恢复");
         reset();
       }],
       [19.72, "living-weather-clock", () => {

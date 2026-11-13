@@ -643,7 +643,11 @@
     SN.setText("weaponName", SN.holstered || !w ? "徒手" : w.name);
     SN.setText("ammo", c && c.recoveryReady ? "复位" : SN.reloadTime > 0 ? "换弹中…" : w && !SN.holstered ? (w.capacity ? w.mag + " / " + w.reserve : "近战") : "—");
     SN.setText("weaponHint", c && c.recoveryReady ? "按 R 复位 · 触屏点右上角「复位」" : c ? "F 下车 · 空格手刹 · G 鸣笛 · 左键车内射击" : ac ? "F 下机 · W/S 升降与前飞 · A/D 转向 · 空格下降" : SN.holstered ? "Q / 1–6 装备 · 滚轮变焦" : "Q / 1–6 武器 · 滚轮变焦 · H 收起");
-    if (SN.counterTarget && SN.streetServices.includes(SN.counterTarget.shop)) {
+    if (SN.cableTarget && !c && !ac) {
+      SN.setHtml("interaction", "<kbd>F</kbd>" + SN.cableTarget.name);
+      SN.$("interaction").classList.add("visible");
+    }
+    else if (SN.counterTarget && SN.streetServices.includes(SN.counterTarget.shop)) {
       SN.setHtml("interaction", "<kbd>E</kbd>" + SN.counterTarget.name);
       SN.$("interaction").classList.add("visible");
     }
@@ -669,7 +673,7 @@
     }
     else
       SN.$("interaction").classList.remove("visible");
-    SN.setText("touchEnter", c ? "下车" : ac ? "下机" : SN.doorTarget ? (SN.doorTarget.dir > 0 ? "进门" : "出门") : "上车");
+    SN.setText("touchEnter", c ? "下车" : ac ? "下机" : SN.cableTarget ? "缆车" : SN.doorTarget ? (SN.doorTarget.dir > 0 ? "进门" : "出门") : "上车");
     SN.setText("touchSprint", c ? "鸣笛" : "疾跑");
     SN.setText("touchJump", c ? "手刹" : "跳跃");
     SN.$("touchJump").setAttribute("aria-label", c ? "按住手刹" : "跳跃");

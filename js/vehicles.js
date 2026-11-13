@@ -370,6 +370,10 @@
       SN.refreshHUD();
       return;
     }
+    if (!SN.player.car && SN.cableTarget && SN.startCableRide()) {
+      SN.refreshHUD();
+      return;
+    }
     if (!SN.player.car && SN.useDoor()) {
       SN.refreshHUD();
       return;

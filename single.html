@@ -10637,7 +10637,10 @@ void main(){
     const sample = SN.roadSample(x, z, BLEND_WIDTH);
     if (!sample)
       return natural;
-    if (sample.profile.bridge || sample.profile.elevated && Math.abs(sample.height - natural) > 2.5)
+    const lifted = sample.profile.bridge || sample.profile.elevated;
+    // A deck above open ground stays a bridge. A deck lower than the hillside
+    // is a cut, or the mountain swallows the road at its approach.
+    if (lifted && natural <= sample.height + 0.4)
       return natural;
     const inner = sample.edge + 0.3, outer = inner + BLEND_WIDTH;
     if (sample.distance <= inner)
@@ -11088,6 +11091,17 @@ void main(){
     const profile = road.profile, lanes = road.lanes, laneWidth = 3.2;
     if (road.pedestrian || lanes < 2)
       return;
+    // Solid edge lines just inside the kerb read the carriageway width at a glance.
+    for (const side of [-1, 1])
+      for (let s = 2; s < road.length - 2; s += 9) {
+        const a = pointOnPolyline(road, s), b = pointOnPolyline(road, s + 9),
+          y0 = SN.roadProfileHeight(profile, s), y1 = SN.roadProfileHeight(profile, s + 9),
+          off = side * (road.width / 2 - 0.55);
+        recordPiece(SN.markBatch,
+          a.x + a.nx * off, a.z + a.nz * off, y0,
+          b.x + b.nx * off, b.z + b.nz * off, y1,
+          0.1, 0.167, 0.018, 0xdce2e6);
+      }
     for (let lane = 1; lane < lanes; lane++) {
       const centre = lane === lanes / 2,
         off = (lane - lanes / 2) * laneWidth + (centre ? 0 : Math.sign(lane - lanes / 2) * road.median / 2);
@@ -13532,6 +13546,71 @@ void main(){
     }
   };
 
+  // The cable line is also a way up the mountain: board at either station and
+  // ride the cabin instead of fighting the slope.
+  SN.updateCable = function updateCable() {
+    SN.cableTarget = null;
+    if (SN.cableRide || SN.player.car || SN.player.aircraft || SN.player.dead || !SN.cableStations)
+      return;
+    for (const station of SN.cableStations) {
+      const ground = SN.surfaceHeight(station.x, station.z);
+      if (Math.hypot(SN.player.x - station.x, SN.player.z - station.z) < 9 && Math.abs(SN.player.y - ground) < 5) {
+        SN.cableTarget = station;
+        return;
+      }
+    }
+  };
+
+  SN.startCableRide = function startCableRide() {
+    const from = SN.cableTarget;
+    if (!from || SN.cableRide)
+      return false;
+    if (SN.campaign.active && SN.campaign.active.status === "running") {
+      SN.toast("任务进行中，缆车暂停载客", 3);
+      return false;
+    }
+    if (SN.heat > 0) {
+      SN.toast("通缉期间缆车停运", 3);
+      return false;
+    }
+    const to = SN.cableStations.find(station => station !== from);
+    if (!to)
+      return false;
+    SN.clearInput();
+    SN.player.car = null; SN.player.bail = null; SN.player.vault = null;
+    SN.playerRoot.visible = false;
+    SN.cableTarget = null;
+    SN.cableRide = { from, to, time: 0, duration: 9 };
+    SN.toast("缆车进站 · " + to.name, 3.2);
+    return true;
+  };
+
+  SN.updateCableRide = function updateCableRide(dt) {
+    const ride = SN.cableRide;
+    if (!ride)
+      return false;
+    ride.time += dt;
+    const t = SN.clamp(ride.time / ride.duration, 0, 1), eased = t * t * (3 - 2 * t);
+    SN.player.x = SN.lerp(ride.from.ride.x, ride.to.ride.x, eased);
+    SN.player.z = SN.lerp(ride.from.ride.z, ride.to.ride.z, eased);
+    SN.player.y = SN.lerp(ride.from.ride.y, ride.to.ride.y, eased) + 1.2;
+    SN.player.yaw = Math.atan2(ride.to.ride.x - ride.from.ride.x, ride.to.ride.z - ride.from.ride.z);
+    SN.camYaw = SN.player.yaw;
+    SN.lookDelay = 0;
+    if (t < 1)
+      return true;
+    const landing = SN.safePosition(ride.to.x, ride.to.z, 0.4);
+    Object.assign(SN.player, {
+      x: landing.x, z: landing.z, y: SN.surfaceHeight(landing.x, landing.z),
+      vy: 0, speed: 0, motionSpeed: 0, bail: null
+    });
+    SN.playerRoot.visible = true;
+    SN.snapPlayer();
+    SN.cableRide = null;
+    SN.toast("缆车已抵达 · " + ride.to.name, 3);
+    return false;
+  };
+
   SN.surfaceTypeAt = function surfaceTypeAt(x, z) {
     const ix = SN.clamp(Math.floor((x + SN.EXTENT) / SN.SURFACE_CELL), 0, SN.SURFACE_SIZE - 1),
       iz = SN.clamp(Math.floor((z + SN.EXTENT) / SN.SURFACE_CELL), 0, SN.SURFACE_SIZE - 1);
@@ -14268,6 +14347,12 @@ void main(){
       SN.finishCityGroup(g, true);
       SN.cityTransit.push({ kind: "cable", root: g, phase: i });
     }
+    SN.cableTarget = null;
+    SN.cableRide = null;
+    SN.cableStations = [
+      { x: SN.cableStart.x, z: SN.cableStart.z, name: "南山缆车 · 山下站", ride: SN.cableStart },
+      { x: SN.cableEnd.x, z: SN.cableEnd.z, name: "南山缆车 · 山顶站", ride: SN.cableEnd }
+    ];
     // Stair entrances are real stepped surfaces descending from a raised landing.
     for (const d of SN.cityDistricts) {
       const x = d.travel[0] - 25, z = d.travel[1] - 21;
@@ -17196,6 +17281,10 @@ void main(){
       return;
     if (SN.player.aircraft) {
       SN.exitAircraft();
+      SN.refreshHUD();
+      return;
+    }
+    if (!SN.player.car && SN.cableTarget && SN.startCableRide()) {
       SN.refreshHUD();
       return;
     }
@@ -30737,7 +30826,11 @@ void main(){
     SN.setText("weaponName", SN.holstered || !w ? "徒手" : w.name);
     SN.setText("ammo", c && c.recoveryReady ? "复位" : SN.reloadTime > 0 ? "换弹中…" : w && !SN.holstered ? (w.capacity ? w.mag + " / " + w.reserve : "近战") : "—");
     SN.setText("weaponHint", c && c.recoveryReady ? "按 R 复位 · 触屏点右上角「复位」" : c ? "F 下车 · 空格手刹 · G 鸣笛 · 左键车内射击" : ac ? "F 下机 · W/S 升降与前飞 · A/D 转向 · 空格下降" : SN.holstered ? "Q / 1–6 装备 · 滚轮变焦" : "Q / 1–6 武器 · 滚轮变焦 · H 收起");
-    if (SN.counterTarget && SN.streetServices.includes(SN.counterTarget.shop)) {
+    if (SN.cableTarget && !c && !ac) {
+      SN.setHtml("interaction", "<kbd>F</kbd>" + SN.cableTarget.name);
+      SN.$("interaction").classList.add("visible");
+    }
+    else if (SN.counterTarget && SN.streetServices.includes(SN.counterTarget.shop)) {
       SN.setHtml("interaction", "<kbd>E</kbd>" + SN.counterTarget.name);
       SN.$("interaction").classList.add("visible");
     }
@@ -30763,7 +30856,7 @@ void main(){
     }
     else
       SN.$("interaction").classList.remove("visible");
-    SN.setText("touchEnter", c ? "下车" : ac ? "下机" : SN.doorTarget ? (SN.doorTarget.dir > 0 ? "进门" : "出门") : "上车");
+    SN.setText("touchEnter", c ? "下车" : ac ? "下机" : SN.cableTarget ? "缆车" : SN.doorTarget ? (SN.doorTarget.dir > 0 ? "进门" : "出门") : "上车");
     SN.setText("touchSprint", c ? "鸣笛" : "疾跑");
     SN.setText("touchJump", c ? "手刹" : "跳跃");
     SN.$("touchJump").setAttribute("aria-label", c ? "按住手刹" : "跳跃");
@@ -31043,7 +31136,7 @@ void main(){
   };
 
   SN.canControl = function canControl() {
-    return SN.started && !SN.contextLost && !SN.contextRestorePending && !SN.paused && !SN.pauseOpen && !SN.player.dead && !SN.arrestState && !SN.carjack && !SN.player.vault && !SN.cityMapOpen && !SN.journalOpen && !SN.storyDialogue && !SN.cinematic && !SN.shopMenuOpen && !SN.streetPanelOpen && !(SN.campaign.active && SN.campaign.active.status === "failed");
+    return SN.started && !SN.contextLost && !SN.contextRestorePending && !SN.paused && !SN.pauseOpen && !SN.player.dead && !SN.arrestState && !SN.carjack && !SN.cableRide && !SN.player.vault && !SN.cityMapOpen && !SN.journalOpen && !SN.storyDialogue && !SN.cinematic && !SN.shopMenuOpen && !SN.streetPanelOpen && !(SN.campaign.active && SN.campaign.active.status === "failed");
   };
 
   SN.toggleGait = function toggleGait() {
@@ -31752,7 +31845,10 @@ void main(){
       SN.minutes = (SN.minutes + dt * 1440 / (SN.cycleMinutes * 60)) % 1440;
       SN.lookDelay = Math.max(0, SN.lookDelay - dt);
       SN.impactCooldown = Math.max(0, SN.impactCooldown - dt);
-      if (SN.arrestState)
+      if (!SN.cableRide && !SN.arrestState) SN.updateCable();
+      if (SN.cableRide)
+        SN.updateCableRide(dt);
+      else if (SN.arrestState)
         SN.updateArrest(dt);
       else if (!SN.player.dead) {
         if (SN.player.aircraft)
@@ -34299,6 +34395,27 @@ void main(){
         move(o.x, o.z); SN.updateMission(0.1);
         assert(!SN.campaign.active, "夜班代驾送达后未结算");
         if (car) { car.active = false; car.root.visible = false; }
+        reset();
+      }],
+      [19.75, "living-road-cut", () => {
+        for (const [x, z] of [[-130, -348], [1150, 1322], [-1162, -134]]) {
+          const road = SN.roadSample(x, z, 30);
+          assert(road, "道路采样缺失 " + x + "," + z);
+          assert(SN.terrainHeight(x, z) < road.height + 1.2, "山体仍埋住道路 " + x + "," + z);
+        }
+      }],
+      [19.70, "living-cable-ride", () => {
+        reset();
+        const lower = SN.cableStations[0], p = SN.safePosition(lower.x, lower.z, 0.4);
+        move(p.x, p.z); SN.updateCable();
+        assert(SN.cableTarget === lower, "缆车站未识别");
+        assert(SN.startCableRide(), "缆车未启动");
+        assert(SN.cableRide && !SN.playerRoot.visible, "缆车状态错误");
+        SN.updateCableRide(5); SN.updateCableRide(5);
+        assert(!SN.cableRide, "缆车未抵达");
+        const upper = SN.cableStations[1];
+        assert(Math.hypot(SN.player.x - upper.x, SN.player.z - upper.z) < 30, "缆车落点错误");
+        assert(SN.playerRoot.visible, "下车后人物未恢复");
         reset();
       }],
       [19.72, "living-weather-clock", () => {
