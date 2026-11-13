@@ -11149,6 +11149,19 @@ void main(){
         }
       }
     }
+    // Seoul's median bus lanes: a solid blue line where the two centre lanes
+    // meet the general traffic lanes.
+    if (lanes >= 6)
+      for (const side of [-1, 1])
+        for (let s = 2; s < road.length - 2; s += 9) {
+          const a = pointOnPolyline(road, s), b = pointOnPolyline(road, s + 9),
+            y0 = SN.roadProfileHeight(profile, s), y1 = SN.roadProfileHeight(profile, s + 9),
+            off = side * (road.median / 2 + laneWidth + 0.12);
+          recordPiece(SN.markBatch,
+            a.x + a.nx * off, a.z + a.nz * off, y0,
+            b.x + b.nx * off, b.z + b.nz * off, y1,
+            0.13, 0.171, 0.018, 0x2f6fbf);
+        }
     // Lane arrows on the wider avenues. Two boxes per arrow keep them in the
     // same instanced paint batch as the lane lines.
     if (road.width >= 14 && !road.special)
@@ -16190,11 +16203,15 @@ void main(){
       r.arms[1].lower.rotation.x = SN.lerp(elbow1, r.arms[1].lower.rotation.x, aimWeight);
     }
     if (attack > 0 && (weapon === 0 || weapon === 3)) {
-      const swing = Math.sin(attack * SN.PI);
-      r.arms[1].upper.rotation.set(-1.72 + swing * 2.9, 0, -0.08 - swing * 0.24);
-      r.arms[1].lower.rotation.x = -0.5 + swing * 0.35;
-      r.torso.rotation.y -= swing * 0.28;
+      const swing = Math.sin(attack * SN.PI), combo = SN.meleeCombo || 0,
+        left = combo === 1, side = left ? -1 : 1, heavy = combo === 2 ? 1.16 : 1,
+        arm = r.arms[left ? 0 : 1], guard = r.arms[left ? 1 : 0];
+      arm.upper.rotation.set(-1.72 + swing * 2.9 * heavy, 0, side * (0.08 + swing * 0.24));
+      arm.lower.rotation.x = -0.5 + swing * 0.35;
+      r.torso.rotation.y -= side * swing * 0.28 * heavy;
       r.torso.rotation.x += swing * 0.1;
+      guard.upper.rotation.set(-0.55, 0, -side * 0.34);
+      guard.lower.rotation.x = -0.72;
     }
     if (weapon === 2 && !aim && attack <= 0) {
       r.arms[0].upper.rotation.set(-0.58 + Math.sin(m.phase) * w * 0.1, 0.08, 0.42);
@@ -16373,6 +16390,10 @@ void main(){
     SN.player.gait = sprinting ? 2 : aim || SN.player.walkMode || analog && len < 0.55 ? 0 : 1;
     const weapon = SN.weapons[SN.selectedWeapon],
       meleeSwing = SN.attackTime > 0 && !SN.holstered && weapon && !weapon.capacity;
+    if (SN.player.gait === 2 && SN.player.motionSpeed > 5 && SN.player.grounded && SN.simTime > (SN.footDustAt || 0)) {
+      SN.footDustAt = SN.simTime + 0.16;
+      SN.spawnDust(SN.player.x + SN.rand(-0.25, 0.25), SN.player.y + 0.06, SN.player.z + SN.rand(-0.25, 0.25), 0xb9ad98, 0.8);
+    }
     // A punch or bat swing plants the feet more than a stride; keep momentum
     // but slow the legs so the strike reads instead of sliding past the target.
     // Speed up the player only: pedestrians share GAITS and must keep their
@@ -20358,7 +20379,13 @@ void main(){
     if (w.capacity && w.mag <= 0) { SN.reload(); return; }
     SN.shotClock = SN.attackTime = w.rate;
     SN.soundWeapon(SN.selectedWeapon);
-    if (!w.capacity) { SN.meleeHitDone = false; SN.addShotSpread(0.08); return; }
+    if (!w.capacity) {
+      // Three-hit chain: right hand, left hand, heavier right hook. A short
+      // pause drops the chain back to the opening punch.
+      SN.meleeCombo = SN.simTime <= (SN.meleeComboAt || 0) + 0.85 ? ((SN.meleeCombo || 0) + 1) % 3 : 0;
+      SN.meleeComboAt = SN.simTime;
+      SN.meleeHitDone = false; SN.addShotSpread(0.08); return;
+    }
     w.mag--;
     SN.camera.getWorldDirection(SN.cameraDirection);
     const lock = SN.findAimTarget(SN.cameraDirection, Math.min(w.range, 80));
@@ -20495,7 +20522,8 @@ void main(){
         }
       }
       if (best) {
-        SN.hitActor(best, SN.weapons[SN.selectedWeapon].damage, Math.sin(SN.player.yaw), Math.cos(SN.player.yaw), false, "melee");
+        const combo = SN.meleeCombo || 0, power = combo === 2 ? 1.45 : combo === 1 ? 1.1 : 1;
+        SN.hitActor(best, SN.weapons[SN.selectedWeapon].damage * power, Math.sin(SN.player.yaw), Math.cos(SN.player.yaw), false, "melee");
         SN.emitSparks(best.x, best.rig.root.position.y + 1.1, best.z, 3, false);
         SN.soundImpact(10);
       }
@@ -20689,6 +20717,8 @@ void main(){
     SN.recoilYaw = 0;
     SN.armRecoil = 0;
     SN.meleeHitDone = false;
+    SN.meleeCombo = 0;
+    SN.meleeComboAt = -100;
     SN.shotSpread = 0;
     SN.hitMarkerTime = 0;
     SN.hurtSource = null;
@@ -31754,7 +31784,8 @@ void main(){
       SN.camYaw = SN.approachAngle(SN.camYaw, SN.player.yaw, dt * 1.8);
     if (SN.lookDelay <= 0 && !SN.aiming && (c ? Math.abs(c.speed) > 2 : SN.player.speed > 1))
       SN.camPitch = SN.lerp(SN.camPitch, 0.12, 1 - Math.exp(-dt * 1.3));
-    const targetFov = c ? 58 + SN.clamp(Math.abs(c.speed) / c.spec.topSpeed, 0, 1) * 15 : SN.aiming ? 51 : 58;
+    const sprinting = !c && SN.player.gait === 2 && SN.player.motionSpeed > 4.5,
+      targetFov = c ? 58 + SN.clamp(Math.abs(c.speed) / c.spec.topSpeed, 0, 1) * 15 : SN.aiming ? 51 : 58 + (sprinting ? 3.5 : 0);
     const fov = SN.lerp(SN.camera.fov, targetFov, 1 - Math.exp(-dt * 5));
     if (Math.abs(fov - SN.camera.fov) > 0.01) { SN.camera.fov = fov; SN.camera.updateProjectionMatrix(); }
     const aim = SN.aiming && !SN.holstered && !c && !SN.player.dead;
@@ -32727,6 +32758,11 @@ void main(){
           const w = SN.weapons[i]; w.owned = true; w.mag = w.capacity; w.reserve = w.capacity * 3;
           SN.selectWeapon(i); SN.shotClock = 0; SN.triggerPressed = true; SN.fireWeapon();
           assert(w.capacity ? w.mag === w.capacity - 1 : SN.attackTime > 0, "武器 " + i + " 无响应");
+        }
+        SN.selectWeapon(0); SN.holstered = false; SN.meleeCombo = 0; SN.meleeComboAt = -10;
+        for (const expected of [0, 1, 2, 0]) {
+          SN.shotClock = 0; SN.triggerPressed = true; SN.fireWeapon();
+          assert(SN.meleeCombo === expected, "近战连击序列错误");
         }
         SN.selectWeapon(1); SN.reload(); assert(SN.reloadTime > 0, "换弹失败");
       }],

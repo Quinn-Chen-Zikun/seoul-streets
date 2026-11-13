@@ -70,7 +70,8 @@
       SN.camYaw = SN.approachAngle(SN.camYaw, SN.player.yaw, dt * 1.8);
     if (SN.lookDelay <= 0 && !SN.aiming && (c ? Math.abs(c.speed) > 2 : SN.player.speed > 1))
       SN.camPitch = SN.lerp(SN.camPitch, 0.12, 1 - Math.exp(-dt * 1.3));
-    const targetFov = c ? 58 + SN.clamp(Math.abs(c.speed) / c.spec.topSpeed, 0, 1) * 15 : SN.aiming ? 51 : 58;
+    const sprinting = !c && SN.player.gait === 2 && SN.player.motionSpeed > 4.5,
+      targetFov = c ? 58 + SN.clamp(Math.abs(c.speed) / c.spec.topSpeed, 0, 1) * 15 : SN.aiming ? 51 : 58 + (sprinting ? 3.5 : 0);
     const fov = SN.lerp(SN.camera.fov, targetFov, 1 - Math.exp(-dt * 5));
     if (Math.abs(fov - SN.camera.fov) > 0.01) { SN.camera.fov = fov; SN.camera.updateProjectionMatrix(); }
     const aim = SN.aiming && !SN.holstered && !c && !SN.player.dead;
@@ -1043,6 +1044,11 @@
           const w = SN.weapons[i]; w.owned = true; w.mag = w.capacity; w.reserve = w.capacity * 3;
           SN.selectWeapon(i); SN.shotClock = 0; SN.triggerPressed = true; SN.fireWeapon();
           assert(w.capacity ? w.mag === w.capacity - 1 : SN.attackTime > 0, "武器 " + i + " 无响应");
+        }
+        SN.selectWeapon(0); SN.holstered = false; SN.meleeCombo = 0; SN.meleeComboAt = -10;
+        for (const expected of [0, 1, 2, 0]) {
+          SN.shotClock = 0; SN.triggerPressed = true; SN.fireWeapon();
+          assert(SN.meleeCombo === expected, "近战连击序列错误");
         }
         SN.selectWeapon(1); SN.reload(); assert(SN.reloadTime > 0, "换弹失败");
       }],

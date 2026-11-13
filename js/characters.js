@@ -670,11 +670,15 @@
       r.arms[1].lower.rotation.x = SN.lerp(elbow1, r.arms[1].lower.rotation.x, aimWeight);
     }
     if (attack > 0 && (weapon === 0 || weapon === 3)) {
-      const swing = Math.sin(attack * SN.PI);
-      r.arms[1].upper.rotation.set(-1.72 + swing * 2.9, 0, -0.08 - swing * 0.24);
-      r.arms[1].lower.rotation.x = -0.5 + swing * 0.35;
-      r.torso.rotation.y -= swing * 0.28;
+      const swing = Math.sin(attack * SN.PI), combo = SN.meleeCombo || 0,
+        left = combo === 1, side = left ? -1 : 1, heavy = combo === 2 ? 1.16 : 1,
+        arm = r.arms[left ? 0 : 1], guard = r.arms[left ? 1 : 0];
+      arm.upper.rotation.set(-1.72 + swing * 2.9 * heavy, 0, side * (0.08 + swing * 0.24));
+      arm.lower.rotation.x = -0.5 + swing * 0.35;
+      r.torso.rotation.y -= side * swing * 0.28 * heavy;
       r.torso.rotation.x += swing * 0.1;
+      guard.upper.rotation.set(-0.55, 0, -side * 0.34);
+      guard.lower.rotation.x = -0.72;
     }
     if (weapon === 2 && !aim && attack <= 0) {
       r.arms[0].upper.rotation.set(-0.58 + Math.sin(m.phase) * w * 0.1, 0.08, 0.42);
@@ -853,6 +857,10 @@
     SN.player.gait = sprinting ? 2 : aim || SN.player.walkMode || analog && len < 0.55 ? 0 : 1;
     const weapon = SN.weapons[SN.selectedWeapon],
       meleeSwing = SN.attackTime > 0 && !SN.holstered && weapon && !weapon.capacity;
+    if (SN.player.gait === 2 && SN.player.motionSpeed > 5 && SN.player.grounded && SN.simTime > (SN.footDustAt || 0)) {
+      SN.footDustAt = SN.simTime + 0.16;
+      SN.spawnDust(SN.player.x + SN.rand(-0.25, 0.25), SN.player.y + 0.06, SN.player.z + SN.rand(-0.25, 0.25), 0xb9ad98, 0.8);
+    }
     // A punch or bat swing plants the feet more than a stride; keep momentum
     // but slow the legs so the strike reads instead of sliding past the target.
     // Speed up the player only: pedestrians share GAITS and must keep their

@@ -1128,7 +1128,13 @@
     if (w.capacity && w.mag <= 0) { SN.reload(); return; }
     SN.shotClock = SN.attackTime = w.rate;
     SN.soundWeapon(SN.selectedWeapon);
-    if (!w.capacity) { SN.meleeHitDone = false; SN.addShotSpread(0.08); return; }
+    if (!w.capacity) {
+      // Three-hit chain: right hand, left hand, heavier right hook. A short
+      // pause drops the chain back to the opening punch.
+      SN.meleeCombo = SN.simTime <= (SN.meleeComboAt || 0) + 0.85 ? ((SN.meleeCombo || 0) + 1) % 3 : 0;
+      SN.meleeComboAt = SN.simTime;
+      SN.meleeHitDone = false; SN.addShotSpread(0.08); return;
+    }
     w.mag--;
     SN.camera.getWorldDirection(SN.cameraDirection);
     const lock = SN.findAimTarget(SN.cameraDirection, Math.min(w.range, 80));
@@ -1265,7 +1271,8 @@
         }
       }
       if (best) {
-        SN.hitActor(best, SN.weapons[SN.selectedWeapon].damage, Math.sin(SN.player.yaw), Math.cos(SN.player.yaw), false, "melee");
+        const combo = SN.meleeCombo || 0, power = combo === 2 ? 1.45 : combo === 1 ? 1.1 : 1;
+        SN.hitActor(best, SN.weapons[SN.selectedWeapon].damage * power, Math.sin(SN.player.yaw), Math.cos(SN.player.yaw), false, "melee");
         SN.emitSparks(best.x, best.rig.root.position.y + 1.1, best.z, 3, false);
         SN.soundImpact(10);
       }
@@ -1459,6 +1466,8 @@
     SN.recoilYaw = 0;
     SN.armRecoil = 0;
     SN.meleeHitDone = false;
+    SN.meleeCombo = 0;
+    SN.meleeComboAt = -100;
     SN.shotSpread = 0;
     SN.hitMarkerTime = 0;
     SN.hurtSource = null;

@@ -653,6 +653,19 @@
         }
       }
     }
+    // Seoul's median bus lanes: a solid blue line where the two centre lanes
+    // meet the general traffic lanes.
+    if (lanes >= 6)
+      for (const side of [-1, 1])
+        for (let s = 2; s < road.length - 2; s += 9) {
+          const a = pointOnPolyline(road, s), b = pointOnPolyline(road, s + 9),
+            y0 = SN.roadProfileHeight(profile, s), y1 = SN.roadProfileHeight(profile, s + 9),
+            off = side * (road.median / 2 + laneWidth + 0.12);
+          recordPiece(SN.markBatch,
+            a.x + a.nx * off, a.z + a.nz * off, y0,
+            b.x + b.nx * off, b.z + b.nz * off, y1,
+            0.13, 0.171, 0.018, 0x2f6fbf);
+        }
     // Lane arrows on the wider avenues. Two boxes per arrow keep them in the
     // same instanced paint batch as the lane lines.
     if (road.width >= 14 && !road.special)
