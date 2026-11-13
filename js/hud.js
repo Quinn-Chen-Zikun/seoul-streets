@@ -625,6 +625,8 @@
 
   SN.refreshHUD = function refreshHUD() {
     const c = SN.player.car, ac = SN.player.aircraft, w = SN.weapons[SN.selectedWeapon];
+    const boat = c && c.spec.boat;
+    const nearbyCar = SN.nearDistance < 5.5 ? SN.nearestCar : null;
     const area = SN.cityDistrictAt(SN.player.x, SN.player.z);
     if (SN.lastDistrict !== area.name) {
       SN.lastDistrict = area.name;
@@ -637,7 +639,7 @@
     SN.setText("district", turf ? turf.name + " 地盘 · " + (turf.anger > 0 ? "敌对" : "保持克制") : "");
     SN.setText("clock", String(Math.floor(SN.minutes / 60) % 24).padStart(2, "0") + ":" + String(Math.floor(SN.minutes) % 60).padStart(2, "0"));
     SN.setText("speed", String(Math.round(Math.abs(c ? c.speed : ac ? ac.speed : SN.player.speed) * 3.6)));
-    SN.setText("mode", c ? c.spec.name + " · 车况 " + Math.ceil(c.health) + "%" :
+    SN.setText("mode", c ? c.spec.name + (boat ? " · 船况 " : " · 车况 ") + Math.ceil(c.health) + "%" :
       ac ? ac.spec.name + " · 高度 " + Math.max(0, Math.round(ac.y - SN.surfaceHeight(ac.x, ac.z))) + " m" :
       SN.GAITS[SN.player.gait].name + " · 首尔探索者");
     SN.setText("money", "¥ " + SN.money.toLocaleString("zh-CN"));
@@ -656,7 +658,7 @@
     SN.$("crosshair").classList.toggle("target-locked", !!SN.aimTarget);
     SN.setText("weaponName", SN.holstered || !w ? "徒手" : w.name);
     SN.setText("ammo", c && c.recoveryReady ? "复位" : SN.reloadTime > 0 ? "换弹中…" : w && !SN.holstered ? (w.capacity ? w.mag + " / " + w.reserve : "近战") : "—");
-    SN.setText("weaponHint", c && c.recoveryReady ? "按 R 复位 · 触屏点右上角「复位」" : c ? "F 下车 · 空格手刹 · G 鸣笛 · 左键车内射击" : ac ? "F 下机 · W/S 升降与前飞 · A/D 转向 · 空格下降" : SN.holstered ? "Q / 1–6 装备 · 滚轮变焦" : "Q / 1–6 武器 · 滚轮变焦 · H 收起");
+    SN.setText("weaponHint", c && c.recoveryReady ? "按 R 复位 · 触屏点右上角「复位」" : boat ? "W/S 加速与减速 · A/D 转向 · F 下船" : c ? "F 下车 · 空格手刹 · G 鸣笛 · 左键车内射击" : ac ? "F 下机 · W/S 升降与前飞 · A/D 转向 · 空格下降" : SN.holstered ? "Q / 1–6 装备 · 滚轮变焦" : "Q / 1–6 武器 · 滚轮变焦 · H 收起");
     if (SN.cableTarget && !c && !ac) {
       SN.setHtml("interaction", "<kbd>F</kbd>" + SN.cableTarget.name);
       SN.$("interaction").classList.add("visible");
@@ -666,7 +668,7 @@
       SN.$("interaction").classList.add("visible");
     }
     else if (c) {
-      SN.setHtml("interaction", "<kbd>F</kbd>下车");
+      SN.setHtml("interaction", "<kbd>F</kbd>" + (boat ? "下船 · 建议减速靠岸" : "下车"));
       SN.$("interaction").classList.add("visible");
     }
     else if (ac) {
@@ -681,16 +683,19 @@
       SN.setHtml("interaction", "<kbd>F</kbd>驾驶 · " + SN.military.nearest.spec.name);
       SN.$("interaction").classList.add("visible");
     }
-    else if (SN.nearestCar && SN.nearDistance < 5.5) {
-      SN.setHtml("interaction", "<kbd>F</kbd>上车" + (SN.nearestCar.driver ? " / 接管" : "") + " · " + SN.nearestCar.spec.name);
+    else if (nearbyCar) {
+      const action = nearbyCar.spec.boat ? "上船" : nearbyCar.driver ? "上车 / 接管" : "上车";
+      SN.setHtml("interaction", "<kbd>F</kbd>" + action + " · " + nearbyCar.spec.name);
       SN.$("interaction").classList.add("visible");
     }
     else
       SN.$("interaction").classList.remove("visible");
-    SN.setText("touchEnter", c ? "下车" : ac ? "下机" : SN.cableTarget ? "缆车" : SN.doorTarget ? (SN.doorTarget.dir > 0 ? "进门" : "出门") : "上车");
+    const enterLabel = boat ? "下船" : c ? "下车" : ac ? "下机" : SN.cableTarget ? "缆车" : SN.doorTarget ? (SN.doorTarget.dir > 0 ? "进门" : "出门") : nearbyCar && nearbyCar.spec.boat ? "上船" : "上车";
+    SN.setText("touchEnter", enterLabel);
+    SN.$("touchEnter").setAttribute("aria-label", enterLabel);
     SN.setText("touchSprint", c ? "鸣笛" : "疾跑");
-    SN.setText("touchJump", c ? "手刹" : "跳跃");
-    SN.$("touchJump").setAttribute("aria-label", c ? "按住手刹" : "跳跃");
+    SN.setText("touchJump", boat ? "减速" : c ? "手刹" : "跳跃");
+    SN.$("touchJump").setAttribute("aria-label", boat ? "按住减速" : c ? "按住手刹" : "跳跃");
     SN.refreshWeaponSlots();
     SN.refreshMissionHUD();
     SN.drawMap();
