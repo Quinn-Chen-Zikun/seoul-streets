@@ -201,8 +201,8 @@
   SN.spawnDrop = function spawnDrop(a, cashOverride, x, z, baseY) {
     const cash = typeof cashOverride === "number" ? cashOverride : a.kind === "civilian" ? Math.round(SN.rand(20, 120)) : a.kind === "gang" || a.missionEnemy ? Math.round(SN.rand(80, 300)) : 0;
     const armed = a.kind === "gang" || a.missionEnemy || (a.armedWeapon !== undefined && a.armedWeapon >= 0 && a.kind !== "police");
-    const weapon = armed ? (SN.rnd() < 0.55 ? 1 : 2) : -1;
-    const ammo = weapon === 2 ? Math.round(SN.rand(12, 24)) : weapon === 1 ? Math.round(SN.rand(6, 12)) : 0;
+    const weapon = armed ? (a.enemyRole === 3 && SN.rnd() < 0.45 ? 6 : SN.rnd() < 0.55 ? 1 : 2) : -1;
+    const ammo = weapon === 6 ? Math.round(SN.rand(18, 30)) : weapon === 2 ? Math.round(SN.rand(12, 24)) : weapon === 1 ? Math.round(SN.rand(6, 12)) : 0;
     if (cash <= 0 && weapon < 0)
       return;
     const dropX = Number.isFinite(x) ? x : a.x, dropZ = Number.isFinite(z) ? z : a.z;
@@ -227,7 +227,7 @@
     d.weaponLife = weapon >= 0 ? 30 : 0;
     d.cash.visible = cash > 0;
     d.pistol.visible = weapon === 1;
-    d.rifle.visible = weapon === 2;
+    d.rifle.visible = weapon === 2 || weapon === 6;
     d.halo.visible = cash > 0 || weapon >= 0;
     d.halo.material.color.setHex(weapon >= 0 ? 0xffb875 : 0xffe0a0);
   };
