@@ -1661,12 +1661,12 @@
     trim.push({ g: SN.roundedBox(0.5, 0.06, 0.34, 0.02, 2), x: 0, y: 1.2, z: 0.3 });
     chrome.push({ g: new SN.T.TorusGeometry(0.16, 0.02, 4, 12), x: 0, y: 1.16, z: 0.08, rx: -0.5 });
     for (const side of [-1, 1]) {
-      trim.push({ g: SN.roundedBox(0.5, 0.3, 0.46, 0.06, 2), x: side * W * 0.2, y: 1.02, z: -f * 0.24 });
-      trim.push({ g: SN.roundedBox(0.5, 0.4, 0.1, 0.04, 2), x: side * W * 0.2, y: 1.18, z: -f * 0.36 });
+      accent.push({ g: SN.roundedBox(0.5, 0.3, 0.46, 0.06, 2), x: side * W * 0.2, y: 1.02, z: -f * 0.24 });
+      accent.push({ g: SN.roundedBox(0.5, 0.4, 0.1, 0.04, 2), x: side * W * 0.2, y: 1.18, z: -f * 0.36 });
       accent.push({ g: SN.roundedBox(0.5, 0.03, 0.36, 0.01, 2), x: side * W * 0.2, y: 1.18, z: -f * 0.2 });
     }
-    trim.push({ g: SN.roundedBox(W * 0.52, 0.3, 0.42, 0.05, 2), x: 0, y: 1.0, z: -f * 0.66 });
-    trim.push({ g: SN.roundedBox(W * 0.52, 0.4, 0.1, 0.04, 2), x: 0, y: 1.18, z: -f * 0.76 });
+    accent.push({ g: SN.roundedBox(W * 0.52, 0.3, 0.42, 0.05, 2), x: 0, y: 1.0, z: -f * 0.66 });
+    accent.push({ g: SN.roundedBox(W * 0.52, 0.4, 0.1, 0.04, 2), x: 0, y: 1.18, z: -f * 0.76 });
     // Raked windscreen with a chrome frame.
     glass.push({ g: SN.roundedBox(W * 0.5, 0.34, 0.03, 0.02, 2), x: 0, y: 1.36, z: 0.56, rx: -0.5 });
     for (const side of [-1, 1])
