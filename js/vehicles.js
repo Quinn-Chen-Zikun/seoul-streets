@@ -37,7 +37,7 @@
     for (const wheel of c.wheels)
       c.root.remove(wheel.pivot);
     c.wheels.length = 0;
-    const color = type === 3 ? 0xff7a16 : type === 6 ? (c.serial % 2 ? 0x1485ed : 0x46b83f) : type === 14 ? 0xf3f1db : type === 15 ? 0xd5392d : type === 16 ? (c.serial % 2 ? 0xeef2f0 : 0x2f5f7d) : type >= 12 ? 0x243a53 : type === 9 ? 0xd3e3e7 : type === 10 ? 0x225d5b : type === 11 ? 0x753e36 : SN.carColors[c.serial % SN.carColors.length];
+    const color = type === 3 ? 0xff7a16 : type === 6 ? (c.serial % 2 ? 0x1485ed : 0x46b83f) : type === 14 ? 0xf3f1db : type === 15 ? 0xd5392d : type === 16 ? (c.serial % 2 ? 0xeef2f0 : 0x2f5f7d) : type === 17 ? (c.serial % 2 ? 0xc0392b : 0x222a33) : type >= 12 ? 0x243a53 : type === 9 ? 0xd3e3e7 : type === 10 ? 0x225d5b : type === 11 ? 0x753e36 : SN.carColors[c.serial % SN.carColors.length];
     c.paintColor = color;
     c.paint.color.copy(SN.srgb(color));
     SN.meshAt(geo.body, c.paint, 0, 0, 0, 1, 1, 1, 0, body);
@@ -168,6 +168,7 @@
     const district = SN.cityDistrictAt(x, z).id;
     const mix = district === "gangnam" || district === "samseong" ? [7, 7, 7, 0, 2, 3, 1, 5] : district === "myeong" ? [8, 8, 8, 1, 3, 3, 5, 0] : district === "seongsu" || district === "gimpo" ? [4, 4, 5, 5, 2, 0, 1, 8] : [0, 0, 1, 1, 2, 3, 5, 8];
     if (mainRoad && SN.rnd() < 0.025) return SN.rnd() < 0.6 ? 14 : 15;
+    if (mainRoad && SN.rnd() < 0.05) return 17;
     return mainRoad && SN.rnd() < 0.15 ? 6 : mix[Math.floor(SN.rnd() * mix.length)];
   };
 
@@ -1702,7 +1703,43 @@
       head: SN.merged(head), tail: SN.merged(tail), plate: SN.merged(plate)
     };
   };
+  SN.buildSportBikeGeometry = function buildSportBikeGeometry(spec) {
+    const body = [], trim = [], chrome = [], glass = [], accent = [], head = [], tail = [], plate = [],
+      sphere = SN.vehicleSphere;
+    // Engine, frame and swingarm.
+    trim.push({ g: SN.roundedBox(0.4, 0.34, 0.5, 0.06, 2), x: 0, y: 0.42, z: 0.02 });
+    trim.push({ g: SN.roundedBox(0.14, 0.14, 0.92, 0.04, 1), x: 0, y: 0.54, z: -0.04 });
+    trim.push({ g: SN.cylinder, x: 0, y: 0.3, z: -0.44, sx: 0.07, sy: 0.86, sz: 0.07, rx: Math.PI / 2 });
+    // Tank, seat, tail and front fairing.
+    body.push({ g: SN.roundedBox(0.46, 0.3, 0.56, 0.1, 3), x: 0, y: 0.68, z: 0.18 });
+    body.push({ g: SN.roundedBox(0.38, 0.16, 0.5, 0.06, 3), x: 0, y: 0.75, z: -0.36 });
+    body.push({ g: SN.roundedBox(0.3, 0.22, 0.4, 0.07, 2), x: 0, y: 0.75, z: -0.67 });
+    body.push({ g: SN.roundedBox(0.5, 0.46, 0.42, 0.08, 3), x: 0, y: 0.76, z: 0.54, rx: -0.24 });
+    body.push({ g: SN.roundedBox(0.18, 0.1, 0.42, 0.04, 2), x: 0, y: 0.52, z: 0.73, rx: -0.08 });
+    body.push({ g: SN.roundedBox(0.18, 0.1, 0.44, 0.04, 2), x: 0, y: 0.54, z: -0.77 });
+    glass.push({ g: SN.roundedBox(0.38, 0.2, 0.03, 0.02, 2), x: 0, y: 0.98, z: 0.61, rx: -0.55 });
+    // Forks, bars, mirrors and pegs.
+    for (const side of [-1, 1]) {
+      chrome.push({ g: SN.cylinder, x: side * 0.12, y: 0.62, z: 0.66, sx: 0.025, sy: 0.62, sz: 0.025, rx: -0.35 });
+      chrome.push({ g: SN.cylinder, x: side * 0.26, y: 0.93, z: 0.5, sx: 0.02, sy: 0.34, sz: 0.02, rz: Math.PI / 2 });
+      trim.push({ g: sphere, x: side * 0.3, y: 0.94, z: 0.5, sx: 0.035, sy: 0.035, sz: 0.035 });
+      trim.push({ g: SN.vehicleMirror, x: side * 0.36, y: 1.02, z: 0.52, sx: 0.06, sy: 0.035, sz: 0.03 });
+      trim.push({ g: SN.cylinder, x: side * 0.26, y: 0.34, z: -0.12, sx: 0.02, sy: 0.16, sz: 0.02, rz: Math.PI / 2 });
+    }
+    // Exhaust, lights and plate.
+    trim.push({ g: SN.cylinder, x: 0.22, y: 0.4, z: -0.35, sx: 0.06, sy: 0.7, sz: 0.06, rx: Math.PI / 2 });
+    chrome.push({ g: SN.cylinder, x: 0.22, y: 0.4, z: -0.72, sx: 0.07, sy: 0.08, sz: 0.07, rx: Math.PI / 2 });
+    head.push({ g: SN.roundedBox(0.22, 0.14, 0.06, 0.03, 2), x: 0, y: 0.86, z: 0.78 });
+    tail.push({ g: SN.roundedBox(0.16, 0.07, 0.04, 0.02, 1), x: 0, y: 0.78, z: -0.9 });
+    plate.push({ g: new SN.T.PlaneGeometry(0.22, 0.1), x: 0, y: 0.52, z: -0.93, ry: SN.PI });
+    accent.push({ g: SN.roundedBox(0.48, 0.04, 0.5, 0.01, 1), x: 0, y: 0.84, z: 0.14 });
+    return {
+      body: SN.merged(body), glass: SN.merged(glass), trim: SN.merged(trim), chrome: SN.merged(chrome),
+      accent: SN.merged(accent), red: null, blue: null, head: SN.merged(head), tail: SN.merged(tail), plate: SN.merged(plate)
+    };
+  };
   SN.buildVehicleGeometry = function buildVehicleGeometry(spec) {
+    if (spec.sportbike) return SN.buildSportBikeGeometry(spec);
     if (spec.bike) return SN.buildScooterGeometry(spec);
     if (spec.boat) return SN.buildBoatGeometry(spec);
     const L = spec.length, W = spec.width, H = spec.height, f = L / 2, shape = spec.shape,
@@ -2199,7 +2236,9 @@
       { ...SN.vehicleSpecs[5], name: "119 · 救护车", emergency: true, topSpeed: 35, cruise: 17 },
       { ...SN.vehicleSpecs[5], name: "119 · 消防车", emergency: true, length: 6.6, height: 2.8, mass: 5.2, cruise: 14 },
       { name: "汉江 · 快艇", shape: "boat", length: 6.2, width: 2.3, height: 1.72,
-        topSpeed: 27, accel: 9.6, mass: 1.6, grip: 6.4, damage: 0.8, pitch: 44, cruise: 0, boat: true }
+        topSpeed: 27, accel: 9.6, mass: 1.6, grip: 6.4, damage: 0.8, pitch: 44, cruise: 0, boat: true },
+      { name: "汉江 · 街跑摩托", shape: "sportbike", length: 2.15, width: 0.84, height: 1.22,
+        topSpeed: 44, accel: 18, mass: 0.34, grip: 11.5, damage: 1.7, pitch: 102, cruise: 13, bike: true, sportbike: true }
     );
     SN.vehicleGeometry = SN.vehicleSpecs.map(spec => SN.buildVehicleGeometry(spec));
     SN.carColors = [0xd82b32, 0x1761cf, 0xffa51e, 0x242d3c, 0x16814e, 0x9daebe, 0x854bbd, 0x13a7ab, 0xf16026, 0xb82558, 0xf4ce39, 0xdbe1e5];
@@ -2246,6 +2285,8 @@
     SN.makeCar(-146, 1090, 0, true, null, 0, 7);
     SN.makeCar(430, -406, SN.PI / 2, true, null, 0, 10);
     SN.makeCar(-190, 984, SN.PI / 2, true, null, 0, 11);
+    for (const [i, spot] of SN.lookParking.slice(12, 18).entries())
+      SN.makeCar(spot.x, spot.z, spot.yaw, true, null, 0, 17);
     SN.spawnRiverBoats();
     SN.spawnAmbientBoats();
   });

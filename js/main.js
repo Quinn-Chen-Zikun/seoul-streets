@@ -576,7 +576,7 @@
     };
     if (name === "carclose") {
       // Three showroom cars in a row, patrol car and scooter behind them.
-      const rows = [[0, 210, 1058.4], [3, 210, 1061.6], [7, 210, 1064.8], [9, 202.5, 1059.2], [8, 202.5, 1062.8]];
+      const rows = [[0, 210, 1058.4], [3, 210, 1061.6], [7, 210, 1064.8], [9, 202.5, 1059.2], [8, 202.5, 1062.8], [17, 202.5, 1066.4]];
       rows.forEach((row, i) => {
         const car = SN.cars[i];
         stageCar(car, row[1], row[2], SN.PI / 2, row[0], 0);
