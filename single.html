@@ -3,13 +3,13 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-    <meta name="description" content="首尔街头：步行或驾车探索首尔的三维开放城市，穿越街巷与汉江两岸，体验昼夜变化和街头故事。">
+    <meta name="description" content="零点代驾：在首尔步行或驾车穿过街巷与汉江两岸，体验昼夜变化、街头故事和一场夜班代驾。">
     <meta name="theme-color" content="#082b49">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="首尔街头">
-    <title>首尔街头</title>
+    <meta name="apple-mobile-web-app-title" content="零点代驾">
+    <title>零点代驾</title>
     <style>
 /* Base, HUD, intro, controls and responsive layouts */
 :root {
@@ -2830,7 +2830,7 @@ body:has(#toast.show) #cityRadio { visibility: hidden; }
     </style>
   </head>
   <body>
-    <canvas id="world" tabindex="0" aria-label="首尔街头，三维开放城市"></canvas>
+    <canvas id="world" tabindex="0" aria-label="零点代驾，三维开放城市"></canvas>
     <div id="vignette"></div>
     <div id="hud">
       <div id="districtToast" role="status"><b id="area">종로 · 钟路</b><small id="district"></small></div>
@@ -2904,9 +2904,9 @@ body:has(#toast.show) #cityRadio { visibility: hidden; }
     </div>
     <div class="intro" id="intro">
       <div class="intro-badge">一条江 · 一座城 · 你的路线</div>
-      <div class="serial">SEOUL · 自由探索</div>
-      <h1>首尔<br><em>街头</em></h1>
-      <div class="poem">서울 스트리트</div>
+      <div class="serial">SEOUL · 夜班代驾</div>
+      <h1>零点<br><em>代驾</em></h1>
+      <div class="poem">서울 대리운전</div>
       <p class="description">穿过钟路的霓虹街巷，驰骋汉江两岸。跟随金色标记，开启你的首尔故事。</p>
       <div id="loadingStatus" role="status">准备街区…</div>
       <div class="start-actions">
@@ -2925,7 +2925,7 @@ body:has(#toast.show) #cityRadio { visibility: hidden; }
     <button id="cityEvent" aria-label="街头偶遇"></button>
     <div id="pauseMenu" class="story-layer" role="dialog" aria-modal="true" aria-labelledby="pauseTitle">
       <section class="story-panel pause-panel">
-        <header><div><div class="eyebrow">SEOUL STREETS</div><h2 id="pauseTitle">街头歇一会</h2></div><button id="resumeBtn">继续游戏</button></header>
+        <header><div><div class="eyebrow">SEOUL · VALET</div><h2 id="pauseTitle">路边歇一会</h2></div><button id="resumeBtn">继续游戏</button></header>
         <p>城市已暂停。跟随金色地图标记接取任务，或自由探索街区。</p>
         <div class="pause-actions"><button id="pauseMap">全城地图</button><button id="hailTaxi">扬招出租车 · G</button><button id="bobToggle" aria-pressed="false">镜头起伏：关 · B</button><button id="qualityToggle">画质：自动</button><button id="controlsBtn">操作指南</button><button id="settingsBtn" aria-expanded="false">设置</button><button id="touchGait" aria-pressed="false">行走 / 奔跑</button><button id="radioCycle">切换车载电台</button></div>
         <div class="city-weather-controls"><label>时刻 <select id="cityHour" aria-label="自由漫游时刻"><option value="6">06:00 日出</option><option value="10.5" selected>10:30 上午</option><option value="18.5">18:30 日落</option><option value="22">22:00 夜生活</option><option value="2">02:00 深夜</option></select></label><label>天气 <select id="cityWeather" aria-label="自由漫游天气"><option value="clear">晴朗</option><option value="rain">阵雨</option><option value="dust">黄沙薄霾</option><option value="snow">冬日飘雪</option></select></label><button id="weatherAuto">自然天气：开</button><small id="cityWeatherHint">自由漫游可调整时刻与天气</small></div>
@@ -16883,6 +16883,19 @@ void main(){
     SN.meshAt(geo.tail, SN.tailMat, 0, 0, 0, 1, 1, 1, 0, body).castShadow = false;
     if (geo.accent)
       SN.meshAt(geo.accent, SN.vehicleAccentMats[type === 9 ? 3 : type === 10 ? 1 : type === 11 ? 2 : 0], 0, 0, 0, 1, 1, 1, 0, body);
+    // A painted bonnet gives crash damage a readable stage: it lifts off its
+    // rear hinge long before the engine catches fire.
+    c.hood = null;
+    if (["sedan", "hatch", "suv", "taxi", "pickup", "coupe", "silverCrew", "redCrew", "police"].includes(spec.shape)) {
+      const depth = spec.length * 0.26, hinge = new SN.T.Group(),
+        hood = SN.meshAt(SN.roundedBox(spec.width * 0.62, 0.035, depth, 0.02, 2), c.paint,
+          0, 0, depth * 0.5, 1, 1, 1, 0, hinge);
+      hood.castShadow = false;
+      hinge.position.set(0, spec.height * 0.57, spec.length * 0.16);
+      c.hood = hinge;
+      c.hoodBaseZ = hinge.position.z;
+      body.add(hinge);
+    }
     if (spec.emergency || type === 9) {
       const barZ = type === 9 ? -0.12 : 0.5;
       c.lights = [
@@ -17345,7 +17358,7 @@ void main(){
       return;
     const policeRam = c === SN.player.car && other && other.role === "police";
     c.collisionTimer = policeRam ? 1 : 0.45;
-    c.health = Math.max(0, c.health - Math.min(policeRam ? 6 : 100, Math.max(0, impact - 2) * 1.1 * c.spec.damage));
+    c.health = Math.max(0, c.health - Math.min(policeRam ? 6 : 100, Math.max(0, impact - 2.2) * 0.95 * c.spec.damage));
     if (impact > 7) SN.shatterCarGlass(c);
     if (c === SN.player.car && impact > 8 && !policeRam)
       SN.hurtPlayer((impact - 7) * 0.7);
@@ -17358,9 +17371,23 @@ void main(){
     c.glassBroken = false;
     if (c.glass) c.glass.visible = !c.modeled;
     if (c.modeled) for (const mesh of c.modelGlass || []) mesh.visible = true;
+    if (c.hood) { c.hood.rotation.x = 0; c.hood.position.z = c.hoodBaseZ; }
     c.paint.roughness = 0.58;
     if (repaint) c.paintColor = SN.carColors[(c.serial + Math.floor(SN.simTime)) % SN.carColors.length];
     c.paint.color.copy(SN.srgb(c.paintColor));
+  };
+
+  SN.applyCarDents = function applyCarDents(c) {
+    const damage = 1 - SN.clamp(c.health / 100, 0, 1),
+      lift = SN.clamp((damage - 0.3) / 0.7, 0, 1);
+    // Dents stay shallow. A deep vertical squash shrank the cabin around the
+    // seated driver and let the rig poke through the roof in a hard crash.
+    c.body.scale.set(1 + damage * 0.012, 1 - damage * 0.035, 1 - damage * 0.02);
+    c.paint.roughness = 0.58 + damage * 0.32;
+    if (c.hood) {
+      c.hood.rotation.x = -lift * 0.6;
+      c.hood.position.z = c.hoodBaseZ - lift * 0.04;
+    }
   };
 
   SN.updateVehicleDamage = function updateVehicleDamage(dt) {
@@ -17370,8 +17397,7 @@ void main(){
       if (c.health < 65) SN.shatterCarGlass(c);
       if (c.health > 45 && !c.exploded) {
         c.burnTime = 0;
-        const dent = 1 - c.health / 100;
-        c.body.scale.set(1, 1 - dent * 0.1, 1 - dent * 0.05);
+        SN.applyCarDents(c);
         continue;
       }
       if (c.health <= 20 && !c.exploded) {
@@ -17388,9 +17414,7 @@ void main(){
         }
       }
       if (c.exploded && SN.simTime - c.explodedAt > 18) continue;
-      const damage = 1 - SN.clamp(c.health / 100, 0, 1);
-      c.body.scale.set(1 + damage * 0.035, 1 - damage * 0.16, 1 - damage * 0.08);
-      c.paint.roughness = 0.58 + damage * 0.32;
+      SN.applyCarDents(c);
       if (Math.hypot(c.x - SN.player.x, c.z - SN.player.z) > 120 || effects >= (SN.qualityLevel() === 0 ? 2 : 5)) continue;
       effects++;
       c.effectClock = (c.effectClock || 0) - dt;
@@ -25454,7 +25478,7 @@ void main(){
       ]
     }, {
       id: "riverlights",
-      title: "两岸漫游 · 首尔街头",
+      title: "两岸漫游 · 汉江夜路",
       giver: "mentor",
       brief: "韩序温想知道新开的跨江路线是否畅通。沿途到访梨泰院、汝矣岛、江南和蚕室。",
       reward: 2400,
@@ -31809,7 +31833,10 @@ void main(){
     if (SN.models) SN.models.update(dt);
     SN.flushActors();
     if (SN.player.car && !SN.carjack) {
-      SN.playerRoot.visible = true;
+      // Only a bike rider stays visible. A closed car already has a cabin, and
+      // showing the full rig there let it poke through the roof once the shell
+      // dented in a crash.
+      SN.playerRoot.visible = !!SN.player.car.spec.bike;
       SN.poseDriver(SN.playerDriver, SN.player.car);
       SN.updateWeaponVisuals();
       SN.playerRig.weapon.visible = false;
@@ -32584,6 +32611,12 @@ void main(){
         SN.player.health = 100; SN.player.armor = 100;
       }],
       [9.2, "damage-fire", () => {
+        SN.repairVehicle(car); car.health = 70; SN.updateVehicleDamage(0.2);
+        assert(car.body.scale.y > 0.96, "轻微碰撞压扁了车身");
+        if (car.hood) assert(Math.abs(car.hood.rotation.x) < 0.02, "轻微碰撞错误掀起车盖");
+        car.health = 25; SN.updateVehicleDamage(0.2);
+        assert(car.body.scale.y > 0.9, "重伤压扁了车身");
+        if (car.hood) assert(car.hood.rotation.x < -0.2, "重伤没有掀起车盖");
         SN.repairVehicle(car); car.health = 18; SN.updateVehicleDamage(0.2);
         assert(car.burnTime > 0 && !car.exploded, "起火状态错误");
         movePlayer(car.x + 25, car.z + 25);

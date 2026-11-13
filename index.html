@@ -3,17 +3,17 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-    <meta name="description" content="首尔街头：步行或驾车探索首尔的三维开放城市，穿越街巷与汉江两岸，体验昼夜变化和街头故事。">
+    <meta name="description" content="零点代驾：在首尔步行或驾车穿过街巷与汉江两岸，体验昼夜变化、街头故事和一场夜班代驾。">
     <meta name="theme-color" content="#082b49">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="首尔街头">
-    <title>首尔街头</title>
+    <meta name="apple-mobile-web-app-title" content="零点代驾">
+    <title>零点代驾</title>
     <link rel="stylesheet" href="css/style.css">
   </head>
   <body>
-    <canvas id="world" tabindex="0" aria-label="首尔街头，三维开放城市"></canvas>
+    <canvas id="world" tabindex="0" aria-label="零点代驾，三维开放城市"></canvas>
     <div id="vignette"></div>
     <div id="hud">
       <div id="districtToast" role="status"><b id="area">종로 · 钟路</b><small id="district"></small></div>
@@ -87,9 +87,9 @@
     </div>
     <div class="intro" id="intro">
       <div class="intro-badge">一条江 · 一座城 · 你的路线</div>
-      <div class="serial">SEOUL · 自由探索</div>
-      <h1>首尔<br><em>街头</em></h1>
-      <div class="poem">서울 스트리트</div>
+      <div class="serial">SEOUL · 夜班代驾</div>
+      <h1>零点<br><em>代驾</em></h1>
+      <div class="poem">서울 대리운전</div>
       <p class="description">穿过钟路的霓虹街巷，驰骋汉江两岸。跟随金色标记，开启你的首尔故事。</p>
       <div id="loadingStatus" role="status">准备街区…</div>
       <div class="start-actions">
@@ -108,7 +108,7 @@
     <button id="cityEvent" aria-label="街头偶遇"></button>
     <div id="pauseMenu" class="story-layer" role="dialog" aria-modal="true" aria-labelledby="pauseTitle">
       <section class="story-panel pause-panel">
-        <header><div><div class="eyebrow">SEOUL STREETS</div><h2 id="pauseTitle">街头歇一会</h2></div><button id="resumeBtn">继续游戏</button></header>
+        <header><div><div class="eyebrow">SEOUL · VALET</div><h2 id="pauseTitle">路边歇一会</h2></div><button id="resumeBtn">继续游戏</button></header>
         <p>城市已暂停。跟随金色地图标记接取任务，或自由探索街区。</p>
         <div class="pause-actions"><button id="pauseMap">全城地图</button><button id="hailTaxi">扬招出租车 · G</button><button id="bobToggle" aria-pressed="false">镜头起伏：关 · B</button><button id="qualityToggle">画质：自动</button><button id="controlsBtn">操作指南</button><button id="settingsBtn" aria-expanded="false">设置</button><button id="touchGait" aria-pressed="false">行走 / 奔跑</button><button id="radioCycle">切换车载电台</button></div>
         <div class="city-weather-controls"><label>时刻 <select id="cityHour" aria-label="自由漫游时刻"><option value="6">06:00 日出</option><option value="10.5" selected>10:30 上午</option><option value="18.5">18:30 日落</option><option value="22">22:00 夜生活</option><option value="2">02:00 深夜</option></select></label><label>天气 <select id="cityWeather" aria-label="自由漫游天气"><option value="clear">晴朗</option><option value="rain">阵雨</option><option value="dust">黄沙薄霾</option><option value="snow">冬日飘雪</option></select></label><button id="weatherAuto">自然天气：开</button><small id="cityWeatherHint">自由漫游可调整时刻与天气</small></div>

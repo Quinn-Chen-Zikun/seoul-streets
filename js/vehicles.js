@@ -54,6 +54,19 @@
     SN.meshAt(geo.tail, SN.tailMat, 0, 0, 0, 1, 1, 1, 0, body).castShadow = false;
     if (geo.accent)
       SN.meshAt(geo.accent, SN.vehicleAccentMats[type === 9 ? 3 : type === 10 ? 1 : type === 11 ? 2 : 0], 0, 0, 0, 1, 1, 1, 0, body);
+    // A painted bonnet gives crash damage a readable stage: it lifts off its
+    // rear hinge long before the engine catches fire.
+    c.hood = null;
+    if (["sedan", "hatch", "suv", "taxi", "pickup", "coupe", "silverCrew", "redCrew", "police"].includes(spec.shape)) {
+      const depth = spec.length * 0.26, hinge = new SN.T.Group(),
+        hood = SN.meshAt(SN.roundedBox(spec.width * 0.62, 0.035, depth, 0.02, 2), c.paint,
+          0, 0, depth * 0.5, 1, 1, 1, 0, hinge);
+      hood.castShadow = false;
+      hinge.position.set(0, spec.height * 0.57, spec.length * 0.16);
+      c.hood = hinge;
+      c.hoodBaseZ = hinge.position.z;
+      body.add(hinge);
+    }
     if (spec.emergency || type === 9) {
       const barZ = type === 9 ? -0.12 : 0.5;
       c.lights = [
@@ -516,7 +529,7 @@
       return;
     const policeRam = c === SN.player.car && other && other.role === "police";
     c.collisionTimer = policeRam ? 1 : 0.45;
-    c.health = Math.max(0, c.health - Math.min(policeRam ? 6 : 100, Math.max(0, impact - 2) * 1.1 * c.spec.damage));
+    c.health = Math.max(0, c.health - Math.min(policeRam ? 6 : 100, Math.max(0, impact - 2.2) * 0.95 * c.spec.damage));
     if (impact > 7) SN.shatterCarGlass(c);
     if (c === SN.player.car && impact > 8 && !policeRam)
       SN.hurtPlayer((impact - 7) * 0.7);
@@ -529,9 +542,23 @@
     c.glassBroken = false;
     if (c.glass) c.glass.visible = !c.modeled;
     if (c.modeled) for (const mesh of c.modelGlass || []) mesh.visible = true;
+    if (c.hood) { c.hood.rotation.x = 0; c.hood.position.z = c.hoodBaseZ; }
     c.paint.roughness = 0.58;
     if (repaint) c.paintColor = SN.carColors[(c.serial + Math.floor(SN.simTime)) % SN.carColors.length];
     c.paint.color.copy(SN.srgb(c.paintColor));
+  };
+
+  SN.applyCarDents = function applyCarDents(c) {
+    const damage = 1 - SN.clamp(c.health / 100, 0, 1),
+      lift = SN.clamp((damage - 0.3) / 0.7, 0, 1);
+    // Dents stay shallow. A deep vertical squash shrank the cabin around the
+    // seated driver and let the rig poke through the roof in a hard crash.
+    c.body.scale.set(1 + damage * 0.012, 1 - damage * 0.035, 1 - damage * 0.02);
+    c.paint.roughness = 0.58 + damage * 0.32;
+    if (c.hood) {
+      c.hood.rotation.x = -lift * 0.6;
+      c.hood.position.z = c.hoodBaseZ - lift * 0.04;
+    }
   };
 
   SN.updateVehicleDamage = function updateVehicleDamage(dt) {
@@ -541,8 +568,7 @@
       if (c.health < 65) SN.shatterCarGlass(c);
       if (c.health > 45 && !c.exploded) {
         c.burnTime = 0;
-        const dent = 1 - c.health / 100;
-        c.body.scale.set(1, 1 - dent * 0.1, 1 - dent * 0.05);
+        SN.applyCarDents(c);
         continue;
       }
       if (c.health <= 20 && !c.exploded) {
@@ -559,9 +585,7 @@
         }
       }
       if (c.exploded && SN.simTime - c.explodedAt > 18) continue;
-      const damage = 1 - SN.clamp(c.health / 100, 0, 1);
-      c.body.scale.set(1 + damage * 0.035, 1 - damage * 0.16, 1 - damage * 0.08);
-      c.paint.roughness = 0.58 + damage * 0.32;
+      SN.applyCarDents(c);
       if (Math.hypot(c.x - SN.player.x, c.z - SN.player.z) > 120 || effects >= (SN.qualityLevel() === 0 ? 2 : 5)) continue;
       effects++;
       c.effectClock = (c.effectClock || 0) - dt;

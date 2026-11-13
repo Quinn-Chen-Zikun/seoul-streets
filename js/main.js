@@ -303,7 +303,10 @@
     if (SN.models) SN.models.update(dt);
     SN.flushActors();
     if (SN.player.car && !SN.carjack) {
-      SN.playerRoot.visible = true;
+      // Only a bike rider stays visible. A closed car already has a cabin, and
+      // showing the full rig there let it poke through the roof once the shell
+      // dented in a crash.
+      SN.playerRoot.visible = !!SN.player.car.spec.bike;
       SN.poseDriver(SN.playerDriver, SN.player.car);
       SN.updateWeaponVisuals();
       SN.playerRig.weapon.visible = false;
@@ -1078,6 +1081,12 @@
         SN.player.health = 100; SN.player.armor = 100;
       }],
       [9.2, "damage-fire", () => {
+        SN.repairVehicle(car); car.health = 70; SN.updateVehicleDamage(0.2);
+        assert(car.body.scale.y > 0.96, "轻微碰撞压扁了车身");
+        if (car.hood) assert(Math.abs(car.hood.rotation.x) < 0.02, "轻微碰撞错误掀起车盖");
+        car.health = 25; SN.updateVehicleDamage(0.2);
+        assert(car.body.scale.y > 0.9, "重伤压扁了车身");
+        if (car.hood) assert(car.hood.rotation.x < -0.2, "重伤没有掀起车盖");
         SN.repairVehicle(car); car.health = 18; SN.updateVehicleDamage(0.2);
         assert(car.burnTime > 0 && !car.exploded, "起火状态错误");
         movePlayer(car.x + 25, car.z + 25);
