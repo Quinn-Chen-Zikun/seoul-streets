@@ -653,6 +653,37 @@
         }
       }
     }
+    // Lane arrows on the wider avenues. Two boxes per arrow keep them in the
+    // same instanced paint batch as the lane lines.
+    if (road.width >= 14 && !road.special)
+      for (let s = 55; s < road.length - 22; s += 190) {
+        const a = pointOnPolyline(road, s), y = SN.roadProfileHeight(profile, s) + 0.179,
+          fx = Math.sin(a.yaw), fz = Math.cos(a.yaw);
+        for (const side of [-1, 1]) {
+          const off = side * (road.median / 2 + 1.6), dir = side < 0 ? a.yaw : a.yaw + SN.PI,
+            x = a.x + fx * 1.2 + a.nx * off, z = a.z + fz * 1.2 + a.nz * off;
+          SN.record(SN.markBatch, x, y, z, 0.3, 0.018, 2.4, dir, 0xe8edf0);
+          const tipX = x + Math.sin(dir) * 1.55, tipZ = z + Math.cos(dir) * 1.55;
+          for (const wing of [-1, 1]) {
+            const wy = dir + wing * 0.66;
+            SN.record(SN.markBatch,
+              tipX - Math.sin(wy) * 0.45, y, tipZ - Math.cos(wy) * 0.45,
+              0.26, 0.018, 1.05, wy, 0xe8edf0);
+          }
+        }
+      }
+    // Sparse manhole covers and drain lids break up the asphalt.
+    for (let s = 32, n = 0; s < road.length - 14; s += 96, n++) {
+      if (road.width < 10)
+        continue;
+      const p = pointOnPolyline(road, s), off = ((n * 37) % 7 - 3) * 1.05;
+      if (Math.abs(off) > road.width / 2 - 1.4)
+        continue;
+      SN.manholeBatch.push({
+        g: SN.cylinder, x: p.x + p.nx * off, y: SN.roadProfileHeight(profile, s) + 0.176,
+        z: p.z + p.nz * off, sx: 0.5, sy: 0.02, sz: 0.5, yaw: 0
+      });
+    }
   }
 
   function buildRoadMeshes(road) {

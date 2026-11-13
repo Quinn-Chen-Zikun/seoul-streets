@@ -143,7 +143,7 @@
   // Each body prototype is measured once in bind pose. Tops, bottoms and shoes
   // are then built as independent skinned shells that share the body skeleton,
   // so fabric hangs from smooth cross-sections instead of following anatomy.
-  const fabricTextures = new Map(), garmentMaterials = new Map(), skinCoverMaterials = new Map();
+  const fabricTextures = new Map(), garmentMaterials = new Map(), skinCoverMaterials = new Map(), faceMaterials = new Map();
   let relaxQuat = null;
 
   function garmentCss(hex, shift) {
@@ -2067,7 +2067,22 @@
     agent.lookKey = lookKey;
     attachHair(agent, hairId, hairColor, cap && !beanie);
     const eyebrows = agent.root.getObjectByName("Eyebrows");
-    if (eyebrows && M.hair[hairId]) eyebrows.material = hairMaterial(M.hair[hairId], hairColor);
+    if (eyebrows && M.hair[hairId]) {
+      // The face overlay is a SkinnedMesh. The shared hair material is not
+      // skinned, so assigning it left the brows in bind pose while the head
+      // turned. Clone it and opt this mesh into skinning.
+      const key = hairId + "|" + hairColor,
+        base = hairMaterial(M.hair[hairId], hairColor);
+      let material = faceMaterials.get(key);
+      if (!material) {
+        material = base.clone();
+        material.skinning = true;
+        material.needsUpdate = true;
+        faceMaterials.set(key, material);
+        SN.envMats.push({ material, base: material.envMapIntensity || 0.3 });
+      }
+      eyebrows.material = material;
+    }
     const extras = ensureFaceExtras(agent);
     if (extras) {
       // The procedural cap already carries its own brim; only the badge is

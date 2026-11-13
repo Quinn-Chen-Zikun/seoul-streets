@@ -1546,6 +1546,9 @@
         check(player.mixer && player.actions, "玩家动画混合器缺失");
         check(M.outfits[M.playerOutfitId], "玩家服装编号无效 " + M.playerOutfitId);
         check(player.body.material && player.body.material.userData.clothUniforms, "玩家身体没有服装遮罩");
+        const brows = player.root.getObjectByName("Eyebrows");
+        check(brows && brows.isSkinnedMesh, "玩家面部不是蒙皮网格");
+        check(brows.material && brows.material.skinning, "眉毛材质没有启用蒙皮，头转动时会留在原地");
         check(M.agents.length >= 12, "行人模型池不足");
         console.log("SMOKE m17 assets: outfits=" + Object.keys(M.outfits).length + " hair=" + Object.keys(M.hair).length + " clips=" + Object.keys(M.clips).length + " cars=" + Object.keys(M.carPrototypes).length);
       }],

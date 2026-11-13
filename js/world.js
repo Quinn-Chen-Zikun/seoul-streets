@@ -1061,7 +1061,11 @@
         spacing = SN.EXTENT * 2 / SN.terrainDivisions;
       const slope = Math.hypot(SN.gp.getY(Math.min(SN.gp.count - 1, i + 1)) - SN.gp.getY(Math.max(0, i - 1)), SN.gp.getY(Math.min(SN.gp.count - 1, i + row)) - SN.gp.getY(Math.max(0, i - row))) / (spacing * 2),
         grain = SN.terrainNoise(x / 45, z / 45);
-      SN.terrainColor.setHex(slope > 0.64 ? 0x8b9083 : slope > 0.4 ? 0x54734d : h > 24 ? 0x267443 : 0x58a146).convertSRGBToLinear();
+      SN.terrainColor.setHex(
+        slope > 0.78 ? 0x7c786c :
+          slope > 0.52 ? 0x8f8979 :
+            slope > 0.34 ? 0x5b7249 :
+              h > 24 ? 0x2f7b46 : 0x5aa24b).convertSRGBToLinear();
       SN.terrainColor.multiplyScalar(0.9 + grain * 0.2);
       SN.gc[i * 3] = SN.terrainColor.r;
       SN.gc[i * 3 + 1] = SN.terrainColor.g;

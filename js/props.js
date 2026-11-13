@@ -1065,6 +1065,7 @@
     SN.staticCityTiles(SN.asphalt, SN.roadBatch, 1650, 240, false, false);
     SN.staticCityTiles(SN.sidewalk, SN.sideBatch, 1650, 240, false, false);
     SN.staticCityTiles(SN.stripeMat, SN.markBatch, 900, 240, false, false);
+    SN.staticCityTiles(SN.manholeMat, SN.manholeBatch, 900, 240, false, false);
     SN.staticCityTiles(SN.curbMat, SN.curbBatch, 1000, 240, false, false);
     for (let i = 0; i < SN.buildingMats.length; i++)
       SN.staticCityTiles(SN.buildingMats[i], SN.buildingBatches[i].map(b => ({ ...b, g: SN.urbanBlockGeo })));

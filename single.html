@@ -6216,6 +6216,7 @@ void main(){
     });
     SN.applyWetSurface(SN.sidewalk, { strength: 0.7, darken: 0.24 });
     SN.stripeMat = SN.pbrMat("paint", 0xffffff, { uvScale: 1 / 2.4, roughness: 0.9, metalness: 0.02, envMapIntensity: 0.3, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+    SN.manholeMat = SN.pbrMat("metal", 0x343b40, { uvScale: 1 / 1.2, roughness: 0.74, metalness: 0.4, envMapIntensity: 0.45, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     SN.curbMat = SN.pbrMat("concrete", 0xe7e4d9, { uvScale: 1 / 2, roughness: 1, metalness: 0.02, envMapIntensity: 0.25 });
     SN.stoneMat = SN.pbrMat("stone", 0xb2a68e, { uvScale: 1 / 3, roughness: 1, metalness: 0.02, envMapIntensity: 0.3 });
     SN.darkMat = SN.pbrMat("metal", 0x3a464c, { uvScale: 1 / 2.2, roughness: 0.82, metalness: 0.45, envMapIntensity: 0.75 });
@@ -6226,6 +6227,7 @@ void main(){
     SN.roadBatch = [];
     SN.sideBatch = [];
     SN.markBatch = [];
+    SN.manholeBatch = [];
     SN.curbBatch = [];
     SN.trunkBatch = [];
     SN.leafBatch = [];
@@ -6399,7 +6401,7 @@ void main(){
   // Each body prototype is measured once in bind pose. Tops, bottoms and shoes
   // are then built as independent skinned shells that share the body skeleton,
   // so fabric hangs from smooth cross-sections instead of following anatomy.
-  const fabricTextures = new Map(), garmentMaterials = new Map(), skinCoverMaterials = new Map();
+  const fabricTextures = new Map(), garmentMaterials = new Map(), skinCoverMaterials = new Map(), faceMaterials = new Map();
   let relaxQuat = null;
 
   function garmentCss(hex, shift) {
@@ -8323,7 +8325,22 @@ void main(){
     agent.lookKey = lookKey;
     attachHair(agent, hairId, hairColor, cap && !beanie);
     const eyebrows = agent.root.getObjectByName("Eyebrows");
-    if (eyebrows && M.hair[hairId]) eyebrows.material = hairMaterial(M.hair[hairId], hairColor);
+    if (eyebrows && M.hair[hairId]) {
+      // The face overlay is a SkinnedMesh. The shared hair material is not
+      // skinned, so assigning it left the brows in bind pose while the head
+      // turned. Clone it and opt this mesh into skinning.
+      const key = hairId + "|" + hairColor,
+        base = hairMaterial(M.hair[hairId], hairColor);
+      let material = faceMaterials.get(key);
+      if (!material) {
+        material = base.clone();
+        material.skinning = true;
+        material.needsUpdate = true;
+        faceMaterials.set(key, material);
+        SN.envMats.push({ material, base: material.envMapIntensity || 0.3 });
+      }
+      eyebrows.material = material;
+    }
     const extras = ensureFaceExtras(agent);
     if (extras) {
       // The procedural cap already carries its own brim; only the badge is
@@ -10196,7 +10213,11 @@ void main(){
         spacing = SN.EXTENT * 2 / SN.terrainDivisions;
       const slope = Math.hypot(SN.gp.getY(Math.min(SN.gp.count - 1, i + 1)) - SN.gp.getY(Math.max(0, i - 1)), SN.gp.getY(Math.min(SN.gp.count - 1, i + row)) - SN.gp.getY(Math.max(0, i - row))) / (spacing * 2),
         grain = SN.terrainNoise(x / 45, z / 45);
-      SN.terrainColor.setHex(slope > 0.64 ? 0x8b9083 : slope > 0.4 ? 0x54734d : h > 24 ? 0x267443 : 0x58a146).convertSRGBToLinear();
+      SN.terrainColor.setHex(
+        slope > 0.78 ? 0x7c786c :
+          slope > 0.52 ? 0x8f8979 :
+            slope > 0.34 ? 0x5b7249 :
+              h > 24 ? 0x2f7b46 : 0x5aa24b).convertSRGBToLinear();
       SN.terrainColor.multiplyScalar(0.9 + grain * 0.2);
       SN.gc[i * 3] = SN.terrainColor.r;
       SN.gc[i * 3 + 1] = SN.terrainColor.g;
@@ -11127,6 +11148,37 @@ void main(){
             0.12, 0.167, 0.018, 0xffffff);
         }
       }
+    }
+    // Lane arrows on the wider avenues. Two boxes per arrow keep them in the
+    // same instanced paint batch as the lane lines.
+    if (road.width >= 14 && !road.special)
+      for (let s = 55; s < road.length - 22; s += 190) {
+        const a = pointOnPolyline(road, s), y = SN.roadProfileHeight(profile, s) + 0.179,
+          fx = Math.sin(a.yaw), fz = Math.cos(a.yaw);
+        for (const side of [-1, 1]) {
+          const off = side * (road.median / 2 + 1.6), dir = side < 0 ? a.yaw : a.yaw + SN.PI,
+            x = a.x + fx * 1.2 + a.nx * off, z = a.z + fz * 1.2 + a.nz * off;
+          SN.record(SN.markBatch, x, y, z, 0.3, 0.018, 2.4, dir, 0xe8edf0);
+          const tipX = x + Math.sin(dir) * 1.55, tipZ = z + Math.cos(dir) * 1.55;
+          for (const wing of [-1, 1]) {
+            const wy = dir + wing * 0.66;
+            SN.record(SN.markBatch,
+              tipX - Math.sin(wy) * 0.45, y, tipZ - Math.cos(wy) * 0.45,
+              0.26, 0.018, 1.05, wy, 0xe8edf0);
+          }
+        }
+      }
+    // Sparse manhole covers and drain lids break up the asphalt.
+    for (let s = 32, n = 0; s < road.length - 14; s += 96, n++) {
+      if (road.width < 10)
+        continue;
+      const p = pointOnPolyline(road, s), off = ((n * 37) % 7 - 3) * 1.05;
+      if (Math.abs(off) > road.width / 2 - 1.4)
+        continue;
+      SN.manholeBatch.push({
+        g: SN.cylinder, x: p.x + p.nx * off, y: SN.roadProfileHeight(profile, s) + 0.176,
+        z: p.z + p.nz * off, sx: 0.5, sy: 0.02, sz: 0.5, yaw: 0
+      });
     }
   }
 
@@ -14392,6 +14444,7 @@ void main(){
     SN.staticCityTiles(SN.asphalt, SN.roadBatch, 1650, 240, false, false);
     SN.staticCityTiles(SN.sidewalk, SN.sideBatch, 1650, 240, false, false);
     SN.staticCityTiles(SN.stripeMat, SN.markBatch, 900, 240, false, false);
+    SN.staticCityTiles(SN.manholeMat, SN.manholeBatch, 900, 240, false, false);
     SN.staticCityTiles(SN.curbMat, SN.curbBatch, 1000, 240, false, false);
     for (let i = 0; i < SN.buildingMats.length; i++)
       SN.staticCityTiles(SN.buildingMats[i], SN.buildingBatches[i].map(b => ({ ...b, g: SN.urbanBlockGeo })));
@@ -16318,7 +16371,15 @@ void main(){
       wantsSprint = !!(SN.keys.ShiftLeft || SN.keys.ShiftRight || SN.touch.sprint),
       sprinting = moving && !aim && wantsSprint;
     SN.player.gait = sprinting ? 2 : aim || SN.player.walkMode || analog && len < 0.55 ? 0 : 1;
-    const targetSpeed = moving ? SN.GAITS[SN.player.gait].speed : 0;
+    const weapon = SN.weapons[SN.selectedWeapon],
+      meleeSwing = SN.attackTime > 0 && !SN.holstered && weapon && !weapon.capacity;
+    // A punch or bat swing plants the feet more than a stride; keep momentum
+    // but slow the legs so the strike reads instead of sliding past the target.
+    // Speed up the player only: pedestrians share GAITS and must keep their
+    // sidewalk pacing. Jog +25%, sprint +20%; walking stays calm.
+    let targetSpeed = moving ? SN.GAITS[SN.player.gait].speed * (SN.player.gait === 1 ? 1.25 : SN.player.gait === 2 ? 1.2 : 1) : 0;
+    if (meleeSwing)
+      targetSpeed *= 0.55;
     SN.player.motionSpeed = SN.lerp(SN.player.motionSpeed, targetSpeed, 1 - Math.exp(-dt * (moving ? 26 : 30)));
     if (SN.player.motionSpeed < 0.015)
       SN.player.motionSpeed = 0;
@@ -33169,6 +33230,9 @@ void main(){
         check(player.mixer && player.actions, "玩家动画混合器缺失");
         check(M.outfits[M.playerOutfitId], "玩家服装编号无效 " + M.playerOutfitId);
         check(player.body.material && player.body.material.userData.clothUniforms, "玩家身体没有服装遮罩");
+        const brows = player.root.getObjectByName("Eyebrows");
+        check(brows && brows.isSkinnedMesh, "玩家面部不是蒙皮网格");
+        check(brows.material && brows.material.skinning, "眉毛材质没有启用蒙皮，头转动时会留在原地");
         check(M.agents.length >= 12, "行人模型池不足");
         console.log("SMOKE m17 assets: outfits=" + Object.keys(M.outfits).length + " hair=" + Object.keys(M.hair).length + " clips=" + Object.keys(M.clips).length + " cars=" + Object.keys(M.carPrototypes).length);
       }],

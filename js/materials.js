@@ -1912,6 +1912,7 @@
     });
     SN.applyWetSurface(SN.sidewalk, { strength: 0.7, darken: 0.24 });
     SN.stripeMat = SN.pbrMat("paint", 0xffffff, { uvScale: 1 / 2.4, roughness: 0.9, metalness: 0.02, envMapIntensity: 0.3, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+    SN.manholeMat = SN.pbrMat("metal", 0x343b40, { uvScale: 1 / 1.2, roughness: 0.74, metalness: 0.4, envMapIntensity: 0.45, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     SN.curbMat = SN.pbrMat("concrete", 0xe7e4d9, { uvScale: 1 / 2, roughness: 1, metalness: 0.02, envMapIntensity: 0.25 });
     SN.stoneMat = SN.pbrMat("stone", 0xb2a68e, { uvScale: 1 / 3, roughness: 1, metalness: 0.02, envMapIntensity: 0.3 });
     SN.darkMat = SN.pbrMat("metal", 0x3a464c, { uvScale: 1 / 2.2, roughness: 0.82, metalness: 0.45, envMapIntensity: 0.75 });
@@ -1922,6 +1923,7 @@
     SN.roadBatch = [];
     SN.sideBatch = [];
     SN.markBatch = [];
+    SN.manholeBatch = [];
     SN.curbBatch = [];
     SN.trunkBatch = [];
     SN.leafBatch = [];

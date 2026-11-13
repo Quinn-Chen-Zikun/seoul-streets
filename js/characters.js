@@ -851,7 +851,15 @@
       wantsSprint = !!(SN.keys.ShiftLeft || SN.keys.ShiftRight || SN.touch.sprint),
       sprinting = moving && !aim && wantsSprint;
     SN.player.gait = sprinting ? 2 : aim || SN.player.walkMode || analog && len < 0.55 ? 0 : 1;
-    const targetSpeed = moving ? SN.GAITS[SN.player.gait].speed : 0;
+    const weapon = SN.weapons[SN.selectedWeapon],
+      meleeSwing = SN.attackTime > 0 && !SN.holstered && weapon && !weapon.capacity;
+    // A punch or bat swing plants the feet more than a stride; keep momentum
+    // but slow the legs so the strike reads instead of sliding past the target.
+    // Speed up the player only: pedestrians share GAITS and must keep their
+    // sidewalk pacing. Jog +25%, sprint +20%; walking stays calm.
+    let targetSpeed = moving ? SN.GAITS[SN.player.gait].speed * (SN.player.gait === 1 ? 1.25 : SN.player.gait === 2 ? 1.2 : 1) : 0;
+    if (meleeSwing)
+      targetSpeed *= 0.55;
     SN.player.motionSpeed = SN.lerp(SN.player.motionSpeed, targetSpeed, 1 - Math.exp(-dt * (moving ? 26 : 30)));
     if (SN.player.motionSpeed < 0.015)
       SN.player.motionSpeed = 0;
