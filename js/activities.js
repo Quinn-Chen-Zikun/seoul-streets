@@ -815,7 +815,7 @@
     SN.storyMissions.forEach((m, index) => SN.smoke.stages.push(
       [19.05 + index * 0.025, "main-mission-" + m.id, () => SN.smokeMainMission(index)]));
     SN.sideJobs.forEach((m, index) => SN.smoke.stages.push(
-      [["riverrun", "airport", "bukchon", "turf", "holdout"].includes(m.id) ? 23.35 + index * 0.02 : 18.85 + index * 0.025, "side-mission-" + m.id, () => SN.smokeMainMission(index, "side")]));
+      [["riverrun", "airport", "bukchon", "turf", "holdout", "nighttaxi"].includes(m.id) ? 23.35 + index * 0.02 : 18.85 + index * 0.025, "side-mission-" + m.id, () => SN.smokeMainMission(index, "side")]));
     SN.smoke.stages.sort((a, b) => a[0] - b[0]);
   };
 

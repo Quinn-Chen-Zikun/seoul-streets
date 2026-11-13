@@ -226,7 +226,13 @@
           go("到汉江北岸仓库", -600, -30, { r: 8 }),
           { type: "defend", text: "守住仓库 60 秒", x: -600, z: -30, duration: 60, supply: 2 },
           go("回乙支路找韩序温", -30, -765, { r: 4 })
-        ], { totalLimit: 300, outro: "货车开走时卷起一阵灰。韩序温说：今晚的运费，算你的。" })
+        ], { totalLimit: 300, outro: "货车开走时卷起一阵灰。韩序温说：今晚的运费，算你的。" }),
+      mission("nighttaxi", "夜班出租", "informant", "明洞", 902, -674, 900,
+        "把一位刚下夜班的护士从明洞送回梨泰院，别让她在路边等太久。",
+        ["蔡娜凛：她刚下夜班，别问太多。", "蔡娜凛：表在走，人也一样。"], [
+          { type: "taxiPickup", text: "驾驶出租车到明洞接护士", x: 360, z: -330, r: 10 },
+          { type: "taxiDrop", text: "送她到梨泰院公寓", x: -1100, z: -190, r: 12 }
+        ], { totalLimit: 240, outro: "她下车时说，明晚还这个点。" })
     );
     for (const [i, m] of SN.storyMissions.entries()) {
       m.district = m.district || ["钟路 · 光化门", "明洞", "江南", "首尔 · 南山", "乙支路", "汉江", "汉江"][i];
