@@ -14441,6 +14441,11 @@ void main(){
       { x: SN.cableStart.x, z: SN.cableStart.z, name: "南山缆车 · 山下站", ride: SN.cableStart },
       { x: SN.cableEnd.x, z: SN.cableEnd.z, name: "南山缆车 · 山顶站", ride: SN.cableEnd }
     ];
+    for (const station of SN.cableStations) {
+      const label = SN.cityGroup(station.x, station.z, 700);
+      SN.cityLabel(label, "남산 케이블카 · 南山缆车", -8, 12, 0);
+      SN.finishCityGroup(label);
+    }
     // Stair entrances are real stepped surfaces descending from a raised landing.
     for (const d of SN.cityDistricts) {
       const x = d.travel[0] - 25, z = d.travel[1] - 21;
@@ -19332,7 +19337,12 @@ void main(){
       SN.resetVehicleGround(c);
       SN.riverBoats.push(c);
       const land = SN.boatLanding(c);
-      if (land) SN.riverDocks.push({ x: land.x, z: land.z, boat: c });
+      if (land) {
+        SN.riverDocks.push({ x: land.x, z: land.z, boat: c });
+        const label = SN.cityGroup(land.x, land.z, 700);
+        SN.cityLabel(label, "한강 快艇 · 泊位", -5, 7, 0);
+        SN.finishCityGroup(label);
+      }
     }
   };
   SN.ambientBoats = [];
@@ -30765,6 +30775,15 @@ void main(){
       c.fillRect(-s * 0.06, 0, s * 0.12, s * 0.22);
       c.restore();
       c.fillRect(-s * 0.23, -s * 0.14, s * 0.05, s * 0.05);
+    }
+    else if (index === 6) {
+      c.fillRect(-s * 0.32, -s * 0.08, s * 0.58, s * 0.08);
+      c.fillRect(s * 0.2, -s * 0.06, s * 0.12, s * 0.04);
+      c.fillStyle = accent;
+      c.fillRect(-s * 0.12, -s * 0.04, s * 0.07, s * 0.15);
+      c.fillStyle = col;
+      c.fillRect(-s * 0.3, -s * 0.02, s * 0.1, s * 0.12);
+      c.fillRect(-s * 0.08, -s * 0.17, s * 0.16, s * 0.05);
     }
     else {
       c.fillRect(-s * 0.3, -s * 0.09, s * 0.46, s * 0.1);

@@ -2313,7 +2313,12 @@
       SN.resetVehicleGround(c);
       SN.riverBoats.push(c);
       const land = SN.boatLanding(c);
-      if (land) SN.riverDocks.push({ x: land.x, z: land.z, boat: c });
+      if (land) {
+        SN.riverDocks.push({ x: land.x, z: land.z, boat: c });
+        const label = SN.cityGroup(land.x, land.z, 700);
+        SN.cityLabel(label, "한강 快艇 · 泊位", -5, 7, 0);
+        SN.finishCityGroup(label);
+      }
     }
   };
   SN.ambientBoats = [];

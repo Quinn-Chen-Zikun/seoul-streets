@@ -1040,6 +1040,11 @@
       { x: SN.cableStart.x, z: SN.cableStart.z, name: "南山缆车 · 山下站", ride: SN.cableStart },
       { x: SN.cableEnd.x, z: SN.cableEnd.z, name: "南山缆车 · 山顶站", ride: SN.cableEnd }
     ];
+    for (const station of SN.cableStations) {
+      const label = SN.cityGroup(station.x, station.z, 700);
+      SN.cityLabel(label, "남산 케이블카 · 南山缆车", -8, 12, 0);
+      SN.finishCityGroup(label);
+    }
     // Stair entrances are real stepped surfaces descending from a raised landing.
     for (const d of SN.cityDistricts) {
       const x = d.travel[0] - 25, z = d.travel[1] - 21;

@@ -100,6 +100,15 @@
       c.restore();
       c.fillRect(-s * 0.23, -s * 0.14, s * 0.05, s * 0.05);
     }
+    else if (index === 6) {
+      c.fillRect(-s * 0.32, -s * 0.08, s * 0.58, s * 0.08);
+      c.fillRect(s * 0.2, -s * 0.06, s * 0.12, s * 0.04);
+      c.fillStyle = accent;
+      c.fillRect(-s * 0.12, -s * 0.04, s * 0.07, s * 0.15);
+      c.fillStyle = col;
+      c.fillRect(-s * 0.3, -s * 0.02, s * 0.1, s * 0.12);
+      c.fillRect(-s * 0.08, -s * 0.17, s * 0.16, s * 0.05);
+    }
     else {
       c.fillRect(-s * 0.3, -s * 0.09, s * 0.46, s * 0.1);
       c.fillRect(s * 0.1, -s * 0.075, s * 0.22, s * 0.045);
