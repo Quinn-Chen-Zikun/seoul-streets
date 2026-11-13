@@ -330,6 +330,16 @@
       g.arc(X(stop.x), Z(stop.z), 2, 0, SN.TAU);
       g.stroke();
     }
+    for (const dock of SN.riverDocks || []) {
+      g.strokeStyle = "#7fd8ff";
+      g.beginPath();
+      g.arc(X(dock.x), Z(dock.z), 2.5, 0, SN.TAU);
+      g.stroke();
+    }
+    for (const station of SN.cableStations || []) {
+      g.strokeStyle = "#e8c26a";
+      g.strokeRect(X(station.x) - 2.5, Z(station.z) - 2.5, 5, 5);
+    }
     for (const contact of SN.contacts) {
       g.fillStyle = "#a5efcb";
       g.save();
@@ -464,6 +474,10 @@
       dot(station.x, station.z, "#7fbbec", 3);
     for (const stop of SN.subwayStops)
       dot(stop.x, stop.z, "#b7a0df", 3);
+    for (const dock of SN.riverDocks || [])
+      dot(dock.x, dock.z, "#7fd8ff", 3);
+    for (const station of SN.cableStations || [])
+      dot(station.x, station.z, "#e8c26a", 3);
     for (const d of SN.cityDistricts) {
       if (Math.hypot(d.x - px, d.z - pz) > range * 0.8)
         continue;

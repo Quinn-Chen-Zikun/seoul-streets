@@ -9824,7 +9824,8 @@ void main(){
 
   SN.safePosition = function safePosition(x, z, r = 0.3, car = null, id = "spawn") {
     const original = { x, z };
-    const valid = (px, pz) => SN.terrainSlope(px, pz) < 0.48 && (car ? !SN.carBlocked(px, pz, car.yaw, car) && !SN.carWater(px, pz, car.yaw, car) : !SN.blocked(px, pz, r));
+    const valid = (px, pz) => SN.terrainSlope(px, pz) < 0.48 &&
+      (car ? (car.spec.boat ? !SN.boatBlocked(px, pz, car.yaw, car) : !SN.carBlocked(px, pz, car.yaw, car) && !SN.carWater(px, pz, car.yaw, car)) : !SN.blocked(px, pz, r));
     const corrected = (px, pz) => {
       SN.reportContentProblem(id, original.x, original.z, "位置不可通行", "移至可通行位置", { to: { x: px, z: pz } });
       return { x: px, z: pz };
@@ -11230,15 +11231,18 @@ void main(){
           const off = (profile.width / 2 + profile.sidewalkW + 0.4) * side;
           const x = (a.x + b.x) / 2 + a.nx * off, z = (a.z + b.z) / 2 + a.nz * off;
           const top = (SN.roadProfileHeight(profile, s) + SN.roadProfileHeight(profile, s + 8)) / 2;
-          const bottom = SN.hillHeight(x, z);
-          if (Math.abs(top - bottom) <= 0.75)
+          const bottom = SN.hillHeight(x, z), gap = Math.abs(top - bottom);
+          if (gap <= 0.75)
             continue;
+          // Cap the face so a deep hill cut reads as a retaining wall at the
+          // kerb instead of one enormous slab crossing the whole slope.
+          const wallH = Math.min(14, gap + 0.4);
           const piece = recordPiece(SN.retainingBatch,
             a.x + a.nx * off, a.z + a.nz * off, top,
             b.x + b.nx * off, b.z + b.nz * off, top,
-            0.38, 0, Math.abs(top - bottom) + 0.4);
+            0.5, 0, wallH);
           if (piece)
-            piece.y = (top + bottom) / 2 - 0.1;
+            piece.y = (bottom > top ? top + wallH / 2 : top - wallH / 2) - 0.1;
         }
       }
     if (profile.width >= 7)
@@ -16998,6 +17002,8 @@ void main(){
 "use strict";
 (function (SN) {
   // Metres throughout: 4.0–4.8 m vehicles; a 1.75 m humanoid at scale 1.
+  // The Han river surface sits at this height; boats ride on it instead of the road.
+  SN.WATER_Y = -0.65;
 
   SN.roundedBox = function roundedBox(w, h, d, r = 0.12, segments = 4) {
     const g = new SN.T.BoxGeometry(w, h, d, segments, segments, segments === 4 ? 6 : segments),
@@ -17031,7 +17037,7 @@ void main(){
     for (const wheel of c.wheels)
       c.root.remove(wheel.pivot);
     c.wheels.length = 0;
-    const color = type === 3 ? 0xff7a16 : type === 6 ? (c.serial % 2 ? 0x1485ed : 0x46b83f) : type === 14 ? 0xf3f1db : type === 15 ? 0xd5392d : type >= 12 ? 0x243a53 : type === 9 ? 0xd3e3e7 : type === 10 ? 0x225d5b : type === 11 ? 0x753e36 : SN.carColors[c.serial % SN.carColors.length];
+    const color = type === 3 ? 0xff7a16 : type === 6 ? (c.serial % 2 ? 0x1485ed : 0x46b83f) : type === 14 ? 0xf3f1db : type === 15 ? 0xd5392d : type === 16 ? (c.serial % 2 ? 0xeef2f0 : 0x2f5f7d) : type >= 12 ? 0x243a53 : type === 9 ? 0xd3e3e7 : type === 10 ? 0x225d5b : type === 11 ? 0x753e36 : SN.carColors[c.serial % SN.carColors.length];
     c.paintColor = color;
     c.paint.color.copy(SN.srgb(color));
     SN.meshAt(geo.body, c.paint, 0, 0, 0, 1, 1, 1, 0, body);
@@ -17073,7 +17079,7 @@ void main(){
     const radius = SN.vehicleWheelRadius(spec);
     c.wheelRadius = radius;
     // Tanks ride on their modelled tracks; extra car wheels would float outside them.
-    for (const side of spec.bike ? [0] : spec.tank ? [] : [-1, 1])
+    for (const side of spec.bike ? [0] : spec.tank || spec.boat ? [] : [-1, 1])
       for (const end of [-1, 1]) {
         const pivot = new SN.T.Group(), wheel = new SN.T.Group();
         pivot.position.set(side * (spec.width * 0.48 - 0.135), radius, end * spec.length * (spec.bike ? 0.36 : 0.32));
@@ -17217,6 +17223,10 @@ void main(){
   };
 
   SN.exitPosition = function exitPosition(c) {
+    if (c.spec.boat) {
+      const land = SN.boatLanding(c);
+      if (land) return land;
+    }
     for (let ring = 0; ring < 4; ring++)
       for (let i = 0; i < 8; i++) {
         const a = c.yaw + SN.PI / 2 + i * SN.PI / 4, x = c.x + Math.sin(a) * (2.8 + ring), z = c.z + Math.cos(a) * (2.8 + ring);
@@ -17378,7 +17388,11 @@ void main(){
       const c = SN.player.car,
         exit = SN.exitPosition(c) || SN.safePosition(c.x + Math.cos(c.yaw) * (c.spec.width / 2 + 0.8), c.z - Math.sin(c.yaw) * (c.spec.width / 2 + 0.8), 0.3);
       c.parked = false;
-      c.freeRolling = true;
+      c.freeRolling = !c.spec.boat;
+      if (c.spec.boat) {
+        c.parked = true;
+        c.speed = c.vx = c.vz = 0;
+      }
       c.driver = false;
       SN.player.car = null;
       SN.playerRoot.rotation.set(0, SN.player.yaw, 0);
@@ -17435,9 +17449,9 @@ void main(){
           SN.crews[c.team].anger = 40;
         SN.toast("已拉出驾驶员并接管车辆 · 目击者可能报警", 3);
       }
-      else if (c !== SN.loanCar && c !== SN.missionCar && c.role !== "mission")
+      else if (c !== SN.loanCar && c !== SN.missionCar && c.role !== "mission" && c.role !== "boat")
         SN.commitCrime(1, "盗窃车辆 ★1", "cartheft", 38);
-      if (c !== SN.loanCar && c.role !== "mission" && !c.stolenOnce) { SN.progression.stats.carsStolen++; c.stolenOnce = true; }
+      if (c !== SN.loanCar && c.role !== "mission" && c.role !== "boat" && !c.stolenOnce) { SN.progression.stats.carsStolen++; c.stolenOnce = true; }
       if (!SN.carjack) SN.carjack = { car: c, time: 0.6, x: SN.player.x, z: SN.player.z };
       SN.player.vault = null;
       SN.player.car = c;
@@ -17449,7 +17463,7 @@ void main(){
       SN.player.x = c.x;
       SN.player.z = c.z;
       SN.player.y = c.root.position.y;
-      SN.playerRoot.visible = !!c.spec.bike || !!SN.carjack;
+      SN.playerRoot.visible = !!c.spec.bike || !!c.spec.boat || !!SN.carjack;
       SN.camYaw = c.yaw;
       SN.lookDelay = 0;
       SN.firing = SN.aiming = false;
@@ -17495,6 +17509,34 @@ void main(){
 
   SN.carWater = function carWater(x, z, yaw, c) {
     return SN.carHullTest(x, z, yaw, c, true);
+  };
+
+  // A boat is blocked by shore, piers and solid props, never by open water.
+  SN.boatBlocked = function boatBlocked(x, z, yaw, c) {
+    const radius = c.spec.width * 0.52,
+      span = Math.max(0, c.spec.length * 0.5 - radius),
+      segments = Math.max(2, Math.ceil(span / 0.9)),
+      sn = Math.sin(yaw), co = Math.cos(yaw);
+    for (let i = 0; i <= segments; i++) {
+      const along = span * (i / segments * 2 - 1), px = x + sn * along, pz = z + co * along;
+      // SN.blocked treats water itself as blocked, so only land under the hull
+      // counts here; open water and bridge decks stay navigable.
+      if (!SN.isWater(px, pz, 0))
+        return true;
+    }
+    return false;
+  };
+
+  // Nearest dry landing point around a moored boat, used for exits and map pins.
+  SN.boatLanding = function boatLanding(c) {
+    for (let ring = 0; ring < 5; ring++)
+      for (let i = 0; i < 16; i++) {
+        const a = i * SN.TAU / 16, d = 3.2 + ring * 1.4,
+          x = c.x + Math.sin(a) * d, z = c.z + Math.cos(a) * d;
+        if (!SN.isWater(x, z, 0.45) && !SN.blocked(x, z, 0.32))
+          return { x, z };
+      }
+    return null;
   };
 
   SN.vehicleContact = function vehicleContact(c, o) {
@@ -17633,6 +17675,15 @@ void main(){
           length: Math.min(2.4, Math.abs(c.speed) * SN.skidClock * 1.3), life: 12 });
         SN.spawnDust(x, c.y + 0.25, z, 0xc9d3d5, 1.4);
       }
+    }
+    // A speedboat leaves a short foam wake behind the transom.
+    if (c && c.spec.boat && Math.abs(c.speed) > 3.5 && SN.simTime > (SN.boatWakeAt || 0)) {
+      SN.boatWakeAt = SN.simTime + 0.1;
+      SN.spawnDust(
+        c.x - Math.sin(c.yaw) * c.spec.length * 0.42,
+        SN.WATER_Y + 0.05,
+        c.z - Math.cos(c.yaw) * c.spec.length * 0.42,
+        0xd8f2f7, 1.1);
     }
     // Wet-road wheel spray: a small world-space particle pool behind the rear tyres.
     const wet = SN.weather && SN.weather.kind === "rain" ? SN.weather.intensity * (SN.wetness || 0) : 0;
@@ -17825,6 +17876,14 @@ void main(){
   };
 
   SN.resetVehicleGround = function resetVehicleGround(c) {
+    if (c.spec.boat) {
+      c.y = SN.WATER_Y + 0.18;
+      c.groundY = c.y; c.groundX = c.x; c.groundZ = c.z;
+      c.vy = 0; c.pitch = 0.03; c.pitchV = 0; c.terrainRoll = 0; c.rollV = 0;
+      c.suspension = 0; c.suspensionV = 0; c.airborne = false;
+      c.py = c.y; c.ppitch = c.pitch; c.pterrainRoll = c.terrainRoll; c.psuspension = 0;
+      return;
+    }
     const hintY = c.groundY, previousY = c.y;
     c.groundY = null; c.y = null;
     const ground = SN.vehicleGround(c);
@@ -17850,6 +17909,24 @@ void main(){
   };
 
   SN.updateVehicleGround = function updateVehicleGround(c, dt) {
+    if (c.spec.boat) {
+      // Boats ride the water plane: a slow swell, a little bow lift under power
+      // and a lean into turns. There is no terrain contact, wheel or suspension.
+      const t = SN.simTime * 1.5 + c.serial * 1.9,
+        ratio = SN.clamp(Math.abs(c.speed) / Math.max(1, c.spec.topSpeed), 0, 1),
+        targetY = SN.WATER_Y + 0.18 + Math.sin(t) * 0.02 + Math.sin(t * 0.63 + 1.7) * 0.014;
+      c.y = SN.lerp(Number.isFinite(c.y) ? c.y : targetY, targetY, 1 - Math.exp(-dt * 5));
+      c.vy = 0; c.airborne = false; c.suspension = 0; c.suspensionV = 0;
+      c.groundY = c.y; c.groundX = c.x; c.groundZ = c.z;
+      c.pitch = SN.lerp(c.pitch, 0.03 + ratio * 0.1, 1 - Math.exp(-dt * 3));
+      c.terrainRoll = SN.lerp(c.terrainRoll, c.steer * ratio * 0.2, 1 - Math.exp(-dt * 4));
+      c.root.position.set(c.x, c.y, c.z);
+      c.root.rotation.y = c.yaw;
+      c.body.rotation.set(c.pitch, 0, c.terrainRoll + c.roll * 0.6);
+      c.body.position.y = 0;
+      for (const w of c.wheels) w.pivot.visible = false;
+      return;
+    }
     if (!Number.isFinite(c.groundX) || Math.hypot(c.x - c.groundX, c.z - c.groundZ) > 8)
       SN.resetVehicleGround(c);
     const ground = SN.vehicleGround(c), slopeV = Math.abs(c.speed * Math.sin(ground.pitch));
@@ -17915,18 +17992,19 @@ void main(){
       speedAbs = Math.abs(c.speed),
       braking = 24 / Math.sqrt(spec.mass),
       acceleration = throttle > 0 ? (c.speed < -0.5 ? braking : spec.accel * (1 - speedAbs / (spec.topSpeed * 1.35))) : (c.speed > 0.5 ? braking : spec.accel * 0.55);
-    c.speed += (throttle * acceleration + (c.airborne ? 0 : 9.81 * Math.sin(SN.vehicleGround(c).pitch))) * dt;
+    c.speed += (throttle * acceleration + (c.airborne || spec.boat ? 0 : 9.81 * Math.sin(SN.vehicleGround(c).pitch))) * dt;
     if (!throttle)
-      c.speed *= Math.exp(-dt * 0.32);
-    c.speed = SN.clamp(c.speed, -(spec.bike ? 4 : 8), spec.topSpeed);
+      c.speed *= Math.exp(-dt * (spec.boat ? 0.5 : 0.32));
+    c.speed = SN.clamp(c.speed, -(spec.boat ? 5 : spec.bike ? 4 : 8), spec.topSpeed);
     if (handbrake)
       c.speed *= Math.exp(-dt * 0.85);
     if (c.health <= 0)
       c.speed *= Math.exp(-dt * 2);
     // Speed-sensitive lock: easy parking control, calmer at top speed. Two
     // wheels need a much smaller lock than a car or the bike whips sideways.
-    const steerAngle = c.steer * (spec.bike ? 0.24 : 0.62) / (1 + speedAbs * (spec.bike ? 0.16 : 0.034));
+    const steerAngle = c.steer * (spec.boat ? 0.5 : spec.bike ? 0.24 : 0.62) / (1 + speedAbs * (spec.boat ? 0.055 : spec.bike ? 0.16 : 0.034));
     const previousYaw = c.yaw;
+    const hullBlocked = (x, z, yaw) => spec.boat ? SN.boatBlocked(x, z, yaw, c) : SN.carBlocked(x, z, yaw, c);
     if (spec.bike) {
       // A steering wheel arcs into a turn instead of snapping the nose to a new
       // heading. Smoothing the bars alone still let the bike pivot on the spot,
@@ -17939,7 +18017,7 @@ void main(){
       c.yawRate = 0;
       c.yaw -= Math.tan(steerAngle) * c.speed / (spec.length * 0.64) * dt * (handbrake ? 1.45 : 1);
     }
-    if (SN.carBlocked(c.x, c.z, c.yaw, c)) c.yaw = previousYaw;
+    if (hullBlocked(c.x, c.z, c.yaw)) c.yaw = previousYaw;
     const sn = Math.sin(c.yaw),
       co = Math.cos(c.yaw),
       gripRate = handbrake ? spec.grip * 0.2 : (speedAbs < 7 ? spec.grip * 1.6 : spec.grip),
@@ -17963,14 +18041,14 @@ void main(){
         c.stuck += dt / substeps;
         continue;
       }
-      if (SN.carWater(nx, nz, c.yaw, c)) {
+      if (spec.boat ? SN.boatBlocked(nx, nz, c.yaw, c) : SN.carWater(nx, nz, c.yaw, c)) {
         c.vx *= -0.22;
         c.vz *= -0.22;
         c.speed *= 0.4;
         c.stuck += dt / substeps;
         continue;
       }
-      if (detailed) {
+      if (detailed && !spec.boat) {
         const res = SN.carStaticResolve(c, nx, nz, c.yaw);
         if (res.hit) {
           const vn = c.vx * res.nx + c.vz * res.nz;
@@ -18003,7 +18081,7 @@ void main(){
           c.stuck = Math.max(0, c.stuck - dt / substeps * 0.6);
         }
       }
-      else if (SN.carBlocked(nx, nz, c.yaw, c)) {
+      else if (hullBlocked(nx, nz, c.yaw)) {
         c.vx *= 0.35;
         c.vz *= 0.35;
         c.stuck += dt / substeps;
@@ -18014,6 +18092,7 @@ void main(){
       }
       c.speed = c.vx * sn + c.vz * co;
     }
+    const pushFree = (car, x, z) => car.spec.boat ? !SN.boatBlocked(x, z, car.yaw, car) : !SN.carBlocked(x, z, car.yaw, car) && !SN.carWater(x, z, car.yaw, car);
     for (const o of SN.cars) {
       if (o === c || !o.active || Math.hypot(c.x - o.x, c.z - o.z) > (c.spec.length + o.spec.length) * 0.55)
         continue;
@@ -18046,13 +18125,13 @@ void main(){
         }
       }
       const push = depth * o.spec.mass / (c.spec.mass + o.spec.mass) + 0.003, px = c.x + nx * push, pz = c.z + nz * push;
-      if (!SN.carBlocked(px, pz, c.yaw, c) && !SN.carWater(px, pz, c.yaw, c)) {
+      if (pushFree(c, px, pz)) {
         c.x = px;
         c.z = pz;
       }
       const otherPush = depth * c.spec.mass / (c.spec.mass + o.spec.mass) + 0.003;
       const ox = o.x - nx * otherPush, oz = o.z - nz * otherPush;
-      if (!SN.carBlocked(ox, oz, o.yaw, o) && !SN.carWater(ox, oz, o.yaw, o)) { o.x = ox; o.z = oz; }
+      if (pushFree(o, ox, oz)) { o.x = ox; o.z = oz; }
     }
     SN.limitCarVelocity(c);
     if (c === SN.player.car && Math.abs(c.speed) > 1.2)
@@ -18173,6 +18252,19 @@ void main(){
   SN.recoverVehicle = function recoverVehicle() {
     const c = SN.player.car;
     if (!SN.canControl() || !c || !c.recoveryReady || c.exploded) return false;
+    if (c.spec.boat) {
+      const home = c.riverHome;
+      if (!home) { SN.toast("快艇附近没有可用泊位", 3); return true; }
+      Object.assign(c, { x: home.x, z: home.z, yaw: home.yaw, speed: 0, vx: 0, vz: 0,
+        steer: 0, roll: 0, stuck: 0, recoveryTime: 0, recoveryReady: false });
+      c.y = SN.WATER_Y + 0.18;
+      c.root.position.set(c.x, c.y, c.z);
+      c.root.rotation.set(0, c.yaw, 0);
+      Object.assign(SN.player, { x: c.x, z: c.z, y: c.y, yaw: c.yaw });
+      SN.snapPlayer(); SN.snapCars(); SN.camYaw = c.yaw;
+      SN.toast("已返回快艇泊位", 3);
+      return true;
+    }
     let best = null, distance = 90;
     for (const p of SN.roadSpawnPoints) {
       const d = Math.hypot(p.x - c.x, p.z - c.z);
@@ -18432,7 +18524,7 @@ void main(){
   // arches are cut out of the silhouette instead of being painted on.
   // ---------------------------------------------------------------------------
   SN.vehicleWheelRadius = function vehicleWheelRadius(spec) {
-    return spec.bike ? 0.27 : spec.shape === "bus" ? 0.46 : spec.shape === "suv" || spec.shape === "pickup" || spec.shape === "redCrew" ? 0.4 : 0.33;
+    return spec.boat ? 0.2 : spec.bike ? 0.27 : spec.shape === "bus" ? 0.46 : spec.shape === "suv" || spec.shape === "pickup" || spec.shape === "redCrew" ? 0.4 : 0.33;
   };
   SN.vehicleSideProfile = function vehicleSideProfile(spec) {
     const L = spec.length, f = L / 2, H = spec.height, shape = spec.shape, points = [],
@@ -18535,8 +18627,77 @@ void main(){
     geometry.translate(0, (yBottom + yTop) / 2 - Math.sin(angle) * offset * sign, (zBottom + zTop) / 2 + Math.cos(angle) * offset * sign);
     return geometry;
   };
+  SN.buildBoatGeometry = function buildBoatGeometry(spec) {
+    const L = spec.length, W = spec.width, f = L / 2,
+      body = [], glass = [], trim = [], chrome = [], accent = [], red = [], blue = [], head = [], tail = [], plate = [];
+    // Hull silhouette: raked bow, rising sheer and a shallow chine. Extruded
+    // across the beam, then tapered to a point and rounded toward the keel.
+    const hull = SN.extrudeOutline([
+      [-f, 0.32], [-f + 0.2, 0.7], [-f * 0.55, 0.78], [0, 0.82], [f * 0.55, 0.9], [f * 0.86, 1.02], [f, 1.14],
+      [f - 0.18, 0.58], [f * 0.72, 0.3], [f * 0.32, 0.14], [-f * 0.5, 0.12], [-f + 0.12, 0.2]
+    ], W * 0.94, 0.04, 4, 2);
+    hull.rotateY(-SN.PI / 2);
+    const position = hull.attributes.position;
+    for (let i = 0; i < position.count; i++) {
+      const y = position.getY(i), z = position.getZ(i), bow = SN.clamp((z / f - 0.24) / 0.76, 0, 1);
+      let scale = 1 - 0.88 * Math.pow(bow, 1.15);
+      if (y < 0.42) scale *= 0.7 + 0.3 * (y / 0.42);
+      position.setX(i, position.getX(i) * scale);
+    }
+    hull.computeVertexNormals();
+    body.push({ g: SN.weldGeometry(hull, 0.0006, true) });
+    // Side decks, bow and stern decks leave a dark cockpit well in the middle.
+    for (const side of [-1, 1]) {
+      trim.push({ g: SN.roundedBox(W * 0.2, 0.05, L * 0.6, 0.02, 2), x: side * W * 0.33, y: 0.92, z: -f * 0.1 });
+      chrome.push({ g: SN.cylinder, x: side * W * 0.42, y: 1.16, z: -f * 0.12, sx: 0.018, sy: L * 0.55, sz: 0.018, rx: SN.PI / 2 });
+      for (const z of [-f * 0.62, -f * 0.12, f * 0.38])
+        chrome.push({ g: SN.cylinder, x: side * W * 0.42, y: 1.04, z, sx: 0.015, sy: 0.24, sz: 0.015 });
+    }
+    body.push({ g: SN.roundedBox(W * 0.5, 0.05, L * 0.3, 0.02, 2), x: 0, y: 0.94, z: f * 0.52 });
+    body.push({ g: SN.roundedBox(W * 0.66, 0.05, L * 0.18, 0.02, 2), x: 0, y: 0.9, z: -f * 0.8 });
+    trim.push({ g: SN.roundedBox(W * 0.52, 0.08, L * 0.48, 0.03, 2), x: 0, y: 0.9, z: -f * 0.12 });
+    // Console, wheel, two front seats and a rear bench.
+    body.push({ g: SN.roundedBox(0.62, 0.34, 0.48, 0.05, 2), x: 0, y: 1.02, z: 0.28 });
+    trim.push({ g: SN.roundedBox(0.5, 0.06, 0.34, 0.02, 2), x: 0, y: 1.2, z: 0.3 });
+    chrome.push({ g: new SN.T.TorusGeometry(0.16, 0.02, 4, 12), x: 0, y: 1.16, z: 0.08, rx: -0.5 });
+    for (const side of [-1, 1]) {
+      trim.push({ g: SN.roundedBox(0.5, 0.3, 0.46, 0.06, 2), x: side * W * 0.2, y: 1.02, z: -f * 0.24 });
+      trim.push({ g: SN.roundedBox(0.5, 0.4, 0.1, 0.04, 2), x: side * W * 0.2, y: 1.18, z: -f * 0.36 });
+      accent.push({ g: SN.roundedBox(0.5, 0.03, 0.36, 0.01, 2), x: side * W * 0.2, y: 1.18, z: -f * 0.2 });
+    }
+    trim.push({ g: SN.roundedBox(W * 0.52, 0.3, 0.42, 0.05, 2), x: 0, y: 1.0, z: -f * 0.66 });
+    trim.push({ g: SN.roundedBox(W * 0.52, 0.4, 0.1, 0.04, 2), x: 0, y: 1.18, z: -f * 0.76 });
+    // Raked windscreen with a chrome frame.
+    glass.push({ g: SN.roundedBox(W * 0.5, 0.34, 0.03, 0.02, 2), x: 0, y: 1.36, z: 0.56, rx: -0.5 });
+    for (const side of [-1, 1])
+      chrome.push({ g: SN.cylinder, x: side * W * 0.25, y: 1.36, z: 0.56, sx: 0.018, sy: 0.44, sz: 0.018, rx: -0.5 });
+    chrome.push({ g: SN.cylinder, x: 0, y: 1.5, z: 0.48, sx: 0.016, sy: W * 0.5, sz: 0.016, rz: SN.PI / 2 });
+    // Outboard motor and cavitation plate.
+    trim.push({ g: SN.roundedBox(0.44, 0.62, 0.34, 0.06, 2), x: 0, y: 0.98, z: -f - 0.06 });
+    trim.push({ g: SN.cylinder, x: 0, y: 0.5, z: -f - 0.02, sx: 0.07, sy: 0.9, sz: 0.07 });
+    trim.push({ g: SN.roundedBox(0.16, 0.05, 0.4, 0.02, 1), x: 0, y: 0.2, z: -f - 0.02 });
+    chrome.push({ g: SN.cylinder, x: 0, y: 0.16, z: -f - 0.2, sx: 0.13, sy: 0.03, sz: 0.13, rx: SN.PI / 2 });
+    // Livery stripe follows the hull taper.
+    for (const side of [-1, 1])
+      for (const zc of [-f * 0.55, -f * 0.1, f * 0.35]) {
+        const bow = SN.clamp((zc / f - 0.24) / 0.76, 0, 1), half = W * 0.46 * (1 - 0.88 * Math.pow(bow, 1.15));
+        accent.push({ g: SN.roundedBox(0.035, 0.07, L * 0.42, 0.01, 1), x: side * (half + 0.012), y: 0.62, z: zc });
+      }
+    // Bow light, stern light and port/starboard navigation lamps.
+    head.push({ g: SN.roundedBox(0.12, 0.08, 0.06, 0.02, 1), x: 0, y: 0.92, z: f * 0.48 });
+    tail.push({ g: SN.roundedBox(0.16, 0.08, 0.05, 0.02, 1), x: 0, y: 0.96, z: -f - 0.24 });
+    for (const side of [-1, 1])
+      (side < 0 ? red : blue).push({ g: SN.roundedBox(0.08, 0.08, 0.06, 0.02, 1), x: side * W * 0.42, y: 0.94, z: f * 0.18 });
+    plate.push({ g: new SN.T.PlaneGeometry(0.45, 0.1), x: 0, y: 0.74, z: -f - 0.3, ry: SN.PI });
+    return {
+      body: SN.merged(body), glass: SN.merged(glass), trim: SN.merged(trim), chrome: SN.merged(chrome),
+      accent: SN.merged(accent), red: SN.merged(red), blue: SN.merged(blue),
+      head: SN.merged(head), tail: SN.merged(tail), plate: SN.merged(plate)
+    };
+  };
   SN.buildVehicleGeometry = function buildVehicleGeometry(spec) {
     if (spec.bike) return SN.buildScooterGeometry(spec);
+    if (spec.boat) return SN.buildBoatGeometry(spec);
     const L = spec.length, W = spec.width, H = spec.height, f = L / 2, shape = spec.shape,
       wheel = SN.vehicleWheelRadius(spec), belt = H * 0.55, tall = shape === "bus" || shape === "van",
       pickup = shape === "pickup" || shape === "redCrew",
@@ -19029,7 +19190,9 @@ void main(){
       { ...SN.vehicleSpecs[5], name: "特警厢车", emergency: true, topSpeed: 34, accel: 12, mass: 4.2, damage: 0.4 },
       { ...SN.vehicleSpecs[4], name: "装甲支援车", emergency: true, topSpeed: 30, accel: 10, mass: 6.2, damage: 0.24 },
       { ...SN.vehicleSpecs[5], name: "119 · 救护车", emergency: true, topSpeed: 35, cruise: 17 },
-      { ...SN.vehicleSpecs[5], name: "119 · 消防车", emergency: true, length: 6.6, height: 2.8, mass: 5.2, cruise: 14 }
+      { ...SN.vehicleSpecs[5], name: "119 · 消防车", emergency: true, length: 6.6, height: 2.8, mass: 5.2, cruise: 14 },
+      { name: "汉江 · 快艇", shape: "boat", length: 6.2, width: 2.3, height: 1.72,
+        topSpeed: 27, accel: 9.6, mass: 1.6, grip: 6.4, damage: 0.8, pitch: 44, cruise: 0, boat: true }
     );
     SN.vehicleGeometry = SN.vehicleSpecs.map(spec => SN.buildVehicleGeometry(spec));
     SN.carColors = [0xd82b32, 0x1761cf, 0xffa51e, 0x242d3c, 0x16814e, 0x9daebe, 0x854bbd, 0x13a7ab, 0xf16026, 0xb82558, 0xf4ce39, 0xdbe1e5];
@@ -19076,7 +19239,34 @@ void main(){
     SN.makeCar(-146, 1090, 0, true, null, 0, 7);
     SN.makeCar(430, -406, SN.PI / 2, true, null, 0, 10);
     SN.makeCar(-190, 984, SN.PI / 2, true, null, 0, 11);
+    SN.spawnRiverBoats();
   });
+  SN.riverBoats = [];
+  SN.riverDocks = [];
+  SN.spawnRiverBoats = function spawnRiverBoats() {
+    // Four moorings on both banks, close enough to walk up and press F.
+    for (const [x, side] of [[-180, 1], [760, 1], [-700, -1], [1450, -1]]) {
+      const bank = side > 0 ? SN.riverNorth(x) : SN.riverSouth(x);
+      let spot = null;
+      for (const offset of [3.6, 3.1, 4.2]) {
+        const z = bank + side * offset;
+        if (SN.isWater(x, z, 0.5)) { spot = { x, z }; break; }
+      }
+      if (!spot)
+        continue;
+      const yaw = SN.PI / 2,
+        c = SN.makeCar(spot.x, spot.z, yaw, true, null, 0, 16, "boat");
+      Object.assign(c, { role: "boat", driver: false, parked: true, freeRolling: false, active: true,
+        riverHome: { x: spot.x, z: spot.z, yaw } });
+      c.root.visible = true;
+      c.y = SN.WATER_Y + 0.18;
+      c.root.position.set(c.x, c.y, c.z);
+      SN.resetVehicleGround(c);
+      SN.riverBoats.push(c);
+      const land = SN.boatLanding(c);
+      if (land) SN.riverDocks.push({ x: land.x, z: land.z, boat: c });
+    }
+  };
   // Startup phase 39: keep this order relative to the other systems.
 
   SN.registerInit(39, function initializeVehicles39() {
@@ -30618,6 +30808,16 @@ void main(){
       g.arc(X(stop.x), Z(stop.z), 2, 0, SN.TAU);
       g.stroke();
     }
+    for (const dock of SN.riverDocks || []) {
+      g.strokeStyle = "#7fd8ff";
+      g.beginPath();
+      g.arc(X(dock.x), Z(dock.z), 2.5, 0, SN.TAU);
+      g.stroke();
+    }
+    for (const station of SN.cableStations || []) {
+      g.strokeStyle = "#e8c26a";
+      g.strokeRect(X(station.x) - 2.5, Z(station.z) - 2.5, 5, 5);
+    }
     for (const contact of SN.contacts) {
       g.fillStyle = "#a5efcb";
       g.save();
@@ -30752,6 +30952,10 @@ void main(){
       dot(station.x, station.z, "#7fbbec", 3);
     for (const stop of SN.subwayStops)
       dot(stop.x, stop.z, "#b7a0df", 3);
+    for (const dock of SN.riverDocks || [])
+      dot(dock.x, dock.z, "#7fd8ff", 3);
+    for (const station of SN.cableStations || [])
+      dot(station.x, station.z, "#e8c26a", 3);
     for (const d of SN.cityDistricts) {
       if (Math.hypot(d.x - px, d.z - pz) > range * 0.8)
         continue;
@@ -32038,7 +32242,7 @@ void main(){
       // Only a bike rider stays visible. A closed car already has a cabin, and
       // showing the full rig there let it poke through the roof once the shell
       // dented in a crash.
-      SN.playerRoot.visible = !!SN.player.car.spec.bike;
+      SN.playerRoot.visible = !!SN.player.car.spec.bike || !!SN.player.car.spec.boat;
       SN.poseDriver(SN.playerDriver, SN.player.car);
       SN.updateWeaponVisuals();
       SN.playerRig.weapon.visible = false;
@@ -34485,6 +34689,26 @@ void main(){
         reset(); const taxi = SN.sideJobs.findIndex(m => m.objectives.some(o => o.type === "taxiPickup"));
         SN.startMission("side", taxi); SN.failMission("出租车重试检查"); SN.retryCheckpoint();
         assert(SN.loanCar.type === 3, "出租车重试未恢复车型"); reset();
+      }],
+      [19.66, "living-river-boat", () => {
+        reset();
+        const boat = (SN.riverBoats || []).find(c => c.active);
+        assert(boat, "汉江快艇未生成");
+        assert(SN.isWater(boat.x, boat.z, 1), "快艇不在水里");
+        const landing = SN.exitPosition(boat);
+        assert(landing && !SN.isWater(landing.x, landing.z), "快艇缺少上岸点");
+        assert(Math.abs(boat.y - (SN.WATER_Y + 0.18)) < 0.25, "快艇没有浮在水面");
+        const sx = boat.x, sz = boat.z;
+        for (let i = 0; i < 24; i++) SN.moveCar(boat, 0.08, 1, 0);
+        assert(SN.isWater(boat.x, boat.z, 1), "快艇开上岸");
+        assert(Math.hypot(boat.x - sx, boat.z - sz) > 2, "快艇没有移动");
+        Object.assign(SN.player, { x: boat.x, z: boat.z, y: boat.y, health: 100, dead: 0, bail: null, vy: 0 });
+        SN.player.car = boat; SN.playerRoot.visible = true;
+        SN.enterExit();
+        assert(!SN.player.car, "快艇无法下车");
+        assert(!SN.isWater(SN.player.x, SN.player.z, 0.2), "下船后落在水里");
+        SN.player.bail = null; SN.playerRoot.visible = true;
+        reset();
       }],
       [19.68, "living-nightshift", () => {
         reset();

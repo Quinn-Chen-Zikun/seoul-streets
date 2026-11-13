@@ -310,7 +310,7 @@
       // Only a bike rider stays visible. A closed car already has a cabin, and
       // showing the full rig there let it poke through the roof once the shell
       // dented in a crash.
-      SN.playerRoot.visible = !!SN.player.car.spec.bike;
+      SN.playerRoot.visible = !!SN.player.car.spec.bike || !!SN.player.car.spec.boat;
       SN.poseDriver(SN.playerDriver, SN.player.car);
       SN.updateWeaponVisuals();
       SN.playerRig.weapon.visible = false;
@@ -2757,6 +2757,26 @@
         reset(); const taxi = SN.sideJobs.findIndex(m => m.objectives.some(o => o.type === "taxiPickup"));
         SN.startMission("side", taxi); SN.failMission("出租车重试检查"); SN.retryCheckpoint();
         assert(SN.loanCar.type === 3, "出租车重试未恢复车型"); reset();
+      }],
+      [19.66, "living-river-boat", () => {
+        reset();
+        const boat = (SN.riverBoats || []).find(c => c.active);
+        assert(boat, "汉江快艇未生成");
+        assert(SN.isWater(boat.x, boat.z, 1), "快艇不在水里");
+        const landing = SN.exitPosition(boat);
+        assert(landing && !SN.isWater(landing.x, landing.z), "快艇缺少上岸点");
+        assert(Math.abs(boat.y - (SN.WATER_Y + 0.18)) < 0.25, "快艇没有浮在水面");
+        const sx = boat.x, sz = boat.z;
+        for (let i = 0; i < 24; i++) SN.moveCar(boat, 0.08, 1, 0);
+        assert(SN.isWater(boat.x, boat.z, 1), "快艇开上岸");
+        assert(Math.hypot(boat.x - sx, boat.z - sz) > 2, "快艇没有移动");
+        Object.assign(SN.player, { x: boat.x, z: boat.z, y: boat.y, health: 100, dead: 0, bail: null, vy: 0 });
+        SN.player.car = boat; SN.playerRoot.visible = true;
+        SN.enterExit();
+        assert(!SN.player.car, "快艇无法下车");
+        assert(!SN.isWater(SN.player.x, SN.player.z, 0.2), "下船后落在水里");
+        SN.player.bail = null; SN.playerRoot.visible = true;
+        reset();
       }],
       [19.68, "living-nightshift", () => {
         reset();

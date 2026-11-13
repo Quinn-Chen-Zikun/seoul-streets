@@ -734,15 +734,18 @@
           const off = (profile.width / 2 + profile.sidewalkW + 0.4) * side;
           const x = (a.x + b.x) / 2 + a.nx * off, z = (a.z + b.z) / 2 + a.nz * off;
           const top = (SN.roadProfileHeight(profile, s) + SN.roadProfileHeight(profile, s + 8)) / 2;
-          const bottom = SN.hillHeight(x, z);
-          if (Math.abs(top - bottom) <= 0.75)
+          const bottom = SN.hillHeight(x, z), gap = Math.abs(top - bottom);
+          if (gap <= 0.75)
             continue;
+          // Cap the face so a deep hill cut reads as a retaining wall at the
+          // kerb instead of one enormous slab crossing the whole slope.
+          const wallH = Math.min(14, gap + 0.4);
           const piece = recordPiece(SN.retainingBatch,
             a.x + a.nx * off, a.z + a.nz * off, top,
             b.x + b.nx * off, b.z + b.nz * off, top,
-            0.38, 0, Math.abs(top - bottom) + 0.4);
+            0.5, 0, wallH);
           if (piece)
-            piece.y = (top + bottom) / 2 - 0.1;
+            piece.y = (bottom > top ? top + wallH / 2 : top - wallH / 2) - 0.1;
         }
       }
     if (profile.width >= 7)

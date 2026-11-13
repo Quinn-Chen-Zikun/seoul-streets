@@ -672,7 +672,8 @@
 
   SN.safePosition = function safePosition(x, z, r = 0.3, car = null, id = "spawn") {
     const original = { x, z };
-    const valid = (px, pz) => SN.terrainSlope(px, pz) < 0.48 && (car ? !SN.carBlocked(px, pz, car.yaw, car) && !SN.carWater(px, pz, car.yaw, car) : !SN.blocked(px, pz, r));
+    const valid = (px, pz) => SN.terrainSlope(px, pz) < 0.48 &&
+      (car ? (car.spec.boat ? !SN.boatBlocked(px, pz, car.yaw, car) : !SN.carBlocked(px, pz, car.yaw, car) && !SN.carWater(px, pz, car.yaw, car)) : !SN.blocked(px, pz, r));
     const corrected = (px, pz) => {
       SN.reportContentProblem(id, original.x, original.z, "位置不可通行", "移至可通行位置", { to: { x: px, z: pz } });
       return { x: px, z: pz };
