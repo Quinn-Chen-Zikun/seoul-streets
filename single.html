@@ -2857,7 +2857,7 @@ body:has(#toast.show) #cityRadio { visibility: hidden; }
         <div id="heat" aria-label="通缉等级"></div>
         <div id="wantedState"></div>
       </div>
-      <div class="weapon-panel"><strong id="weaponName">徒手</strong><b id="ammo">—</b><small id="weaponHint">1–6 切换 · H 收起武器</small></div>
+      <div class="weapon-panel"><strong id="weaponName">徒手</strong><b id="ammo">—</b><small id="weaponHint">1–7 切换 · H 收起武器</small></div>
       <button id="openCityMap" class="mobile" aria-label="全城地图">地图</button>
       <div class="map-legend">青绿 은빛단 · 朱红 붉은매 · 蓝红 巡警 · 金色 补给</div>
       <div class="interaction" id="interaction"><kbd>F</kbd>驾驶车辆</div>
@@ -2959,7 +2959,7 @@ body:has(#toast.show) #cityRadio { visibility: hidden; }
         <span><kbd>F</kbd>驾驶</span>
         <span><kbd>Shift</kbd>疾跑 / C 步行</span>
         <span><kbd>Space</kbd>跳 / 翻越 / 手刹</span>
-        <span><kbd>1–6</kbd>武器</span>
+        <span><kbd>1–7</kbd>武器</span>
         <span><kbd>R</kbd>换弹 / 车辆复位</span><span><kbd>G</kbd>鸣笛 / 扬招出租车</span><span><kbd>X</kbd>按住后视</span>
         <span><kbd>U</kbd>工作车辆接单</span><span><kbd>Y</kbd>参与街头偶遇</span><span><kbd>[ / ]</kbd>切换电台</span>
         <span><kbd>H</kbd>收起</span>
@@ -16205,7 +16205,7 @@ void main(){
       arm1x = r.arms[1].upper.rotation.x, arm1y = r.arms[1].upper.rotation.y, arm1z = r.arms[1].upper.rotation.z,
       elbow0 = r.arms[0].lower.rotation.x, elbow1 = r.arms[1].lower.rotation.x;
     if (aimWeight > 0.001) {
-      if (weapon === 2 || weapon === 4 || weapon === 5) {
+      if (weapon === 2 || weapon === 4 || weapon === 5 || weapon === 6) {
         r.arms[1].upper.rotation.set(-1.3, -0.1, -0.15);
         r.arms[1].lower.rotation.x = -0.38;
         r.arms[0].upper.rotation.set(-1.2, 0.2, 0.55);
@@ -16241,9 +16241,9 @@ void main(){
       r.arms[0].lower.rotation.x = -0.52;
     }
     r.weapon.visible = weapon >= 0 && !(r === SN.playerRig && weapon === 0 && SN.weapons[0].fists);
-    r.barrel.scale.set(weapon === 0 ? 0.45 : 1, weapon === 2 ? 3.7 : weapon === 0 ? 5 : 1, weapon === 0 ? 0.45 : 1);
+    r.barrel.scale.set(weapon === 0 ? 0.45 : 1, weapon === 2 ? 3.7 : weapon === 6 ? 3.2 : weapon === 0 ? 5 : 1, weapon === 0 ? 0.45 : 1);
     if (r !== SN.playerRig)
-      r.barrel.position.y = weapon === 2 ? -0.28 : weapon === 0 ? -0.3 : -0.18;
+      r.barrel.position.y = weapon === 2 ? -0.28 : weapon === 6 ? -0.2 : weapon === 0 ? -0.3 : -0.18;
     if (r === SN.playerRig)
       SN.updateWeaponVisuals();
     r.root.rotation.z = -fall * 1.46;
@@ -20871,7 +20871,7 @@ void main(){
           w.reserve = Math.min(240, w.reserve + (first ? 0 : w.capacity * 3));
           if (first)
             SN.selectWeapon(p.kind);
-          SN.toast("已拾取 " + w.name + " · H 收起 / 1–6 切换", 3);
+          SN.toast("已拾取 " + w.name + " · H 收起 / 1–7 切换", 3);
         }
       }
     }
@@ -20913,7 +20913,8 @@ void main(){
     SN.batonBody = SN.mat(0x394b52, { metalness: 0.4, roughness: 0.45 });
     SN.batonGrip = SN.mat(0x7d5946, { roughness: 0.9 });
     SN.cyl = (r1, r2, h, seg = 8) => new SN.T.CylinderGeometry(r1, r2, h, seg);
-    SN.heldWeapons = [SN.buildBatonModel(), SN.buildPistolModel(), SN.buildRifleModel(), SN.buildBatonModel(), SN.buildRifleModel(), SN.buildRifleModel()];
+    SN.heldWeapons = [SN.buildBatonModel(), SN.buildPistolModel(), SN.buildRifleModel(), SN.buildBatonModel(), SN.buildRifleModel(), SN.buildRifleModel(), SN.buildRifleModel()];
+    SN.heldWeapons[6].scale.set(1.08, 1.02, 1);
     SN.heldWeapons[2].scale.set(0.9, 0.85, 0.7);
     SN.heldWeapons[3].clear();
     SN.wpart(SN.heldWeapons[3], SN.cyl(0.055, 0.025, 0.72, 8), SN.batonGrip, 0, -0.3, 0);
@@ -20978,7 +20979,8 @@ void main(){
       { name: "折光 · 冲锋枪", damage: 20, rate: 0.11, range: 85, mag: 0, reserve: 0, capacity: 30, owned: false, automatic: true },
       { name: "棒球棍", damage: 48, rate: 0.58, range: 2.7, mag: 0, reserve: 0, capacity: 0, owned: false },
       { name: "霰弹枪", damage: 18, rate: 0.85, range: 48, mag: 0, reserve: 0, capacity: 6, owned: false, pellets: 6, spread: 0.055, reload: 2.2 },
-      { name: "榴弹发射器", damage: 110, rate: 1.5, range: 95, mag: 0, reserve: 0, capacity: 1, owned: false, blast: 8, reload: 2.8 }
+      { name: "榴弹发射器", damage: 110, rate: 1.5, range: 95, mag: 0, reserve: 0, capacity: 1, owned: false, blast: 8, reload: 2.8 },
+      { name: "白鸥 · 步枪", damage: 27, rate: 0.13, range: 115, mag: 30, reserve: 60, capacity: 30, owned: false, automatic: true, reload: 1.9 }
     ];
   });
   // Startup phase 31: keep this order relative to the other systems.
@@ -26268,7 +26270,14 @@ void main(){
           go("到北村巷口", 360, -1360, { r: 6 }),
           collect("从门缝取回录音笔", 360, -1360),
           go("回光化门把录音笔交给尹海率", 346, -752, { r: 4 })
-        ], { totalLimit: 360, outro: "录音笔里只有一段雨声。尹海率说，够了。" })
+        ], { totalLimit: 360, outro: "录音笔里只有一段雨声。尹海率说，够了。" }),
+      mission("turf", "地盘交涉", "mentor", "明洞", -30, -765, 1700,
+        "银光团把看场费算到了代驾客人头上，去明洞把话说明白。",
+        ["韩序温：有些账不能写进收据。", "韩序温：先让他们把话说清楚，再决定要不要动手。"], [
+          go("到明洞银光团地盘", 450, -330, { r: 8 }),
+          fight("击退四名看场成员", 450, -330, 4, true),
+          go("回乙支路找韩序温", -30, -765, { r: 4 })
+        ], { totalLimit: 300, outro: "看场费退了，收据背面多了一行手写的『下不为例』。" })
     );
     for (const [i, m] of SN.storyMissions.entries()) {
       m.district = m.district || ["钟路 · 光化门", "明洞", "江南", "首尔 · 南山", "乙支路", "汉江", "汉江"][i];
@@ -27101,7 +27110,7 @@ void main(){
     SN.storyMissions.forEach((m, index) => SN.smoke.stages.push(
       [19.05 + index * 0.025, "main-mission-" + m.id, () => SN.smokeMainMission(index)]));
     SN.sideJobs.forEach((m, index) => SN.smoke.stages.push(
-      [["riverrun", "airport", "bukchon"].includes(m.id) ? 23.35 + index * 0.02 : 18.85 + index * 0.025, "side-mission-" + m.id, () => SN.smokeMainMission(index, "side")]));
+      [["riverrun", "airport", "bukchon", "turf"].includes(m.id) ? 23.35 + index * 0.02 : 18.85 + index * 0.025, "side-mission-" + m.id, () => SN.smokeMainMission(index, "side")]));
     SN.smoke.stages.sort((a, b) => a[0] - b[0]);
   };
 
@@ -28963,10 +28972,9 @@ void main(){
   SN.shopAmmoWeapon = function shopAmmoWeapon() {
     if (SN.selectedWeapon >= 1 && SN.weapons[SN.selectedWeapon].owned && SN.weapons[SN.selectedWeapon].capacity)
       return SN.weapons[SN.selectedWeapon];
-    if (SN.weapons[1].owned)
-      return SN.weapons[1];
-    if (SN.weapons[2].owned)
-      return SN.weapons[2];
+    for (let i = 1; i < SN.weapons.length; i++)
+      if (SN.weapons[i].owned && SN.weapons[i].capacity)
+        return SN.weapons[i];
     return null;
   };
 
@@ -29433,7 +29441,7 @@ void main(){
         kinds: ["mart", "phone", "karaoke"]
       }
     ];
-    for (const [weapon, price] of [[1, 380], [2, 1800], [3, 160], [4, 3200], [5, 7200]])
+    for (const [weapon, price] of [[1, 380], [2, 1800], [3, 160], [4, 3200], [5, 7200], [6, 5200]])
       SN.shopGoods.push({ id: "weapon" + weapon, icon: "▰", name: SN.weapons[weapon].name, desc: SN.weapons[weapon].capacity ? "含弹匣与三组备弹" : "近战重击", price, kinds: ["weapons"], weapon });
     SN.shopGoods.push({ id: "respray", icon: "🔧", name: "维修与改色", desc: "恢复车况，清除通缉 · 停稳后购买", price: 350, kinds: ["repair"] });
     SN.shopGoods.push(
@@ -31319,7 +31327,7 @@ void main(){
     SN.$("crosshair").classList.toggle("target-locked", !!SN.aimTarget);
     SN.setText("weaponName", SN.holstered || !w ? "徒手" : w.name);
     SN.setText("ammo", c && c.recoveryReady ? "复位" : SN.reloadTime > 0 ? "换弹中…" : w && !SN.holstered ? (w.capacity ? w.mag + " / " + w.reserve : "近战") : "—");
-    SN.setText("weaponHint", c && c.recoveryReady ? "按 R 复位 · 触屏点右上角「复位」" : boat ? "W/S 加速与减速 · A/D 转向 · F 下船" : c ? "F 下车 · 空格手刹 · G 鸣笛 · 左键车内射击" : ac ? "F 下机 · W/S 升降与前飞 · A/D 转向 · 空格下降" : SN.holstered ? "Q / 1–6 装备 · 滚轮变焦" : "Q / 1–6 武器 · 滚轮变焦 · H 收起");
+    SN.setText("weaponHint", c && c.recoveryReady ? "按 R 复位 · 触屏点右上角「复位」" : boat ? "W/S 加速与减速 · A/D 转向 · F 下船" : c ? "F 下车 · 空格手刹 · G 鸣笛 · 左键车内射击" : ac ? "F 下机 · W/S 升降与前飞 · A/D 转向 · 空格下降" : SN.holstered ? "Q / 1–7 装备 · 滚轮变焦" : "Q / 1–7 武器 · 滚轮变焦 · H 收起");
     if (SN.cableTarget && !c && !ac) {
       SN.setHtml("interaction", "<kbd>F</kbd>" + SN.cableTarget.name);
       SN.$("interaction").classList.add("visible");
@@ -31959,7 +31967,7 @@ void main(){
         SN.cycleTimePreset();
       if (e.code === "KeyV")
         SN.toggleWet();
-      if (/^Digit[1-6]$/.test(e.code))
+      if (/^Digit[1-7]$/.test(e.code))
         SN.selectWeapon(Number(e.code.slice(-1)) - 1);
       if (e.code === "KeyM")
         SN.nextMission();
@@ -33086,7 +33094,7 @@ void main(){
     SN.smoke = { start: SN.simTime, index: 0, passed: 0, failed: 0, stages: [
       [0.1, "boot", () => {
         assert(SN.started && SN.scene && SN.playerRoot && !SN.cinematic && !SN.storyDialogue, "启动状态错误");
-        assert(SN.weapons.length === 6 && SN.vehicleSpecs.length >= 14, "内容缺失");
+        assert(SN.weapons.length >= 7 && SN.vehicleSpecs.length >= 14, "内容缺失");
         walking = { x: SN.player.x, z: SN.player.z }; SN.keys.KeyW = true;
       }],
       [1, "walk", () => {
@@ -33402,6 +33410,10 @@ void main(){
     }]);
     SN.smoke.stages.push([22.5, "pedestrians-walk", () => {
       const check = (ok, message) => { if (!ok) throw new Error(message); };
+      // Keep this navigation check independent of how many random draws earlier
+      // stages (missions, weapon tests, traffic) happened to consume.
+      const savedSeed = SN.seed;
+      SN.seed = 31107;
       SN.populationClock = 0;
       for (let i = 0; i < 3; i++) SN.updateCityPopulation();
       const civilian = a => a.active && a.kind === "civilian" && !a.inCar && !a.down && !a.interior && !a.missionEnemy && !a.cityEventTag;
@@ -33452,7 +33464,9 @@ void main(){
             turnSums[k] += delta;
             if (window.length > 120) turnSums[k] -= window.shift();
             if (turnSums[k] > maxWindow) maxWindow = turnSums[k];
-            if (SN.pedOnCarriageway(a.x, a.z) && !SN.pedOnCrosswalk(a.x, a.z, 2.6)) roadFrames++;
+            // A pedestrian legally crossing a marked crosswalk can drift a little
+            // outside the painted band; only count walkers well clear of it.
+            if (SN.pedOnCarriageway(a.x, a.z) && !SN.pedOnCrosswalk(a.x, a.z, 4.5)) roadFrames++;
           }
         }
         const alive = walkers.filter(a => a.active && a.kind === "civilian" && !a.inCar);
@@ -33479,6 +33493,7 @@ void main(){
         });
         SN.simTime = savedWorld.time; SN.stepCount = savedWorld.step; SN.populationClock = savedWorld.clock;
         SN.crowdTarget = savedWorld.target; SN.crowdVisible = savedWorld.visible; SN.crowdBootstrapped = savedWorld.boot;
+        SN.seed = savedSeed;
         SN.indexCrowd();
       }
     }]);

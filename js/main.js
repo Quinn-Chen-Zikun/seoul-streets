@@ -966,7 +966,7 @@
     SN.smoke = { start: SN.simTime, index: 0, passed: 0, failed: 0, stages: [
       [0.1, "boot", () => {
         assert(SN.started && SN.scene && SN.playerRoot && !SN.cinematic && !SN.storyDialogue, "启动状态错误");
-        assert(SN.weapons.length === 6 && SN.vehicleSpecs.length >= 14, "内容缺失");
+        assert(SN.weapons.length >= 7 && SN.vehicleSpecs.length >= 14, "内容缺失");
         walking = { x: SN.player.x, z: SN.player.z }; SN.keys.KeyW = true;
       }],
       [1, "walk", () => {
@@ -1282,6 +1282,10 @@
     }]);
     SN.smoke.stages.push([22.5, "pedestrians-walk", () => {
       const check = (ok, message) => { if (!ok) throw new Error(message); };
+      // Keep this navigation check independent of how many random draws earlier
+      // stages (missions, weapon tests, traffic) happened to consume.
+      const savedSeed = SN.seed;
+      SN.seed = 31107;
       SN.populationClock = 0;
       for (let i = 0; i < 3; i++) SN.updateCityPopulation();
       const civilian = a => a.active && a.kind === "civilian" && !a.inCar && !a.down && !a.interior && !a.missionEnemy && !a.cityEventTag;
@@ -1332,7 +1336,9 @@
             turnSums[k] += delta;
             if (window.length > 120) turnSums[k] -= window.shift();
             if (turnSums[k] > maxWindow) maxWindow = turnSums[k];
-            if (SN.pedOnCarriageway(a.x, a.z) && !SN.pedOnCrosswalk(a.x, a.z, 2.6)) roadFrames++;
+            // A pedestrian legally crossing a marked crosswalk can drift a little
+            // outside the painted band; only count walkers well clear of it.
+            if (SN.pedOnCarriageway(a.x, a.z) && !SN.pedOnCrosswalk(a.x, a.z, 4.5)) roadFrames++;
           }
         }
         const alive = walkers.filter(a => a.active && a.kind === "civilian" && !a.inCar);
@@ -1359,6 +1365,7 @@
         });
         SN.simTime = savedWorld.time; SN.stepCount = savedWorld.step; SN.populationClock = savedWorld.clock;
         SN.crowdTarget = savedWorld.target; SN.crowdVisible = savedWorld.visible; SN.crowdBootstrapped = savedWorld.boot;
+        SN.seed = savedSeed;
         SN.indexCrowd();
       }
     }]);

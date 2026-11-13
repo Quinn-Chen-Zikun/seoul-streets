@@ -649,7 +649,7 @@
       arm1x = r.arms[1].upper.rotation.x, arm1y = r.arms[1].upper.rotation.y, arm1z = r.arms[1].upper.rotation.z,
       elbow0 = r.arms[0].lower.rotation.x, elbow1 = r.arms[1].lower.rotation.x;
     if (aimWeight > 0.001) {
-      if (weapon === 2 || weapon === 4 || weapon === 5) {
+      if (weapon === 2 || weapon === 4 || weapon === 5 || weapon === 6) {
         r.arms[1].upper.rotation.set(-1.3, -0.1, -0.15);
         r.arms[1].lower.rotation.x = -0.38;
         r.arms[0].upper.rotation.set(-1.2, 0.2, 0.55);
@@ -685,9 +685,9 @@
       r.arms[0].lower.rotation.x = -0.52;
     }
     r.weapon.visible = weapon >= 0 && !(r === SN.playerRig && weapon === 0 && SN.weapons[0].fists);
-    r.barrel.scale.set(weapon === 0 ? 0.45 : 1, weapon === 2 ? 3.7 : weapon === 0 ? 5 : 1, weapon === 0 ? 0.45 : 1);
+    r.barrel.scale.set(weapon === 0 ? 0.45 : 1, weapon === 2 ? 3.7 : weapon === 6 ? 3.2 : weapon === 0 ? 5 : 1, weapon === 0 ? 0.45 : 1);
     if (r !== SN.playerRig)
-      r.barrel.position.y = weapon === 2 ? -0.28 : weapon === 0 ? -0.3 : -0.18;
+      r.barrel.position.y = weapon === 2 ? -0.28 : weapon === 6 ? -0.2 : weapon === 0 ? -0.3 : -0.18;
     if (r === SN.playerRig)
       SN.updateWeaponVisuals();
     r.root.rotation.z = -fall * 1.46;

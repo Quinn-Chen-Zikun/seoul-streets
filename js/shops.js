@@ -1485,10 +1485,9 @@
   SN.shopAmmoWeapon = function shopAmmoWeapon() {
     if (SN.selectedWeapon >= 1 && SN.weapons[SN.selectedWeapon].owned && SN.weapons[SN.selectedWeapon].capacity)
       return SN.weapons[SN.selectedWeapon];
-    if (SN.weapons[1].owned)
-      return SN.weapons[1];
-    if (SN.weapons[2].owned)
-      return SN.weapons[2];
+    for (let i = 1; i < SN.weapons.length; i++)
+      if (SN.weapons[i].owned && SN.weapons[i].capacity)
+        return SN.weapons[i];
     return null;
   };
 
@@ -1955,7 +1954,7 @@
         kinds: ["mart", "phone", "karaoke"]
       }
     ];
-    for (const [weapon, price] of [[1, 380], [2, 1800], [3, 160], [4, 3200], [5, 7200]])
+    for (const [weapon, price] of [[1, 380], [2, 1800], [3, 160], [4, 3200], [5, 7200], [6, 5200]])
       SN.shopGoods.push({ id: "weapon" + weapon, icon: "▰", name: SN.weapons[weapon].name, desc: SN.weapons[weapon].capacity ? "含弹匣与三组备弹" : "近战重击", price, kinds: ["weapons"], weapon });
     SN.shopGoods.push({ id: "respray", icon: "🔧", name: "维修与改色", desc: "恢复车况，清除通缉 · 停稳后购买", price: 350, kinds: ["repair"] });
     SN.shopGoods.push(

@@ -1331,7 +1331,7 @@
           w.reserve = Math.min(240, w.reserve + (first ? 0 : w.capacity * 3));
           if (first)
             SN.selectWeapon(p.kind);
-          SN.toast("已拾取 " + w.name + " · H 收起 / 1–6 切换", 3);
+          SN.toast("已拾取 " + w.name + " · H 收起 / 1–7 切换", 3);
         }
       }
     }
@@ -1373,7 +1373,8 @@
     SN.batonBody = SN.mat(0x394b52, { metalness: 0.4, roughness: 0.45 });
     SN.batonGrip = SN.mat(0x7d5946, { roughness: 0.9 });
     SN.cyl = (r1, r2, h, seg = 8) => new SN.T.CylinderGeometry(r1, r2, h, seg);
-    SN.heldWeapons = [SN.buildBatonModel(), SN.buildPistolModel(), SN.buildRifleModel(), SN.buildBatonModel(), SN.buildRifleModel(), SN.buildRifleModel()];
+    SN.heldWeapons = [SN.buildBatonModel(), SN.buildPistolModel(), SN.buildRifleModel(), SN.buildBatonModel(), SN.buildRifleModel(), SN.buildRifleModel(), SN.buildRifleModel()];
+    SN.heldWeapons[6].scale.set(1.08, 1.02, 1);
     SN.heldWeapons[2].scale.set(0.9, 0.85, 0.7);
     SN.heldWeapons[3].clear();
     SN.wpart(SN.heldWeapons[3], SN.cyl(0.055, 0.025, 0.72, 8), SN.batonGrip, 0, -0.3, 0);
@@ -1438,7 +1439,8 @@
       { name: "折光 · 冲锋枪", damage: 20, rate: 0.11, range: 85, mag: 0, reserve: 0, capacity: 30, owned: false, automatic: true },
       { name: "棒球棍", damage: 48, rate: 0.58, range: 2.7, mag: 0, reserve: 0, capacity: 0, owned: false },
       { name: "霰弹枪", damage: 18, rate: 0.85, range: 48, mag: 0, reserve: 0, capacity: 6, owned: false, pellets: 6, spread: 0.055, reload: 2.2 },
-      { name: "榴弹发射器", damage: 110, rate: 1.5, range: 95, mag: 0, reserve: 0, capacity: 1, owned: false, blast: 8, reload: 2.8 }
+      { name: "榴弹发射器", damage: 110, rate: 1.5, range: 95, mag: 0, reserve: 0, capacity: 1, owned: false, blast: 8, reload: 2.8 },
+      { name: "白鸥 · 步枪", damage: 27, rate: 0.13, range: 115, mag: 30, reserve: 60, capacity: 30, owned: false, automatic: true, reload: 1.9 }
     ];
   });
   // Startup phase 31: keep this order relative to the other systems.

@@ -419,7 +419,7 @@
         SN.cycleTimePreset();
       if (e.code === "KeyV")
         SN.toggleWet();
-      if (/^Digit[1-6]$/.test(e.code))
+      if (/^Digit[1-7]$/.test(e.code))
         SN.selectWeapon(Number(e.code.slice(-1)) - 1);
       if (e.code === "KeyM")
         SN.nextMission();
