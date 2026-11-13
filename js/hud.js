@@ -370,7 +370,7 @@
       if (glyph && SN.atlasView.zoom > 1.3) { g.font = "bold 11px sans-serif"; g.textAlign = "left"; g.fillText(glyph, X(shop.x) + 4, Z(shop.z) + 3); }
     }
     const target = SN.navigationTarget();
-    if (target) { g.strokeStyle = SN.waypoint ? "#58e4ef" : "#ffd34d"; g.strokeRect(X(target.x) - 6, Z(target.z) - 6, 12, 12); }
+    if (target) { g.strokeStyle = target === SN.waypoint ? "#58e4ef" : "#ffd34d"; g.strokeRect(X(target.x) - 6, Z(target.z) - 6, 12, 12); }
     g.save();
     g.translate(X(SN.player.x), Z(SN.player.z));
     g.rotate(-SN.player.yaw + SN.PI);
@@ -541,7 +541,7 @@
       mx *= 155 / dist;
       mz *= 155 / dist;
     }
-    SN.ctx.fillStyle = "#ffd34d";
+    SN.ctx.fillStyle = m === SN.waypoint ? "#58e4ef" : "#ffd34d";
     SN.ctx.beginPath();
     SN.ctx.arc(180 + mx, 180 + mz, 6, 0, SN.TAU);
     SN.ctx.fill();

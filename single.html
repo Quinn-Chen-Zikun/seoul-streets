@@ -27316,6 +27316,10 @@ void main(){
 "use strict";
 (function (SN) {
   SN.navigationTarget = function navigationTarget() {
+    if (SN.player.car && SN.player.car.spec.boat && SN.campaign.active && SN.campaign.active.status === "running") {
+      const objective = SN.activeObjective();
+      if (objective && objective.type === "race" && objective.boat) return objective;
+    }
     if (SN.waypoint) return SN.waypoint;
     const event = SN.streetEvent;
     if (event && event.phase === "running" && Number.isFinite(event.x) && Number.isFinite(event.z))
@@ -27363,9 +27367,14 @@ void main(){
     return best;
   };
 
-  SN.getGPSRoute = function getGPSRoute() {
-    const target = SN.navigationTarget();
+  function isBoatRaceTarget(target) {
+    return !!target && SN.campaign.active && SN.campaign.active.status === "running" &&
+      target.type === "race" && target.boat && SN.player.car && SN.player.car.spec.boat;
+  }
+
+  SN.getGPSRoute = function getGPSRoute(target = SN.navigationTarget()) {
     if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.z)) return [];
+    if (isBoatRaceTarget(target)) return [SN.player, target];
     const cache = SN.gpsCache;
     if (!cache || SN.simTime > cache.until || Math.hypot(cache.x - target.x, cache.z - target.z) > 20 || Math.hypot(cache.px - SN.player.x, cache.pz - SN.player.z) > 35) {
       SN.gpsCache = { x: target.x, z: target.z, px: SN.player.x, pz: SN.player.z, until: SN.simTime + 1,
@@ -27387,10 +27396,14 @@ void main(){
   };
 
   SN.drawGPS = function drawGPS(g, X, Z, width) {
-    const route = SN.getGPSRoute(), target = SN.navigationTarget();
+    const target = SN.navigationTarget(), route = SN.getGPSRoute(target);
     if (!route.length) return;
-    g.strokeStyle = SN.waypoint ? "#58e4ef" : "#ffd34d"; g.lineWidth = width; g.lineJoin = "round";
+    const boatRace = isBoatRaceTarget(target);
+    g.strokeStyle = target === SN.waypoint ? "#58e4ef" : "#ffd34d"; g.lineWidth = width; g.lineJoin = "round";
+    // A dashed bearing points to the buoy without implying a collision-free route.
+    if (boatRace) g.setLineDash([width * 2, width * 2]);
     g.beginPath(); route.forEach((p, i) => { if (!i) g.moveTo(X(p.x), Z(p.z)); else g.lineTo(X(p.x), Z(p.z)); }); g.stroke();
+    if (boatRace) { g.setLineDash([]); return; }
     // Dashed ends indicate the short on-foot section between a street and a door.
     g.setLineDash([width * 2, width * 2]); g.lineWidth = width * 0.65;
     g.beginPath(); g.moveTo(X(SN.player.x), Z(SN.player.z)); g.lineTo(X(route[0].x), Z(route[0].z));
@@ -31003,7 +31016,7 @@ void main(){
       if (glyph && SN.atlasView.zoom > 1.3) { g.font = "bold 11px sans-serif"; g.textAlign = "left"; g.fillText(glyph, X(shop.x) + 4, Z(shop.z) + 3); }
     }
     const target = SN.navigationTarget();
-    if (target) { g.strokeStyle = SN.waypoint ? "#58e4ef" : "#ffd34d"; g.strokeRect(X(target.x) - 6, Z(target.z) - 6, 12, 12); }
+    if (target) { g.strokeStyle = target === SN.waypoint ? "#58e4ef" : "#ffd34d"; g.strokeRect(X(target.x) - 6, Z(target.z) - 6, 12, 12); }
     g.save();
     g.translate(X(SN.player.x), Z(SN.player.z));
     g.rotate(-SN.player.yaw + SN.PI);
@@ -31174,7 +31187,7 @@ void main(){
       mx *= 155 / dist;
       mz *= 155 / dist;
     }
-    SN.ctx.fillStyle = "#ffd34d";
+    SN.ctx.fillStyle = m === SN.waypoint ? "#58e4ef" : "#ffd34d";
     SN.ctx.beginPath();
     SN.ctx.arc(180 + mx, 180 + mz, 6, 0, SN.TAU);
     SN.ctx.fill();
@@ -34940,6 +34953,23 @@ void main(){
         const boat = (SN.riverBoats || []).find(b => b.active);
         assert(boat, "没有可用快艇");
         SN.player.car = boat; boat.health = 100;
+        const firstTarget = SN.navigationTarget();
+        assert(firstTarget === SN.activeObjective() && firstTarget.boat, "快艇赛导航未指向浮标");
+        const raceRoute = SN.getGPSRoute();
+        assert(raceRoute.length === 2 && raceRoute[0] === SN.player && raceRoute[1] === firstTarget, "快艇赛导航路线不是水上直线");
+        // A failed race keeps the objective on screen; while still seated in the
+        // boat it must fall back to the player's manual waypoint, not the buoy.
+        const waypoint = { x: -30, z: -765 };
+        SN.waypoint = waypoint;
+        SN.failMission("超时测试");
+        assert(SN.campaign.active.status === "failed", "快艇赛失败状态错误");
+        assert(SN.navigationTarget() === waypoint, "失败后仍未恢复手动导航");
+        assert(SN.getGPSRoute().length > 0, "失败后没有陆路导航路线");
+        SN.waypoint = null;
+        reset();
+        SN.startMission("side", index);
+        move(SN.activeObjective().x, SN.activeObjective().z); SN.updateMission(0.1);
+        SN.player.car = boat; boat.health = 100;
         for (let i = 0; i < 4; i++) {
           o = SN.activeObjective();
           Object.assign(boat, { x: o.x, z: o.z, y: SN.WATER_Y + 0.18, speed: 0, vx: 0, vz: 0 });
@@ -34948,6 +34978,7 @@ void main(){
         }
         assert(!SN.campaign.active, "快艇赛未结算");
         SN.player.car = null;
+        assert(!(SN.navigationTarget() || {}).boat, "下船后仍使用水上导航");
         reset();
       }],
       [19.76, "living-side-jobs", () => {

@@ -2833,6 +2833,23 @@
         const boat = (SN.riverBoats || []).find(b => b.active);
         assert(boat, "没有可用快艇");
         SN.player.car = boat; boat.health = 100;
+        const firstTarget = SN.navigationTarget();
+        assert(firstTarget === SN.activeObjective() && firstTarget.boat, "快艇赛导航未指向浮标");
+        const raceRoute = SN.getGPSRoute();
+        assert(raceRoute.length === 2 && raceRoute[0] === SN.player && raceRoute[1] === firstTarget, "快艇赛导航路线不是水上直线");
+        // A failed race keeps the objective on screen; while still seated in the
+        // boat it must fall back to the player's manual waypoint, not the buoy.
+        const waypoint = { x: -30, z: -765 };
+        SN.waypoint = waypoint;
+        SN.failMission("超时测试");
+        assert(SN.campaign.active.status === "failed", "快艇赛失败状态错误");
+        assert(SN.navigationTarget() === waypoint, "失败后仍未恢复手动导航");
+        assert(SN.getGPSRoute().length > 0, "失败后没有陆路导航路线");
+        SN.waypoint = null;
+        reset();
+        SN.startMission("side", index);
+        move(SN.activeObjective().x, SN.activeObjective().z); SN.updateMission(0.1);
+        SN.player.car = boat; boat.health = 100;
         for (let i = 0; i < 4; i++) {
           o = SN.activeObjective();
           Object.assign(boat, { x: o.x, z: o.z, y: SN.WATER_Y + 0.18, speed: 0, vx: 0, vz: 0 });
@@ -2841,6 +2858,7 @@
         }
         assert(!SN.campaign.active, "快艇赛未结算");
         SN.player.car = null;
+        assert(!(SN.navigationTarget() || {}).boat, "下船后仍使用水上导航");
         reset();
       }],
       [19.76, "living-side-jobs", () => {

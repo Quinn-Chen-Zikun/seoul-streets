@@ -2,6 +2,10 @@
 "use strict";
 (function (SN) {
   SN.navigationTarget = function navigationTarget() {
+    if (SN.player.car && SN.player.car.spec.boat && SN.campaign.active && SN.campaign.active.status === "running") {
+      const objective = SN.activeObjective();
+      if (objective && objective.type === "race" && objective.boat) return objective;
+    }
     if (SN.waypoint) return SN.waypoint;
     const event = SN.streetEvent;
     if (event && event.phase === "running" && Number.isFinite(event.x) && Number.isFinite(event.z))
@@ -49,9 +53,14 @@
     return best;
   };
 
-  SN.getGPSRoute = function getGPSRoute() {
-    const target = SN.navigationTarget();
+  function isBoatRaceTarget(target) {
+    return !!target && SN.campaign.active && SN.campaign.active.status === "running" &&
+      target.type === "race" && target.boat && SN.player.car && SN.player.car.spec.boat;
+  }
+
+  SN.getGPSRoute = function getGPSRoute(target = SN.navigationTarget()) {
     if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.z)) return [];
+    if (isBoatRaceTarget(target)) return [SN.player, target];
     const cache = SN.gpsCache;
     if (!cache || SN.simTime > cache.until || Math.hypot(cache.x - target.x, cache.z - target.z) > 20 || Math.hypot(cache.px - SN.player.x, cache.pz - SN.player.z) > 35) {
       SN.gpsCache = { x: target.x, z: target.z, px: SN.player.x, pz: SN.player.z, until: SN.simTime + 1,
@@ -73,10 +82,14 @@
   };
 
   SN.drawGPS = function drawGPS(g, X, Z, width) {
-    const route = SN.getGPSRoute(), target = SN.navigationTarget();
+    const target = SN.navigationTarget(), route = SN.getGPSRoute(target);
     if (!route.length) return;
-    g.strokeStyle = SN.waypoint ? "#58e4ef" : "#ffd34d"; g.lineWidth = width; g.lineJoin = "round";
+    const boatRace = isBoatRaceTarget(target);
+    g.strokeStyle = target === SN.waypoint ? "#58e4ef" : "#ffd34d"; g.lineWidth = width; g.lineJoin = "round";
+    // A dashed bearing points to the buoy without implying a collision-free route.
+    if (boatRace) g.setLineDash([width * 2, width * 2]);
     g.beginPath(); route.forEach((p, i) => { if (!i) g.moveTo(X(p.x), Z(p.z)); else g.lineTo(X(p.x), Z(p.z)); }); g.stroke();
+    if (boatRace) { g.setLineDash([]); return; }
     // Dashed ends indicate the short on-foot section between a street and a door.
     g.setLineDash([width * 2, width * 2]); g.lineWidth = width * 0.65;
     g.beginPath(); g.moveTo(X(SN.player.x), Z(SN.player.z)); g.lineTo(X(route[0].x), Z(route[0].z));
