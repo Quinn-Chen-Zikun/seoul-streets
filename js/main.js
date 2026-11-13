@@ -2783,6 +2783,20 @@
         if (car) { car.active = false; car.root.visible = false; }
         reset();
       }],
+      [19.76, "living-side-jobs", () => {
+        for (const id of ["riverside", "clubsecurity"]) {
+          reset();
+          const index = SN.sideJobs.findIndex(m => m.id === id);
+          assert(index >= 0, id + " 支线缺失");
+          SN.startMission("side", index);
+          assert(SN.campaign.active, id + " 未接取");
+          const o = SN.activeObjective();
+          move(o.x, o.z); SN.updateMission(0.1);
+          assert(SN.campaign.active.step === 1, id + " 首目标未推进");
+          SN.campaign.active = SN.campaign.checkpoint = null;
+        }
+        reset();
+      }],
       [19.75, "living-road-cut", () => {
         for (const [x, z] of [[-130, -348], [1150, 1322], [-1162, -134]]) {
           const road = SN.roadSample(x, z, 30);

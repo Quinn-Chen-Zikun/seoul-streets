@@ -25925,7 +25925,21 @@ void main(){
           go("到弘大夜店门口接客人", -1867, -566, { r: 6 }),
           vehicle("接手客人的白色跑车", -1863, -562, 7, { contract: true }),
           drive("把客人送回江南车行", -170, 1075, { contract: true, minHealth: 55, r: 14 })
-        ], { totalLimit: 480, outro: "客人多给了小费，坚持说自己没醉。韩序温：钱收下，话别信。" })
+        ], { totalLimit: 480, outro: "客人多给了小费，坚持说自己没醉。韩序温：钱收下，话别信。" }),
+      mission("riverside", "汉江夜巡", "detective", "汉江", 346, -752, 1400,
+        "北岸的夜巡记录少了一页，沿着江边找到残页，再送到南岸治安站归档。",
+        ["尹海率：今晚北岸的巡逻记录少了一页，找到它。", "尹海率：别走大路，南岸治安站有人在等。"], [
+          go("到汉江北岸巡防点", -600, -30, { r: 8 }),
+          collect("收取遗落的巡逻记录", -600, -30),
+          drive("把记录送到南岸治安站", 560, 930, { r: 14 })
+        ], { totalLimit: 420, outro: "记录补回了档案。尹海率在收据背面写了两个字：先别声张。" }),
+      mission("clubsecurity", "夜店看场", "informant", "弘大", 902, -674, 1200,
+        "弘大夜店有人喝多了闹事，替店长把人请出去，工钱现结。",
+        ["蔡娜凛：弘大夜店今晚缺个看场的，工钱现结。", "蔡娜凛：别打坏镜子，那面比你的工钱贵。"], [
+          go("到弘大夜店门口找店长", -1867, -570, { r: 6 }),
+          fight("击退三名闹事醉客", -1867, -570, 3, true),
+          go("回吧台拿看场费", -1860, -560, { r: 4 })
+        ], { totalLimit: 240, outro: "店长把现金塞进你手里，顺便把闹事者的酒钱也记在你头上。" })
     );
     for (const [i, m] of SN.storyMissions.entries()) {
       m.district = m.district || ["钟路 · 光化门", "明洞", "江南", "首尔 · 南山", "乙支路", "汉江", "汉江"][i];
@@ -34495,6 +34509,20 @@ void main(){
         move(o.x, o.z); SN.updateMission(0.1);
         assert(!SN.campaign.active, "夜班代驾送达后未结算");
         if (car) { car.active = false; car.root.visible = false; }
+        reset();
+      }],
+      [19.76, "living-side-jobs", () => {
+        for (const id of ["riverside", "clubsecurity"]) {
+          reset();
+          const index = SN.sideJobs.findIndex(m => m.id === id);
+          assert(index >= 0, id + " 支线缺失");
+          SN.startMission("side", index);
+          assert(SN.campaign.active, id + " 未接取");
+          const o = SN.activeObjective();
+          move(o.x, o.z); SN.updateMission(0.1);
+          assert(SN.campaign.active.step === 1, id + " 首目标未推进");
+          SN.campaign.active = SN.campaign.checkpoint = null;
+        }
         reset();
       }],
       [19.75, "living-road-cut", () => {
