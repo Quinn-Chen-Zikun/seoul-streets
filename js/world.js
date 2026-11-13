@@ -672,7 +672,7 @@
 
   SN.safePosition = function safePosition(x, z, r = 0.3, car = null, id = "spawn") {
     const original = { x, z };
-    const valid = (px, pz) => SN.terrainSlope(px, pz) < 0.48 &&
+    const valid = (px, pz) => (car && car.spec.boat ? true : SN.terrainSlope(px, pz) < 0.48) &&
       (car ? (car.spec.boat ? !SN.boatBlocked(px, pz, car.yaw, car) : !SN.carBlocked(px, pz, car.yaw, car) && !SN.carWater(px, pz, car.yaw, car)) : !SN.blocked(px, pz, r));
     const corrected = (px, pz) => {
       SN.reportContentProblem(id, original.x, original.z, "位置不可通行", "移至可通行位置", { to: { x: px, z: pz } });
@@ -786,7 +786,8 @@
     for (const spec of SN.enterableSpecs.concat(SN.shopSpecs, SN.smallShopSpecs))
       check(spec.id, spec, () => SN.authoredTerrain(spec).buildable, "商店地基位于陡坡");
     for (const c of SN.cars)
-      check("car-" + c.serial, c, () => Number.isFinite(c.x) && Number.isFinite(c.z) && !SN.carBlocked(c.x, c.z, c.yaw, c) && !SN.carWater(c.x, c.z, c.yaw, c), "车辆出生点不可通行");
+      check("car-" + c.serial, c, () => Number.isFinite(c.x) && Number.isFinite(c.z) &&
+        (c.spec.boat ? !SN.boatBlocked(c.x, c.z, c.yaw, c) : !SN.carBlocked(c.x, c.z, c.yaw, c) && !SN.carWater(c.x, c.z, c.yaw, c)), "车辆出生点不可通行");
     for (const a of SN.actors)
       if (a && !a.inCar && !a.shopId)
         check("actor-" + a.index, a, () => !SN.blocked(a.x, a.z, 0.3), "角色出生点不可通行");

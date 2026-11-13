@@ -2240,6 +2240,7 @@
     SN.makeCar(430, -406, SN.PI / 2, true, null, 0, 10);
     SN.makeCar(-190, 984, SN.PI / 2, true, null, 0, 11);
     SN.spawnRiverBoats();
+    SN.spawnAmbientBoats();
   });
   SN.riverBoats = [];
   SN.riverDocks = [];
@@ -2265,6 +2266,37 @@
       SN.riverBoats.push(c);
       const land = SN.boatLanding(c);
       if (land) SN.riverDocks.push({ x: land.x, z: land.z, boat: c });
+    }
+  };
+  SN.ambientBoats = [];
+  SN.spawnAmbientBoats = function spawnAmbientBoats() {
+    // Two boats keep the river moving even when the player stays on land.
+    // Keep to the north and south channels so the boats never cross Yeouido.
+    for (const [x, z, dir] of [[-1400, 120, 1], [900, 780, -1]]) {
+      if (!SN.isWater(x, z, 1))
+        continue;
+      const yaw = dir > 0 ? SN.PI / 2 : -SN.PI / 2,
+        c = SN.makeCar(x, z, yaw, true, null, 0, 16, "boat");
+      Object.assign(c, { role: "boat", driver: true, parked: false, freeRolling: false,
+        active: true, ambientBoat: 9 });
+      c.y = SN.WATER_Y + 0.18;
+      c.root.position.set(c.x, c.y, c.z);
+      c.root.visible = true;
+      SN.resetVehicleGround(c);
+      SN.ambientBoats.push(c);
+    }
+  };
+  SN.updateAmbientBoats = function updateAmbientBoats(dt) {
+    for (const c of SN.ambientBoats) {
+      if (!c.active || c === SN.player.car)
+        continue;
+      c.x += Math.sin(c.yaw) * c.ambientBoat * dt;
+      if (c.x > 3000) c.x = -3000;
+      else if (c.x < -3000) c.x = 3000;
+      c.speed = c.ambientBoat;
+      SN.updateVehicleGround(c, dt);
+      c.px = c.x; c.pz = c.z; c.py = c.y; c.pyaw = c.yaw;
+      c.ppitch = c.pitch; c.pterrainRoll = c.terrainRoll; c.proll = c.roll; c.psuspension = 0;
     }
   };
   // Startup phase 39: keep this order relative to the other systems.

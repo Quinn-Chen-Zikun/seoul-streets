@@ -219,6 +219,7 @@
     SN.stepCount++;
     SN.simTime += dt;
     SN.updateCityTransit(SN.simTime);
+    if (SN.updateAmbientBoats) SN.updateAmbientBoats(dt);
     if (SN.started) {
       SN.minutes = (SN.minutes + dt * 1440 / (SN.cycleMinutes * 60)) % 1440;
       SN.lookDelay = Math.max(0, SN.lookDelay - dt);
@@ -2776,6 +2777,10 @@
         assert(!SN.player.car, "快艇无法下车");
         assert(!SN.isWater(SN.player.x, SN.player.z, 0.2), "下船后落在水里");
         SN.player.bail = null; SN.playerRoot.visible = true;
+        assert((SN.ambientBoats || []).length >= 2, "江面没有往来快艇");
+        const amb = SN.ambientBoats[0], ax = amb.x;
+        SN.updateAmbientBoats(1);
+        assert(Math.abs(amb.x - ax) > 1 && SN.isWater(amb.x, amb.z, 0.5), "江面快艇没有巡航");
         reset();
       }],
       [19.68, "living-nightshift", () => {
