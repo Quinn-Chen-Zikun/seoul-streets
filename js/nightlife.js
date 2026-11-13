@@ -222,8 +222,8 @@
       for (let x = 0; x < 64; x++) {
         const a = Math.pow(0.5 + 0.5 * Math.sin(x / 64 * Math.PI * 10), 3) * 190;
         for (let y = 0; y < 64; y++) {
-          const i = (y * 64 + x) * 4;
-          img.data[i] = 255; img.data[i + 1] = 255; img.data[i + 2] = 255; img.data[i + 3] = a;
+          const i = (y * 64 + x) * 4, fade = 0.3 + 0.7 * (y / 64);
+          img.data[i] = 255; img.data[i + 1] = 255; img.data[i + 2] = 255; img.data[i + 3] = a * fade;
         }
       }
       ctx.putImageData(img, 0, 0);
@@ -252,7 +252,7 @@
     const beams = [];
     for (const [color, phase, lean] of [[0xff5aa2, 0, 0.18], [0x53e6d9, 2.1, -0.14]]) {
       const cone = new SN.T.Mesh(new SN.T.ConeGeometry(2.5, 4.1, 24, 1, true),
-        new SN.T.MeshBasicMaterial({ color, map: beamTex, transparent: true, opacity: 0.3, blending: SN.T.AdditiveBlending, depthWrite: false, side: SN.T.DoubleSide }));
+        new SN.T.MeshBasicMaterial({ color, map: beamTex, transparent: true, opacity: 0.2, blending: SN.T.AdditiveBlending, depthWrite: false, side: SN.T.DoubleSide }));
       cone.position.set(bx + 1.2, floorTop + 1.9, bz - 2.2);
       cone.rotation.z = lean;
       SN.scene.add(cone);
@@ -364,9 +364,9 @@
       if (inRoom) {
         bar.beams[0].mesh.rotation.y = time * 0.55;
         bar.beams[1].mesh.rotation.y = -time * 0.43 + 1.4;
-        const pulse = 0.24 + Math.max(0, Math.sin(time * 2.6)) * 0.12;
+        const pulse = 0.16 + Math.max(0, Math.sin(time * 2.6)) * 0.08;
         bar.beams[0].mesh.material.opacity = pulse;
-        bar.beams[1].mesh.material.opacity = 0.36 - pulse * 0.35;
+        bar.beams[1].mesh.material.opacity = 0.24 - pulse * 0.25;
         bar.spots.forEach((s, i) => {
           const a = time * 0.42 + s.phase, r = 1.5;
           s.mesh.visible = true;

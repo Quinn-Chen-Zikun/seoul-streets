@@ -781,6 +781,20 @@
         SN.cityPart(g, "stone", 0, 0.28 + i * 0.4, 108 - i * 2.4, 46 - i * 3, 0.4, 2.4);
       SN.cityPart(g, "teal", 0, 0.62, 131, 25, 0.06, 17, 0, new SN.T.CylinderGeometry(1, 1, 1, 32));
       SN.cityPart(g, "stone", 0, 0.32, 131, 28, 0.62, 20, 0, new SN.T.CylinderGeometry(1, 1, 1, 32));
+      // A live water disc and a cluster of jets: the bare teal cylinder read as
+      // an empty blue plate from the forecourt.
+      const fountainWater = SN.meshAt(new SN.T.CylinderGeometry(1, 1, 1, 32), SN.waterMat,
+        0, 0.66, 131, 12.6, 0.02, 12.6, 0, g);
+      fountainWater.castShadow = false;
+      const jetMat = new SN.T.MeshBasicMaterial({
+        color: 0xd8f4ff, transparent: true, opacity: 0.26,
+        blending: SN.T.AdditiveBlending, depthWrite: false, side: SN.T.DoubleSide
+      });
+      for (const [dx, dz, h, r] of [[0, 0, 5.6, 0.3], [2.3, 0, 3.8, 0.18], [-2.3, 0, 3.8, 0.18], [0, 2.1, 3.8, 0.18], [0, -2.1, 3.8, 0.18]]) {
+        const jet = new SN.T.Mesh(new SN.T.CylinderGeometry(r, r * 0.45, h, 8, 1, true), jetMat);
+        jet.position.set(dx, 0.66 + h / 2, 131 + dz);
+        g.add(jet);
+      }
       SN.cityPart(g, "gold", 0, 4.6, 131, 0.9, 8.6, 0.9);
       SN.cityPart(g, "gold", 0, 8.6, 131, 3.2, 1.1, 3.2, SN.PI / 4, SN.box);
       for (const side of [-1, 1]) for (let i = 0; i < 3; i++) {
