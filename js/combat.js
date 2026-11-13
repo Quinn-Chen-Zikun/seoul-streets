@@ -591,6 +591,11 @@
       SN.noiseHit(0.05, 0.1, "highpass", 2600, 1);
       SN.tone("sine", 150, 52, 0.13, 0.09);
     }
+    else if (index === 6) {
+      SN.noiseHit(0.09, 0.14, "bandpass", 1500, 1.25);
+      SN.noiseHit(0.04, 0.08, "highpass", 3000, 1);
+      SN.tone("sine", 135, 55, 0.09, 0.08);
+    }
     else {
       SN.noiseHit(0.07, 0.12, "bandpass", 1900, 1.2);
       SN.noiseHit(0.035, 0.07, "highpass", 3400, 1);
