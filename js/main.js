@@ -2737,6 +2737,31 @@
         SN.startMission("side", taxi); SN.failMission("出租车重试检查"); SN.retryCheckpoint();
         assert(SN.loanCar.type === 3, "出租车重试未恢复车型"); reset();
       }],
+      [19.68, "living-nightshift", () => {
+        reset();
+        const index = SN.sideJobs.findIndex(m => m.id === "nightshift");
+        assert(index >= 0, "夜班代驾支线缺失");
+        SN.startMission("side", index);
+        const a = SN.campaign.active;
+        assert(a && a.status === "running", "夜班代驾未接取");
+        let o = SN.activeObjective();
+        assert(o && o.type === "go", "夜班代驾首目标不是接人");
+        move(o.x, o.z); SN.updateMission(0.1);
+        assert(a.step === 1, "夜班代驾未推进到接车");
+        o = SN.activeObjective();
+        assert(a.contractCar && a.contractCar.type === 7, "客人跑车未就位");
+        assert(Math.hypot(a.contractCar.x - o.x, a.contractCar.z - o.z) < 70, "客人跑车离标记过远");
+        SN.player.car = a.contractCar;
+        move(a.contractCar.x, a.contractCar.z); SN.updateMission(0.1);
+        assert(a.step === 2, "夜班代驾未推进到送客");
+        o = SN.activeObjective();
+        const car = a.contractCar;
+        Object.assign(car, { x: o.x, z: o.z, y: SN.surfaceHeight(o.x, o.z), speed: 0 });
+        move(o.x, o.z); SN.updateMission(0.1);
+        assert(!SN.campaign.active, "夜班代驾送达后未结算");
+        if (car) { car.active = false; car.root.visible = false; }
+        reset();
+      }],
       [19.72, "living-weather-clock", () => {
         reset();
         for (const kind of SN.weatherKinds) {

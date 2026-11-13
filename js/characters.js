@@ -245,7 +245,7 @@
 
   SN.printPartMaterial = function printPartMaterial(color) {
     if (!SN.printPartMaterials.has(color))
-      SN.printPartMaterials.set(color, new SN.T.MeshStandardMaterial({ map: SN.printTexture, color, transparent: true, roughness: 0.88, side: SN.T.DoubleSide }));
+      SN.printPartMaterials.set(color, new SN.T.MeshStandardMaterial({ map: SN.printTexture, color: SN.srgb(color), transparent: true, roughness: 0.88, side: SN.T.DoubleSide }));
     return SN.printPartMaterials.get(color);
   };
 
