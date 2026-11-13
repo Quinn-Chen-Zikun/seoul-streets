@@ -137,8 +137,12 @@
         continue;
       const height = SN.roadProfileHeight(profile, closest.s);
       let score = distance;
+      // At a crossing the two centre lines are both at distance zero, so height
+      // is what tells the wheels which road they belong to. A level difference of
+      // one metre costs far more than any plausible sideways offset, which keeps
+      // the lower street from snapping up onto an overpass (and back down again).
       if (hint !== null)
-        score += Math.max(0, Math.abs(height - hint) - 1.25) * 8;
+        score += Math.max(0, Math.abs(height - hint) - 0.35) * 20;
       if (score < bestScore - 1e-6 ||
         (Math.abs(score - bestScore) < 1e-6 && best && height < best.height)) {
         bestScore = score;

@@ -63,7 +63,8 @@
     }
     const radius = SN.vehicleWheelRadius(spec);
     c.wheelRadius = radius;
-    for (const side of spec.bike ? [0] : [-1, 1])
+    // Tanks ride on their modelled tracks; extra car wheels would float outside them.
+    for (const side of spec.bike ? [0] : spec.tank ? [] : [-1, 1])
       for (const end of [-1, 1]) {
         const pivot = new SN.T.Group(), wheel = new SN.T.Group();
         pivot.position.set(side * (spec.width * 0.48 - 0.135), radius, end * spec.length * (spec.bike ? 0.36 : 0.32));
@@ -111,6 +112,7 @@
       route,
       index,
       steer: 0,
+      yawRate: 0,
       paint,
       health: 100,
       collisionTimer: 0,
@@ -350,6 +352,11 @@
   SN.enterExit = function enterExit() {
     if (!SN.canControl() || SN.player.bail || SN.carjack)
       return;
+    if (SN.player.aircraft) {
+      SN.exitAircraft();
+      SN.refreshHUD();
+      return;
+    }
     if (!SN.player.car && SN.useDoor()) {
       SN.refreshHUD();
       return;
@@ -369,6 +376,10 @@
       SN.toast(SN.player.bail ? "跳车 · 翻滚后起身" : "已下车", 2);
     }
     else {
+      if (SN.military && SN.military.nearest && SN.military.nearestDistance < 5.5 && SN.boardAircraft(SN.military.nearest)) {
+        SN.refreshHUD();
+        return;
+      }
       SN.findNearestCar(true);
       if (!SN.nearestCar || SN.nearDistance > 5.5) {
         SN.toast("靠近任意车辆后按 F，包括正在行驶的车辆。", 3);
@@ -875,7 +886,7 @@
     // Steering reaches full lock in roughly a tenth of a second; throttle is much sharper than before.
     // A motorcycle leans into a curve instead of snapping to a heading, so its
     // lock builds slower and tightens less at speed than a car's.
-    c.steer = SN.lerp(c.steer, steer, 1 - Math.exp(-dt * (c.spec.bike ? 7.5 : 17)));
+    c.steer = SN.lerp(c.steer, steer, 1 - Math.exp(-dt * (c.spec.bike ? 6 : 17)));
     const spec = c.spec,
       speedAbs = Math.abs(c.speed),
       braking = 24 / Math.sqrt(spec.mass),
@@ -892,7 +903,18 @@
     // wheels need a much smaller lock than a car or the bike whips sideways.
     const steerAngle = c.steer * (spec.bike ? 0.24 : 0.62) / (1 + speedAbs * (spec.bike ? 0.16 : 0.034));
     const previousYaw = c.yaw;
-    c.yaw -= Math.tan(steerAngle) * c.speed / (spec.length * 0.64) * dt * (handbrake ? 1.45 : 1);
+    if (spec.bike) {
+      // A steering wheel arcs into a turn instead of snapping the nose to a new
+      // heading. Smoothing the bars alone still let the bike pivot on the spot,
+      // so the heading itself follows the target yaw rate with a short lag; the
+      // lean, the handlebar and the arc now arrive together.
+      const targetYawRate = -Math.tan(steerAngle) * c.speed / (spec.length * 0.64) * (handbrake ? 1.45 : 1);
+      c.yawRate = SN.lerp(c.yawRate || 0, targetYawRate, 1 - Math.exp(-dt * 9));
+      c.yaw += c.yawRate * dt;
+    } else {
+      c.yawRate = 0;
+      c.yaw -= Math.tan(steerAngle) * c.speed / (spec.length * 0.64) * dt * (handbrake ? 1.45 : 1);
+    }
     if (SN.carBlocked(c.x, c.z, c.yaw, c)) c.yaw = previousYaw;
     const sn = Math.sin(c.yaw),
       co = Math.cos(c.yaw),

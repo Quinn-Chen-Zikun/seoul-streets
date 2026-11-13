@@ -110,7 +110,7 @@ window.SN = {};
     SN.T = window.THREE;
     SN.devMode = /(?:^|[?&])autostart=1(?:&|$)/.test(window.location ? window.location.search : "");
     const shotMatch = /(?:^|[?&])shot=([a-z]+)(?:&|$)/.exec(window.location ? window.location.search : "");
-    SN.showcaseNames = ["street", "drive", "night", "river", "chase", "mission", "map", "slope", "closeup", "carclose", "rain"];
+    SN.showcaseNames = ["street", "drive", "night", "river", "chase", "mission", "map", "slope", "closeup", "carclose", "rain", "mall", "bar", "base"];
     SN.shotName = SN.devMode && shotMatch && SN.showcaseNames.includes(shotMatch[1]) ? shotMatch[1] : null;
     SN.showcase = null;
     SN.perfEnabled = /(?:^|[?&])perf=1(?:&|$)/.test(window.location ? window.location.search : "");

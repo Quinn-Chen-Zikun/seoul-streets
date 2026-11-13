@@ -466,7 +466,9 @@
     // interior floor tiling is visible from the street, so it belongs to the shell
     const floorMat = new SN.T.MeshStandardMaterial({ map: SN.shopTileTexture(), color: 0xf3eee2, roughness: 0.62, metalness: 0.02 });
     const floorMesh = new SN.T.Mesh(new SN.T.BoxGeometry(spec.w - 0.1, 0.035, spec.d - 0.1), floorMat);
-    floorMesh.position.set(spec.x, base + 0.018, spec.z);
+    // The walkable floor is `base`; put the visible tile top exactly on it so the
+    // customer's soles and the door mat do not float or sink.
+    floorMesh.position.set(spec.x, base - 0.0175, spec.z);
     floorMesh.receiveShadow = true;
     spec.shellGroup.add(floorMesh);
     // room record and door integration
@@ -1095,7 +1097,8 @@
     a.z = a.shopBaseZ;
     if (a.shopState === "surrender") {
       r.root.position.set(a.x, b, a.z);
-      r.root.rotation.y = SN.approachAngle(a.yaw, Math.atan2(SN.player.x - a.x, SN.player.z - a.z), dt * 4);
+      a.yaw = SN.approachAngle(a.yaw, Math.atan2(SN.player.x - a.x, SN.player.z - a.z), dt * 4);
+      r.root.rotation.y = a.yaw;
       r.torso.position.set(0, 0.48, 0);
       r.torso.rotation.set(0, 0, 0);
       r.head.rotation.set(-0.08, 0, Math.sin(time * 13) * 0.05);
@@ -1108,7 +1111,8 @@
     if (a.shopState === "greet") {
       a.shopTimer -= dt;
       r.root.position.set(a.x, b, a.z);
-      r.root.rotation.y = SN.approachAngle(a.yaw, Math.atan2(SN.player.x - a.x, SN.player.z - a.z), dt * 4);
+      a.yaw = SN.approachAngle(a.yaw, Math.atan2(SN.player.x - a.x, SN.player.z - a.z), dt * 4);
+      r.root.rotation.y = a.yaw;
       r.torso.position.set(0, 0.48, 0);
       r.torso.rotation.set(0, 0, 0);
       r.head.rotation.set(-0.04, 0, 0);

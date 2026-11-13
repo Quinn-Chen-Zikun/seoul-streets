@@ -407,13 +407,23 @@
     if (!Number.isFinite(x) || !Number.isFinite(z))
       return 0;
     let precise = -Infinity;
+    // A roof, terrace or elevated ramp registers its own walkable patch. When a
+    // car or a person is already down on the street under it, that patch must not
+    // win just because it is higher: the hint rejects anything far above the
+    // current floor, so the ground level stays underneath an overpass.
+    const reach = Number.isFinite(floorHint) ? floorHint + 1.6 : Infinity;
     for (const p of SN.localSurfacePatches)
-      if (x >= p.minX && x <= p.maxX && z >= p.minZ && z <= p.maxZ && p.test(x, z))
-        precise = Math.max(precise, p.height(x, z));
+      if (x >= p.minX && x <= p.maxX && z >= p.minZ && z <= p.maxZ && p.test(x, z)) {
+        const h = p.height(x, z);
+        if (h <= reach)
+          precise = Math.max(precise, h);
+      }
     if (Number.isFinite(precise))
       return precise;
     const sample = SN.roadSample(x, z, 0, floorHint);
-    if (sample) {
+    // The same rule applies to roads: a person or car already down on the street
+    // must not be snapped up onto an overpass that happens to own this footprint.
+    if (sample && (floorHint === null || sample.height <= floorHint + 1.6)) {
       const road = sample.profile, carriageway = sample.distance < road.width / 2;
       return sample.height + (carriageway ? 0.17 : 0.35) + (carriageway ? Math.max(0, 1 - Math.abs(sample.across) / (road.width / 2)) * 0.025 : 0);
     }
@@ -428,9 +438,17 @@
       b = SN.surfaceGrid[i + 1],
       c = SN.surfaceGrid[i + SN.SURFACE_SIZE],
       d = SN.surfaceGrid[i + SN.SURFACE_SIZE + 1];
-    if (SN.surfaceTypes[i] === 3 || SN.surfaceTypes[i + 1] === 3 || SN.surfaceTypes[i + SN.SURFACE_SIZE] === 3 || SN.surfaceTypes[i + SN.SURFACE_SIZE + 1] === 3)
-      return Math.max(a, b, c, d);
-    return SN.lerp(SN.lerp(a, b, u), SN.lerp(c, d, u), v);
+    const gridHeight = SN.surfaceTypes[i] === 3 || SN.surfaceTypes[i + 1] === 3 || SN.surfaceTypes[i + SN.SURFACE_SIZE] === 3 || SN.surfaceTypes[i + SN.SURFACE_SIZE + 1] === 3
+      ? Math.max(a, b, c, d)
+      : SN.lerp(SN.lerp(a, b, u), SN.lerp(c, d, u), v);
+    // A bridge deck is meshed into the coarse ground grid too. Someone walking on the
+    // bank underneath must keep the natural ground rather than be lifted onto the deck.
+    if (Number.isFinite(floorHint) && gridHeight > floorHint + 1.6) {
+      const natural = SN.hillHeight(x, z);
+      if (natural <= floorHint + 1.6)
+        return natural;
+    }
+    return gridHeight;
   };
   // Highest surface inside the foot disc: keeps a planted sole from sinking when
   // the character straddles a kerb or a stair edge.

@@ -613,9 +613,9 @@
     const p = SN.roadSpawn(SN.rand(24, 42));
     if (!p)
       return false;
-    let a = SN.actors.find(item => item.kind === "police" && !item.active && !item.inCar);
+    let a = SN.actors.find(item => item.kind === "police" && !item.active && !item.inCar && !item.guard);
     if (!a)
-      a = SN.actors.find(item => item.kind === "police" && !item.inCar && !item.down && Math.hypot(item.x - SN.player.x, item.z - SN.player.z) > 170);
+      a = SN.actors.find(item => item.kind === "police" && !item.inCar && !item.down && !item.guard && Math.hypot(item.x - SN.player.x, item.z - SN.player.z) > 170);
     if (!a)
       return false;
     Object.assign(a, {
@@ -734,7 +734,7 @@
       return;
     let driver;
     if (role === "police")
-      driver = SN.actors.find(a => a.kind === "police" && !a.active && !a.inCar);
+      driver = SN.actors.find(a => a.kind === "police" && !a.active && !a.inCar && !a.guard);
     else
       driver = SN.actors.find(a => a.kind === "gang" && !a.missionEnemy && a.crew === team && a.active && !a.down && !a.inCar);
     if (!driver)
@@ -1604,7 +1604,7 @@
       }
       const distance = Math.hypot(a.x - SN.player.x, a.z - SN.player.z);
       if (distance > 150) {
-        if (a.kind === "police" && SN.heat === 0 && !a.footPolice)
+        if (a.kind === "police" && SN.heat === 0 && !a.footPolice && !a.guard)
           a.active = false;
         continue;
       }

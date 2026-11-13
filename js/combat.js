@@ -802,7 +802,7 @@
         a.x = a.homeX;
         a.z = a.homeZ;
       }
-      if (a.kind === "police")
+      if (a.kind === "police" && !a.guard)
         a.active = false;
     }
     for (const c of SN.pursuitCars) {

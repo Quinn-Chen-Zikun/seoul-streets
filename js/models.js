@@ -776,12 +776,17 @@
         const armSegments = armWeightSegments(proto, side);
         const x0 = 0.155;
         const x1 = long ? Math.abs(hand.x) + 0.004 : SN.lerp(Math.abs(upper.x), Math.abs(lower.x), 0.6) + 0.006;
-        const endY = long ? hand.y : SN.lerp(upper.y, lower.y, 0.6);
-        const endZ = long ? hand.z : SN.lerp(upper.z, lower.z, 0.6);
+        // Long sleeves end on the measured wrist-skin centre, not on the bone:
+        // the skin sits a few millimetres off the joint, and a ring on the bone
+        // hugs one side of the wrist while opening a gap on the other.
+        const gauge = proto.armGauge || {};
+        const endY = long ? hand.y + (gauge.wristDY || 0) + 0.006 : SN.lerp(upper.y, lower.y, 0.6);
+        const endZ = long ? hand.z + (gauge.wristDZ || 0) : SN.lerp(upper.z, lower.z, 0.6);
+        const cuffY = endY - 0.006;
         const axis = new SN.T.Vector3(side, 0, 0), up = new SN.T.Vector3(0, 1, 0);
         const normal = new SN.T.Vector3().crossVectors(axis, up);
-        const wristR = (proto.armGauge && proto.armGauge.wrist) || 0.042;
-        const bicepR = (proto.armGauge && proto.armGauge.bicep) || 0.052;
+        const wristR = (gauge.wrist) || 0.042;
+        const bicepR = (gauge.bicep) || 0.052;
         // Fit the sleeve to the measured arm. A wrist is about 2.9 cm in radius;
         // the old 1.4 cm ease made a 4.6 cm bell, so the hand looked pasted into
         // the opening. Six millimetres sits like a real shirt cuff and still
@@ -804,23 +809,24 @@
         const lastStation = ringList[ringList.length - 1];
         const cuffX = x1 * side - side * 0.018;
         const cuffRadius = long ? endRadius : endRadius + 0.002;
-        const cuff = addGarmentRing(builder, { x: cuffX, y: endY - 0.006, z: endZ },
+        const cuff = addGarmentRing(builder, { x: cuffX, y: cuffY, z: endZ },
           up, normal, cuffRadius, cuffRadius, sleeveSegments, 1,
           point => sleeveWeightsFor(proto, point, side, armSegments), 0, 0.28);
         stitchGarmentRings(builder, lastStation, cuff);
-        // Fold the cuff back inside so the sleeve end reads as a hem instead of
-        // an open paper tube. The folded lip now stops just outside the wrist
-        // (2 mm of clearance) so it hugs the arm instead of leaving a ring of
-        // daylight between the cuff and the hand.
-        const foldRadius = long ? wristR + 0.004 : endRadius * 0.9;
-        const innerCuff = addGarmentRing(builder, { x: cuffX - side * 0.045, y: endY - 0.006, z: endZ },
-          up, normal, foldRadius, foldRadius, sleeveSegments, 1,
+        // Close the sleeve with a flat rim instead of a 4.5 cm lining folded back
+        // along the arm. The old lining sat inside the forearm, where the muscle
+        // is 7 mm thicker, and the skin tore through it in a zigzag at every step.
+        // The rim's inner ring now sits inside the flesh, so the visible edge is
+        // always the clean circle where cloth meets skin.
+        const rimRadius = cuffRadius * (long ? 0.72 : 0.78);
+        const innerCuff = addGarmentRing(builder, { x: cuffX - side * 0.012, y: cuffY, z: endZ },
+          up, normal, rimRadius, rimRadius, sleeveSegments, 1,
           point => sleeveWeightsFor(proto, point, side, armSegments), 0, 0.28);
         stitchGarmentRings(builder, cuff, innerCuff);
         const indices = [];
         const step = Math.max(1, Math.ceil(sleeveSegments / 6));
         for (let s = 0; s < sleeveSegments; s += step) indices.push(cuff.start + s);
-        cuffs.push({ side, indices, x: cuffX, y: endY - 0.006, z: endZ, radius: cuffRadius });
+        cuffs.push({ side, indices, x: cuffX, y: cuffY, z: endZ, radius: cuffRadius, rim: rimRadius });
       }
     }
     return finishGarment(builder, { cuffs });
@@ -1088,9 +1094,25 @@
     // was a single wrist bump and inflated every sleeve by nearly 2 cm.
     const wrist = band(lower, hand, 0.9, 0.99, 0.5);
     const bicep = band(upper, lower, 0.45, 0.68, 0.5);
+    // The cuff has to wrap the wrist skin, not the bone. The skin centroid in
+    // the wrist band sits several millimetres off the joint, so a ring centred
+    // on hand.y / hand.z presses into the arm on one side and leaves daylight
+    // on the other — exactly what reads as "the hand is not attached".
+    const sx = hand.x - lower.x, sy = hand.y - lower.y, sz = hand.z - lower.z;
+    const len2 = Math.max(1e-6, sx * sx + sy * sy + sz * sz);
+    let sumY = 0, sumZ = 0, samples = 0;
+    for (let i = 0; i < pos.count; i++) {
+      const px = pos.getX(i);
+      const t = ((px - lower.x) * sx + (pos.getY(i) - lower.y) * sy + (pos.getZ(i) - lower.z) * sz) / len2;
+      if (t < 0.9 || t > 0.99) continue;
+      sumY += pos.getY(i); sumZ += pos.getZ(i); samples++;
+    }
+    const wristDY = samples ? Math.max(-0.02, Math.min(0.02, sumY / samples - hand.y)) : 0;
+    const wristDZ = samples ? Math.max(-0.02, Math.min(0.02, sumZ / samples - hand.z)) : 0;
     return {
       wrist: Math.max(0.028, Math.min(0.055, wrist === null ? 0.042 : wrist)),
-      bicep: Math.max(0.036, Math.min(0.07, bicep === null ? 0.052 : bicep))
+      bicep: Math.max(0.036, Math.min(0.07, bicep === null ? 0.052 : bicep)),
+      wristDY, wristDZ
     };
   }
 

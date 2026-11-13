@@ -765,6 +765,7 @@
         batch.mesh.setColorAt(i, p.colorObject);
       }
     }
+    if (SN.flushNightBar) SN.flushNightBar();
     for (const b of SN.npcBatches) {
       b.mesh.count = b.count;
       if (!b.count)
@@ -877,6 +878,10 @@
         const nx = SN.player.x + sx, nz = SN.player.z + sz;
         if (Math.abs(nx) > SN.WORLD - 0.3 || Math.abs(nz) > SN.WORLD - 0.3 || SN.isWater(nx, nz, 0.28))
           break;
+        // A raised bank or overpass edge is a wall on foot, not a ramp: without this
+        // the floor snaps the whole body up onto it and it later falls off the far side.
+        if (SN.player.grounded && SN.groundUnder(nx, nz, 0.22, SN.player.y) - SN.player.y > 1.0)
+          continue;
         const hit = SN.resolveCircle(nx, nz, 0.28, SN.player.y);
         SN.player.x = hit.x;
         SN.player.z = hit.z;

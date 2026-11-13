@@ -3204,7 +3204,7 @@ window.SN = {};
     SN.T = window.THREE;
     SN.devMode = /(?:^|[?&])autostart=1(?:&|$)/.test(window.location ? window.location.search : "");
     const shotMatch = /(?:^|[?&])shot=([a-z]+)(?:&|$)/.exec(window.location ? window.location.search : "");
-    SN.showcaseNames = ["street", "drive", "night", "river", "chase", "mission", "map", "slope", "closeup", "carclose", "rain"];
+    SN.showcaseNames = ["street", "drive", "night", "river", "chase", "mission", "map", "slope", "closeup", "carclose", "rain", "mall", "bar", "base"];
     SN.shotName = SN.devMode && shotMatch && SN.showcaseNames.includes(shotMatch[1]) ? shotMatch[1] : null;
     SN.showcase = null;
     SN.perfEnabled = /(?:^|[?&])perf=1(?:&|$)/.test(window.location ? window.location.search : "");
@@ -7032,12 +7032,17 @@ void main(){
         const armSegments = armWeightSegments(proto, side);
         const x0 = 0.155;
         const x1 = long ? Math.abs(hand.x) + 0.004 : SN.lerp(Math.abs(upper.x), Math.abs(lower.x), 0.6) + 0.006;
-        const endY = long ? hand.y : SN.lerp(upper.y, lower.y, 0.6);
-        const endZ = long ? hand.z : SN.lerp(upper.z, lower.z, 0.6);
+        // Long sleeves end on the measured wrist-skin centre, not on the bone:
+        // the skin sits a few millimetres off the joint, and a ring on the bone
+        // hugs one side of the wrist while opening a gap on the other.
+        const gauge = proto.armGauge || {};
+        const endY = long ? hand.y + (gauge.wristDY || 0) + 0.006 : SN.lerp(upper.y, lower.y, 0.6);
+        const endZ = long ? hand.z + (gauge.wristDZ || 0) : SN.lerp(upper.z, lower.z, 0.6);
+        const cuffY = endY - 0.006;
         const axis = new SN.T.Vector3(side, 0, 0), up = new SN.T.Vector3(0, 1, 0);
         const normal = new SN.T.Vector3().crossVectors(axis, up);
-        const wristR = (proto.armGauge && proto.armGauge.wrist) || 0.042;
-        const bicepR = (proto.armGauge && proto.armGauge.bicep) || 0.052;
+        const wristR = (gauge.wrist) || 0.042;
+        const bicepR = (gauge.bicep) || 0.052;
         // Fit the sleeve to the measured arm. A wrist is about 2.9 cm in radius;
         // the old 1.4 cm ease made a 4.6 cm bell, so the hand looked pasted into
         // the opening. Six millimetres sits like a real shirt cuff and still
@@ -7060,23 +7065,24 @@ void main(){
         const lastStation = ringList[ringList.length - 1];
         const cuffX = x1 * side - side * 0.018;
         const cuffRadius = long ? endRadius : endRadius + 0.002;
-        const cuff = addGarmentRing(builder, { x: cuffX, y: endY - 0.006, z: endZ },
+        const cuff = addGarmentRing(builder, { x: cuffX, y: cuffY, z: endZ },
           up, normal, cuffRadius, cuffRadius, sleeveSegments, 1,
           point => sleeveWeightsFor(proto, point, side, armSegments), 0, 0.28);
         stitchGarmentRings(builder, lastStation, cuff);
-        // Fold the cuff back inside so the sleeve end reads as a hem instead of
-        // an open paper tube. The folded lip now stops just outside the wrist
-        // (2 mm of clearance) so it hugs the arm instead of leaving a ring of
-        // daylight between the cuff and the hand.
-        const foldRadius = long ? wristR + 0.004 : endRadius * 0.9;
-        const innerCuff = addGarmentRing(builder, { x: cuffX - side * 0.045, y: endY - 0.006, z: endZ },
-          up, normal, foldRadius, foldRadius, sleeveSegments, 1,
+        // Close the sleeve with a flat rim instead of a 4.5 cm lining folded back
+        // along the arm. The old lining sat inside the forearm, where the muscle
+        // is 7 mm thicker, and the skin tore through it in a zigzag at every step.
+        // The rim's inner ring now sits inside the flesh, so the visible edge is
+        // always the clean circle where cloth meets skin.
+        const rimRadius = cuffRadius * (long ? 0.72 : 0.78);
+        const innerCuff = addGarmentRing(builder, { x: cuffX - side * 0.012, y: cuffY, z: endZ },
+          up, normal, rimRadius, rimRadius, sleeveSegments, 1,
           point => sleeveWeightsFor(proto, point, side, armSegments), 0, 0.28);
         stitchGarmentRings(builder, cuff, innerCuff);
         const indices = [];
         const step = Math.max(1, Math.ceil(sleeveSegments / 6));
         for (let s = 0; s < sleeveSegments; s += step) indices.push(cuff.start + s);
-        cuffs.push({ side, indices, x: cuffX, y: endY - 0.006, z: endZ, radius: cuffRadius });
+        cuffs.push({ side, indices, x: cuffX, y: cuffY, z: endZ, radius: cuffRadius, rim: rimRadius });
       }
     }
     return finishGarment(builder, { cuffs });
@@ -7344,9 +7350,25 @@ void main(){
     // was a single wrist bump and inflated every sleeve by nearly 2 cm.
     const wrist = band(lower, hand, 0.9, 0.99, 0.5);
     const bicep = band(upper, lower, 0.45, 0.68, 0.5);
+    // The cuff has to wrap the wrist skin, not the bone. The skin centroid in
+    // the wrist band sits several millimetres off the joint, so a ring centred
+    // on hand.y / hand.z presses into the arm on one side and leaves daylight
+    // on the other — exactly what reads as "the hand is not attached".
+    const sx = hand.x - lower.x, sy = hand.y - lower.y, sz = hand.z - lower.z;
+    const len2 = Math.max(1e-6, sx * sx + sy * sy + sz * sz);
+    let sumY = 0, sumZ = 0, samples = 0;
+    for (let i = 0; i < pos.count; i++) {
+      const px = pos.getX(i);
+      const t = ((px - lower.x) * sx + (pos.getY(i) - lower.y) * sy + (pos.getZ(i) - lower.z) * sz) / len2;
+      if (t < 0.9 || t > 0.99) continue;
+      sumY += pos.getY(i); sumZ += pos.getZ(i); samples++;
+    }
+    const wristDY = samples ? Math.max(-0.02, Math.min(0.02, sumY / samples - hand.y)) : 0;
+    const wristDZ = samples ? Math.max(-0.02, Math.min(0.02, sumZ / samples - hand.z)) : 0;
     return {
       wrist: Math.max(0.028, Math.min(0.055, wrist === null ? 0.042 : wrist)),
-      bicep: Math.max(0.036, Math.min(0.07, bicep === null ? 0.052 : bicep))
+      bicep: Math.max(0.036, Math.min(0.07, bicep === null ? 0.052 : bicep)),
+      wristDY, wristDZ
     };
   }
 
@@ -9520,13 +9542,23 @@ void main(){
     if (!Number.isFinite(x) || !Number.isFinite(z))
       return 0;
     let precise = -Infinity;
+    // A roof, terrace or elevated ramp registers its own walkable patch. When a
+    // car or a person is already down on the street under it, that patch must not
+    // win just because it is higher: the hint rejects anything far above the
+    // current floor, so the ground level stays underneath an overpass.
+    const reach = Number.isFinite(floorHint) ? floorHint + 1.6 : Infinity;
     for (const p of SN.localSurfacePatches)
-      if (x >= p.minX && x <= p.maxX && z >= p.minZ && z <= p.maxZ && p.test(x, z))
-        precise = Math.max(precise, p.height(x, z));
+      if (x >= p.minX && x <= p.maxX && z >= p.minZ && z <= p.maxZ && p.test(x, z)) {
+        const h = p.height(x, z);
+        if (h <= reach)
+          precise = Math.max(precise, h);
+      }
     if (Number.isFinite(precise))
       return precise;
     const sample = SN.roadSample(x, z, 0, floorHint);
-    if (sample) {
+    // The same rule applies to roads: a person or car already down on the street
+    // must not be snapped up onto an overpass that happens to own this footprint.
+    if (sample && (floorHint === null || sample.height <= floorHint + 1.6)) {
       const road = sample.profile, carriageway = sample.distance < road.width / 2;
       return sample.height + (carriageway ? 0.17 : 0.35) + (carriageway ? Math.max(0, 1 - Math.abs(sample.across) / (road.width / 2)) * 0.025 : 0);
     }
@@ -9541,9 +9573,17 @@ void main(){
       b = SN.surfaceGrid[i + 1],
       c = SN.surfaceGrid[i + SN.SURFACE_SIZE],
       d = SN.surfaceGrid[i + SN.SURFACE_SIZE + 1];
-    if (SN.surfaceTypes[i] === 3 || SN.surfaceTypes[i + 1] === 3 || SN.surfaceTypes[i + SN.SURFACE_SIZE] === 3 || SN.surfaceTypes[i + SN.SURFACE_SIZE + 1] === 3)
-      return Math.max(a, b, c, d);
-    return SN.lerp(SN.lerp(a, b, u), SN.lerp(c, d, u), v);
+    const gridHeight = SN.surfaceTypes[i] === 3 || SN.surfaceTypes[i + 1] === 3 || SN.surfaceTypes[i + SN.SURFACE_SIZE] === 3 || SN.surfaceTypes[i + SN.SURFACE_SIZE + 1] === 3
+      ? Math.max(a, b, c, d)
+      : SN.lerp(SN.lerp(a, b, u), SN.lerp(c, d, u), v);
+    // A bridge deck is meshed into the coarse ground grid too. Someone walking on the
+    // bank underneath must keep the natural ground rather than be lifted onto the deck.
+    if (Number.isFinite(floorHint) && gridHeight > floorHint + 1.6) {
+      const natural = SN.hillHeight(x, z);
+      if (natural <= floorHint + 1.6)
+        return natural;
+    }
+    return gridHeight;
   };
   // Highest surface inside the foot disc: keeps a planted sole from sinking when
   // the character straddles a kerb or a stair edge.
@@ -10572,8 +10612,12 @@ void main(){
         continue;
       const height = SN.roadProfileHeight(profile, closest.s);
       let score = distance;
+      // At a crossing the two centre lines are both at distance zero, so height
+      // is what tells the wheels which road they belong to. A level difference of
+      // one metre costs far more than any plausible sideways offset, which keeps
+      // the lower street from snapping up onto an overpass (and back down again).
       if (hint !== null)
-        score += Math.max(0, Math.abs(height - hint) - 1.25) * 8;
+        score += Math.max(0, Math.abs(height - hint) - 0.35) * 20;
       if (score < bestScore - 1e-6 ||
         (Math.abs(score - bestScore) < 1e-6 && best && height < best.height)) {
         bestScore = score;
@@ -13299,10 +13343,10 @@ void main(){
       // foliage instead of a single low-poly ball.
       for (let i = 0; i < 3; i++) {
         const a = i * SN.TAU / 3;
-        SN.record(SN.leafBatch, x + Math.sin(a) * 1.2 * scale, y + (6.1 + i * 0.45) * scale, z + Math.cos(a) * 1.2 * scale, 2.9 * scale, 3 * scale, 2.8 * scale, a, [0x668970, 0x719b78, 0x8ca67c][i]);
+        SN.record(SN.leafBatch, x + Math.sin(a) * 1.2 * scale, y + (6.1 + i * 0.45) * scale, z + Math.cos(a) * 1.2 * scale, 2.9 * scale, 3 * scale, 2.8 * scale, a, [0x7d9c80, 0x8aab84, 0xa3bb8e][i]);
       }
-      SN.record(SN.leafBatch, x + SN.rand(-0.4, 0.4) * scale, y + 4.9 * scale, z + SN.rand(-0.4, 0.4) * scale, 3.6 * scale, 2.1 * scale, 3.4 * scale, SN.rand(0, SN.TAU), 0x587a5a);
-      SN.record(SN.leafBatch, x + SN.rand(-0.5, 0.5) * scale, y + 8.35 * scale, z + SN.rand(-0.5, 0.5) * scale, 2 * scale, 1.8 * scale, 1.9 * scale, SN.rand(0, SN.TAU), 0x8aa87e);
+      SN.record(SN.leafBatch, x + SN.rand(-0.4, 0.4) * scale, y + 4.9 * scale, z + SN.rand(-0.4, 0.4) * scale, 3.6 * scale, 2.1 * scale, 3.4 * scale, SN.rand(0, SN.TAU), 0x6c8e68);
+      SN.record(SN.leafBatch, x + SN.rand(-0.5, 0.5) * scale, y + 8.35 * scale, z + SN.rand(-0.5, 0.5) * scale, 2 * scale, 1.8 * scale, 1.9 * scale, SN.rand(0, SN.TAU), 0xa2bb90);
     }
   };
 
@@ -13514,6 +13558,10 @@ void main(){
         continue;
       if (SN.hillHeight(x, z) > 2.5)
         continue;
+      // The military compound is paved even where the terrain layer still reads
+      // as grass, so its asphalt must not sprout tufts.
+      if (SN.military && x > SN.military.x0 && x < SN.military.x1 && z > SN.military.z0 && z < SN.military.z1)
+        continue;
       const s = SN.rand(0.6, 1.3);
       SN.dummy.position.set(x, SN.surfaceHeight(x, z), z);
       SN.dummy.rotation.set(0, SN.rand(0, SN.TAU), 0);
@@ -13651,6 +13699,12 @@ void main(){
       light: SN.pbrMat("paint", 0xffe9c8, { uvScale: 0.5, emissive: 0x9fe0cc, emissiveIntensity: 0.7, roughness: 0.42 })
     };
     SN.cityPalette.silver = SN.pbrMat("metal", 0xb4d5ec, { uvScale: 0.16, metalness: 0.6, roughness: 0.5, envMapIntensity: 0.7 });
+    // Warm sodium lamp glass: the shared "light" material is a mint-white strip
+    // for vehicle lamps, which reads wrong on a plaza street lamp.
+    SN.cityPalette.warmLamp = SN.pbrMat("paint", 0xffe2b0, { uvScale: 0.5, emissive: 0xffb45e, emissiveIntensity: 1.5, roughness: 0.5 });
+    SN.cityPalette.plazaPink = SN.pbrMat("paint", 0xff5d9e, { uvScale: 0.5, emissive: 0xff2f80, emissiveIntensity: 1.25, roughness: 0.5 });
+    SN.cityPalette.plazaCyan = SN.pbrMat("paint", 0x5fe6da, { uvScale: 0.5, emissive: 0x2fd0c2, emissiveIntensity: 1.1, roughness: 0.5 });
+    SN.neonMats.push(SN.cityPalette.warmLamp, SN.cityPalette.plazaPink, SN.cityPalette.plazaCyan);
     SN.cityPalette.curtain = SN.buildingMats[3].clone();
     SN.cityPalette.curtain.onBeforeCompile = shader => {
       SN.buildingMats[3].onBeforeCompile(shader);
@@ -13745,8 +13799,10 @@ void main(){
       SN.cityPart(g, "cream", 0, 2.4, 36, 150, 0.5, 5);
       SN.cityPart(g, "glass", 0, 13, 34, 138, 13, 1);
       for (const x of [-54, 0, 54]) {
-        SN.cityPart(g, "cream", x, 22, 0, 23, 12, 38, 0, new SN.T.CylinderGeometry(1, 1, 1, 12), SN.PI / 2);
-        SN.cityPart(g, "gold", x, 28, 0, 4, 1, 70);
+        // Barrel vault over the concourse: length (h) runs along z and the
+        // section radii (w/d) give a 23 x 12 m profile.
+        SN.cityPart(g, "cream", x, 24.5, 0, 11.5, 38, 6, 0, new SN.T.CylinderGeometry(1, 1, 1, 12), SN.PI / 2);
+        SN.cityPart(g, "gold", x, 30.9, 0, 1.2, 0.8, 40);
       }
       SN.cityPart(g, "stone", 0, 0.2, 70, 175, 0.4, 65);
       SN.citySolid(g, 0, 0, 150, 65, 28);
@@ -13785,11 +13841,107 @@ void main(){
     // Hongdae busking square and Sinchon campus cloisters.
     {
       const g = SN.cityGroup(-1900, -570, 1300);
-      SN.cityPart(g, "stone", 0, 0.15, 0, 170, 0.3, 95);
+      // A flush stone paving, not a 30 cm raised deck: the props and pedestrian
+      // surface all sit at the group's ground level, so a thick slab would sink
+      // everyone to the ankles across the whole square.
+      SN.cityPart(g, "stone", 0, 0.02, 0, 170, 0.06, 95);
+      // The square is 170 x 95 m: one uniform slab reads as a car park. Band it
+      // like a real plaza - a dark perimeter, a stone grid and a dark apron in
+      // front of the stage - so the eye gets scale cues at ground level.
+      for (const side of [-1, 1]) {
+        SN.cityPart(g, "dark", side * 83, 0.055, 0, 3.6, 0.012, 95);
+        SN.cityPart(g, "dark", 0, 0.055, side * 46, 170, 0.012, 3.6);
+      }
+      for (const x of [-62, -28, 28, 62])
+        SN.cityPart(g, "dark", x, 0.052, 0, 1.1, 0.012, 92);
+      for (const z of [-30, -15, 15, 30])
+        SN.cityPart(g, "dark", 0, 0.052, z, 166, 0.012, 1.1);
+      SN.cityPart(g, "dark", 50, 0.054, -14, 38, 0.012, 18);
+      // Busking stage: wooden deck, dark backdrop, truss and warm deck lights.
       SN.cityPart(g, "wood", 50, 0.6, -27, 30, 1.2, 14);
+      SN.cityPart(g, "dark", 50, 3, -34.1, 30, 5.6, 0.5);
+      SN.cityPart(g, "plazaPink", 50, 4.9, -33.82, 26, 0.12, 0.05);
+      SN.cityPart(g, "plazaCyan", 50, 1.7, -33.82, 26, 0.08, 0.05);
       for (const x of [32, 68]) {
         SN.cityPart(g, "dark", x, 2, -27, 2, 4, 2);
         SN.cityPart(g, "gold", x, 6, -27, 0.25, 8, 0.25);
+      }
+      for (const x of [34, 66])
+        SN.cityPart(g, "silver", x, 7.4, -24, 0.18, 0.18, 0.18);
+      SN.cityPart(g, "silver", 50, 7.4, -24, 32, 0.18, 0.18);
+      for (const x of [40, 46, 54, 60])
+        SN.cityPart(g, "warmLamp", x, 7.05, -24, 1.1, 0.5, 0.7);
+      // Spectator barriers facing the deck keep the busking circle readable.
+      for (let i = 0; i < 6; i++) {
+        const x = 32 + i * 7.2;
+        SN.cityPart(g, "silver", x, 1.05, -16.5, 6.6, 0.09, 0.09);
+        SN.cityPart(g, "silver", x, 0.56, -16.5, 6.6, 0.07, 0.07);
+        for (const side of [-1, 1])
+          SN.cityPart(g, "silver", x + side * 3.2, 0.55, -16.5, 0.09, 1.1, 0.09);
+      }
+      // Market corner along the north edge: three awning stalls with counters.
+      for (const [i, sx] of [-70, -57, -44].entries()) {
+        const aw = ["red", "cream", "teal"][i];
+        SN.cityPart(g, "wood", sx, 0.55, -29, 5, 1.1, 2.8);
+        SN.cityPart(g, "dark", sx, 1.5, -30.2, 5, 2.6, 0.18);
+        for (const side of [-1, 1])
+          SN.cityPart(g, "dark", sx + side * 2.35, 1.4, -29, 0.14, 2.8, 0.14);
+        SN.cityPart(g, aw, sx, 2.85, -29, 5.8, 0.16, 3.6);
+        SN.cityPart(g, aw, sx, 2.4, -27.25, 5.8, 0.42, 0.08);
+        SN.cityPart(g, i === 1 ? "plazaCyan" : "plazaPink", sx, 2.18, -27.2, 5.6, 0.06, 0.05);
+        SN.cityPart(g, "warmLamp", sx, 2.62, -30.1, 3.6, 0.16, 0.1);
+        SN.cityPart(g, "gold", sx, 0.78, -27.55, 0.9, 0.06, 0.45);
+      }
+      // Café corner on the south side: parasols, round tables and stools, with
+      // two runs of festoon lights overhead so the corner reads after dark.
+      for (const z of [14, 30]) {
+        for (const x of [-72, -18])
+          SN.cityPart(g, "silver", x, 1.65, z, 0.1, 3.3, 0.1);
+        SN.cityPart(g, "dark", -45, 3.3, z, 54, 0.03, 0.03);
+        for (let i = 0; i < 13; i++)
+          SN.cityPart(g, "warmLamp", -70.5 + i * 4.3, 3.18, z, 0.16, 0.2, 0.16);
+      }
+      for (const [tx, tz, uk] of [[-60, 16, "red"], [-42, 31, "cream"], [-24, 16, "teal"], [-60, 34, "cream"]]) {
+        SN.cityPart(g, "silver", tx, 1.3, tz, 0.12, 2.6, 0.12);
+        SN.cityPart(g, uk, tx, 2.6, tz, 4.6, 0.34, 4.6, 0, new SN.T.CylinderGeometry(1, 1, 1, 8));
+        SN.cityPart(g, "dark", tx, 0.74, tz, 2.2, 0.1, 2.2, 0, new SN.T.CylinderGeometry(1, 1, 1, 16));
+        SN.cityPart(g, "silver", tx, 0.37, tz, 0.14, 0.74, 0.14);
+        for (const a of [0.2, 2.3, 4.4]) {
+          const px = tx + Math.sin(a) * 1.6, pz = tz + Math.cos(a) * 1.6;
+          SN.cityPart(g, "dark", px, 0.44, pz, 0.5, 0.07, 0.5);
+          SN.cityPart(g, "silver", px, 0.22, pz, 0.07, 0.44, 0.07);
+        }
+      }
+      // Planters and banner poles frame the entrances without blocking the alley.
+      for (const [px, pz] of [[-80, -20], [-80, 20], [80, -20], [80, 20], [15, 40], [-15, -40]]) {
+        SN.cityPart(g, "stone", px, 0.3, pz, 3.6, 0.6, 3.6);
+        SN.cityPart(g, "grass", px, 0.68, pz, 3.1, 0.4, 3.1);
+      }
+      for (const [bx, bz, bk] of [[78, -13, "red"], [78, 13, "teal"], [78, -21, "gold"]]) {
+        SN.cityPart(g, "silver", bx, 4, bz, 0.12, 8, 0.12);
+        SN.cityPart(g, bk, bx - 0.7, 6.4, bz, 1.3, 2.4, 0.06);
+      }
+      // Street lamps on the two long edges. Their glow sprites are queued here
+      // and created in phase 18: the shared glow material does not exist yet
+      // while the props phase is building.
+      SN.hongdaeLampGlows = [];
+      for (const x of [-72, -36, 0, 36, 72])
+        for (const z of [-38, 38]) {
+          SN.cityPart(g, "dark", x, 2.9, z, 0.18, 5.8, 0.18);
+          SN.cityPart(g, "warmLamp", x, 5.85, z, 0.9, 0.34, 0.9);
+          SN.cityPart(g, "dark", x, 6.06, z, 1.0, 0.1, 1.0);
+          SN.hongdaeLampGlows.push([g.position.x + x, g.position.y + 5.85, g.position.z + z]);
+        }
+      // Corner trees soften the hard edge of the plaza.
+      for (const [tx, tz] of [[-77, -41], [77, -41], [-77, 41], [77, 41]]) {
+        const ty = g.position.y + 0.05;
+        SN.addProp(tx, tz, 0.9, 0.9, 6.8);
+        SN.record(SN.trunkBatch, tx, ty + 3.4, tz, 0.5, 6.8, 0.5);
+        for (let i = 0; i < 3; i++) {
+          const a = i * SN.TAU / 3;
+          SN.record(SN.leafBatch, tx + Math.sin(a) * 1.3, ty + 6.7 + i * 0.5, tz + Math.cos(a) * 1.3, 3.1, 3.2, 3, a, [0x7d9c80, 0x8aab84, 0xa3bb8e][i]);
+        }
+        SN.record(SN.leafBatch, tx, ty + 5.4, tz, 3.9, 2.3, 3.7, SN.rand(0, SN.TAU), 0x6c8e68);
       }
       for (let i = 0; i < 9; i++)
         SN.cityPart(g, "red", -64 + i * 16, 0.65, 25, 6, 0.3, 1.5);
@@ -13840,13 +13992,84 @@ void main(){
     {
       const g = SN.cityGroup(1760, 1330, 2600);
       SN.cityPart(g, "glass", 0, 16, 0, 265, 32, 180);
+      // Scale is applied before rotation: a barrel lying along z needs its length
+      // in h and its radius in w/d, or it becomes a 380 m cream wall.
       for (let i = 0; i < 5; i++)
-        SN.cityPart(g, "cream", -112 + i * 56, 37, 0, 35, 9, 190, 0, new SN.T.CylinderGeometry(1, 1, 1, 6), SN.PI / 2);
+        SN.cityPart(g, "cream", -112 + i * 56, 36.6, 0, 17.5, 190, 4.6, 0, new SN.T.CylinderGeometry(1, 1, 1, 6), SN.PI / 2);
       SN.cityPart(g, "teal", 0, 5, 93, 235, 10, 8);
       SN.cityWindows(g, 0, 0, 265, 180, 32);
       SN.citySolid(g, 0, 0, 265, 180, 40);
-      SN.cityLabel(g, "삼성 · 겹빛 컨벤션 / 몰", 99, 60);
+      // 겹빛 몰: a grand glass entrance, an escalator stair down to a paved
+      // forecourt, and a fountain court with kiosks so the mall has a real front
+      // instead of ending at a blank wall.
+      SN.cityPart(g, "stone", 0, 0.12, 128, 170, 0.24, 62);
+      SN.cityPart(g, "stone", 0, 0.28, 128, 60, 0.08, 56);
+      for (const side of [-1, 1]) {
+        SN.cityPart(g, "gold", side * 44, 13, 99, 5, 26, 5);
+        SN.cityPart(g, "cream", side * 44, 27, 99, 7, 3, 7);
+        SN.citySolid(g, side * 44, 99, 5, 5, 29);
+      }
+      SN.cityPart(g, "cream", 0, 27, 99, 93, 4, 8);
+      SN.cityPart(g, "glass", 0, 12, 97, 76, 24, 1);
+      SN.cityPart(g, "dark", 0, 5, 96.5, 18, 10, 1);
+      SN.cityPart(g, "glass", 0, 24.8, 112, 96, 0.8, 30);
+      // Ribs under the glass canopy: without them the 30 m awning reads as a
+      // floating pale sheet from the forecourt.
+      for (let i = -3; i <= 3; i++)
+        SN.cityPart(g, "silver", i * 14, 24.34, 112, 0.5, 0.5, 30);
+      SN.cityPart(g, "silver", 0, 24.34, 126.7, 96, 0.55, 0.55);
+      SN.cityPart(g, "gold", 0, 30.2, 99, 100, 2.2, 1.2);
+      SN.cityPart(g, "curtain", 76, 20, 90.6, 56, 14, 0.5);
+      SN.cityPart(g, "curtain", -76, 20, 90.6, 56, 14, 0.5);
+      for (const x of [-100, -88, 88, 100])
+        SN.cityPart(g, "cream", x, 16, 90.8, 3, 32, 1.4);
+      for (const side of [-1, 1])
+        SN.cityPart(g, "silver", side * 47, 12, 126, 0.8, 24, 0.8);
+      for (let i = 0; i < 6; i++)
+        SN.cityPart(g, "stone", 0, 0.28 + i * 0.4, 108 - i * 2.4, 46 - i * 3, 0.4, 2.4);
+      SN.cityPart(g, "teal", 0, 0.62, 131, 25, 0.06, 17, 0, new SN.T.CylinderGeometry(1, 1, 1, 32));
+      SN.cityPart(g, "stone", 0, 0.32, 131, 28, 0.62, 20, 0, new SN.T.CylinderGeometry(1, 1, 1, 32));
+      SN.cityPart(g, "gold", 0, 4.6, 131, 0.9, 8.6, 0.9);
+      SN.cityPart(g, "gold", 0, 8.6, 131, 3.2, 1.1, 3.2, SN.PI / 4, SN.box);
+      for (const side of [-1, 1]) for (let i = 0; i < 3; i++) {
+        const x = side * (36 + i * 9), z = 118 + i * 10;
+        SN.cityPart(g, "dark", x, 1.15, z, 6.4, 2.3, 3.8);
+        SN.cityPart(g, "cream", x, 2.15, z - 1.92, 6, 0.7, 0.08);
+        SN.cityPart(g, "red", x, 2.55, z, 7.2, 0.22, 4.6);
+        SN.cityPart(g, "cream", x, 2.75, z, 7.6, 0.18, 5);
+        SN.citySolid(g, x, z, 7.6, 5, 3.4);
+      }
+      for (const side of [-1, 1]) for (let i = 0; i < 2; i++) {
+        const x = side * (16 + i * 8), z = 146;
+        SN.cityPart(g, "wood", x, 0.62, z, 3.4, 0.16, 0.8);
+        SN.cityPart(g, "wood", x, 1.02, z - 0.35, 3.4, 0.7, 0.12);
+        SN.cityPart(g, "dark", x, 0.3, z, 0.16, 0.6, 0.6);
+      }
+      for (const side of [-1, 1]) for (let i = 0; i < 3; i++) {
+        const x = side * (68 + i * 4), z = 120 + i * 12;
+        SN.cityPart(g, "cream", x, 0.75, z, 2.2, 1.5, 2.2);
+        SN.cityPart(g, "teal", x, 1.62, z, 2.4, 0.3, 2.4);
+      }
+      SN.citySolid(g, 0, 131, 28, 20, 1.2);
+      // Forecourt furniture: bollards along the street edge and shin-high
+      // planters with clipped shrubs frame the fountain.
+      for (let i = -5; i <= 5; i++) {
+        SN.cityPart(g, "dark", i * 15, 0.45, 156, 0.5, 0.9, 0.5);
+        SN.cityPart(g, "gold", i * 15, 0.92, 156, 0.58, 0.1, 0.58);
+      }
+      for (const x of [-40, 40]) {
+        SN.cityPart(g, "stone", x, 0.55, 146, 4.4, 1.1, 3.2);
+        SN.cityPart(g, "grass", x, 1.16, 146, 4, 0.14, 2.8);
+        SN.cityPart(g, "grass", x, 1.95, 146, 2.6, 1.5, 2.2, 0, new SN.T.SphereGeometry(1, 8, 6));
+        SN.citySolid(g, x, 146, 4.4, 3.2, 2.4);
+      }
+      // One entrance sign only: two labels at the same depth overlapped into
+      // unreadable double lettering.
+      SN.cityLabel(g, "겹빛몰 · 대형상가 大商场", 104, 46);
       SN.finishCityGroup(g);
+      for (const side of [-1, 1])
+        for (let i = 0; i < 3; i++)
+          SN.tree(1760 + side * (84 + i * 6), 1330 + 142 + i * 8, false, 0.9);
     }
     {
       const g = SN.cityGroup(770, 1510, 1800);
@@ -14066,7 +14289,7 @@ void main(){
     SN.foliageFocus = { value: new SN.T.Vector3() };
     SN.leafMat = SN.pbrMat("grass", 0xffffff, { uvScale: 0.4, flatShading: true, roughness: 1, metalness: 0, envMapIntensity: 0.25, emissive: 0x355d45, emissiveIntensity: 0.18 });
     const leafCompile = SN.leafMat.onBeforeCompile;
-    SN.leafMat.customProgramCacheKey = () => "foliage-camera-corridor-v1";
+    SN.leafMat.customProgramCacheKey = () => "foliage-camera-corridor-v2";
     SN.leafMat.onBeforeCompile = shader => {
       leafCompile(shader);
       shader.uniforms.uFoliageFocus = SN.foliageFocus;
@@ -14075,9 +14298,9 @@ void main(){
         vec3 boom = uFoliageFocus - cameraPosition;
         float along = clamp(dot(vPbrWorld - cameraPosition, boom) / max(dot(boom, boom), .01), 0., 1.);
         float corridor = length(vPbrWorld - cameraPosition - boom * along);
-        float keep = min(smoothstep(2.0, 3.4, corridor), smoothstep(2.8, 4.6, distance(vPbrWorld, cameraPosition)));
-        float dither = fract(dot(floor(gl_FragCoord.xy), vec2(.75487766, .56984029)));
-        if (dither > mix(.035, 1., keep)) discard;`);
+        float keep = min(smoothstep(1.1, 2.1, corridor), smoothstep(1.5, 2.6, distance(vPbrWorld, cameraPosition)));
+        float dither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+        if (dither > mix(.03, 1., keep)) discard;`);
     };
     SN.poleMat = SN.pbrMat("metal", 0x768688, { uvScale: 0.6, metalness: 0.55, roughness: 0.62 });
     SN.lampGlow = SN.pbrMat("paint", 0xfff0d0, { uvScale: 0.8, emissive: 0xffd791, emissiveIntensity: 0, roughness: 0.4 });
@@ -14151,6 +14374,12 @@ void main(){
       SN.poolBatch[i].sy = 1;
     }
     SN.buildInstances(SN.poolGeo, SN.poolMat, SN.poolBatch, false);
+  });
+  // Startup phase 18.5: the plaza lamp halos, once the shared glow material exists.
+  SN.registerInit(18.5, function initializePlazaGlows() {
+    for (const p of SN.hongdaeLampGlows || [])
+      SN.glow(SN.scene, p[0], p[1], p[2], 1.45, 0xffd9a0);
+    SN.hongdaeLampGlows = null;
   });
   // Startup phase 12: keep this order relative to the other systems.
 
@@ -15027,6 +15256,72 @@ void main(){
     SN.cycleLegs.instanceMatrix.needsUpdate = true;
   };
 
+  // Large open lawns used to be bare green plates. Walk a deterministic grid over
+  // the city and give each suitable patch a grove, a bench and lamp, a picnic
+  // blanket, a flower bed or a low hedge, so the grass reads as used parkland.
+  SN.dressOpenLawns = function dressOpenLawns(batch) {
+    SN.lawnSpots = [];
+    const hash = (i, j, k) => {
+      const v = Math.sin(i * 127.1 + j * 311.7 + k * 74.7) * 43758.5453;
+      return v - Math.floor(v);
+    };
+    const part = (list, x, y, z, w, h, d, color, yaw = 0) =>
+      list.push({ g: SN.box, x, y, z, sx: w, sy: h, sz: d, yaw, pitch: 0, color });
+    for (let i = 0; i < 88; i++)
+      for (let j = 0; j < 76; j++) {
+        if (hash(i, j, 3) > 0.46)
+          continue;
+        const x = -2816 + i * 64 + (hash(i, j, 1) - 0.5) * 26;
+        const z = -2432 + j * 64 + (hash(i, j, 2) - 0.5) * 26;
+        if (SN.isWater(x, z, 5) || SN.onRoadway(x, z, 9) || SN.blocked(x, z, 2.6))
+          continue;
+        if (SN.surfaceTypeAt(x, z) !== 0)
+          continue;
+        if (x > -340 && x < 360 && z > -890 && z < -755)
+          continue;
+        if (Math.hypot(x - 2260, z - 1300) < 165)
+          continue;
+        const y = SN.surfaceHeight(x, z);
+        if (!Number.isFinite(y) || Math.abs(SN.hillHeight(x, z) - SN.hillHeight(x + 6, z + 6)) > 1.6)
+          continue;
+        const roll = hash(i, j, 4), yaw = hash(i, j, 5) * SN.TAU;
+        if (roll < 0.42) {
+          SN.tree(x, z, false, 0.72 + hash(i, j, 6) * 0.4);
+          if (hash(i, j, 7) < 0.62) {
+            const a = hash(i, j, 8) * SN.TAU;
+            SN.tree(x + Math.cos(a) * 4.6, z + Math.sin(a) * 4.6, false, 0.62 + hash(i, j, 9) * 0.3);
+          }
+        } else if (roll < 0.62) {
+          // A bench facing the lawn, with a lamp beside it and a seat registered
+          // so pedestrians in the crowd can actually stop and use it.
+          part(batch.props, x, y + 0.44, z, 1.9, 0.12, 0.55, 0xb98654, yaw);
+          part(batch.props, x - Math.sin(yaw) * 0.26, y + 0.8, z - Math.cos(yaw) * 0.26, 1.9, 0.5, 0.1, 0xb98654, yaw);
+          part(batch.props, x, y + 0.21, z, 0.12, 0.42, 0.5, 0x364954, yaw);
+          SN.benchSpots.push({ x, z, yaw });
+          SN.addOBB(x, z, 1.9, 0.65, 1.05, yaw, y);
+          const lx = x + Math.sin(yaw) * 2.6, lz = z + Math.cos(yaw) * 2.6;
+          part(batch.props, lx, y + 1.5, lz, 0.12, 3, 0.12, 0x3d4b4a);
+          part(batch.props, lx, y + 3.02, lz, 0.5, 0.18, 0.5, 0xe9d8a6);
+        } else if (roll < 0.78) {
+          part(batch.fabric, x, y + 0.035, z, 2.6, 0.04, 2.1, [0xd86f6f, 0xe3b04f, 0x5fa7b8][Math.floor(hash(i, j, 9) * 3)], yaw);
+          part(batch.props, x + Math.cos(yaw) * 0.9, y + 0.24, z + Math.sin(yaw) * 0.9, 0.5, 0.3, 0.35, 0xc9a96a, yaw + 0.4);
+        } else if (roll < 0.92) {
+          for (let k = 0; k < 5; k++) {
+            const a = k * SN.TAU / 5 + yaw;
+            part(batch.grass, x + Math.sin(a) * 1.7, y + 0.2, z + Math.cos(a) * 1.7, 0.9, 0.3, 0.9,
+              [0xe6a8b4, 0xe8cf78, 0xc78fce][k % 3], a);
+          }
+          part(batch.paving, x, y + 0.015, z, 5, 0.03, 5, 0xcfc9b4, yaw);
+        } else {
+          for (let k = 0; k < 3; k++) {
+            const a = yaw + k * 1.3;
+            part(batch.grass, x + Math.sin(a) * 2.6, y + 0.55, z + Math.cos(a) * 2.6, 2.4, 1.1, 1.1, 0x6f9b62, a);
+          }
+        }
+        SN.lawnSpots.push({ x, z, y });
+      }
+  };
+
   SN.registerInit(17.6, function* initializeOccupiedLots() {
     SN.lookLots = []; SN.lookParking = [];
     SN.lookTentGeo = new SN.T.BufferGeometry();
@@ -15066,6 +15361,12 @@ void main(){
         if (lot) SN.buildLookLot(lot, "camp", batch);
       }
     }
+    yield "铺设草坪设施";
+    // Planting trees consumes the simulation's random stream; put the seed back
+    // so colours and spawn choices later in the build stay as authored.
+    const lawnSeed = SN.seed;
+    SN.dressOpenLawns(batch);
+    SN.seed = lawnSeed;
     SN.staticCityTiles(SN.detailConcrete, batch.props, 760, 240, false, false);
     SN.staticCityTiles(SN.sidewalk, batch.paving, 650, 240, false, false);
     SN.staticCityTiles(SN.laundryMat, batch.fabric, 500, 240, false, false);
@@ -15846,6 +16147,7 @@ void main(){
         batch.mesh.setColorAt(i, p.colorObject);
       }
     }
+    if (SN.flushNightBar) SN.flushNightBar();
     for (const b of SN.npcBatches) {
       b.mesh.count = b.count;
       if (!b.count)
@@ -15958,6 +16260,10 @@ void main(){
         const nx = SN.player.x + sx, nz = SN.player.z + sz;
         if (Math.abs(nx) > SN.WORLD - 0.3 || Math.abs(nz) > SN.WORLD - 0.3 || SN.isWater(nx, nz, 0.28))
           break;
+        // A raised bank or overpass edge is a wall on foot, not a ramp: without this
+        // the floor snaps the whole body up onto it and it later falls off the far side.
+        if (SN.player.grounded && SN.groundUnder(nx, nz, 0.22, SN.player.y) - SN.player.y > 1.0)
+          continue;
         const hit = SN.resolveCircle(nx, nz, 0.28, SN.player.y);
         SN.player.x = hit.x;
         SN.player.z = hit.z;
@@ -16586,7 +16892,8 @@ void main(){
     }
     const radius = SN.vehicleWheelRadius(spec);
     c.wheelRadius = radius;
-    for (const side of spec.bike ? [0] : [-1, 1])
+    // Tanks ride on their modelled tracks; extra car wheels would float outside them.
+    for (const side of spec.bike ? [0] : spec.tank ? [] : [-1, 1])
       for (const end of [-1, 1]) {
         const pivot = new SN.T.Group(), wheel = new SN.T.Group();
         pivot.position.set(side * (spec.width * 0.48 - 0.135), radius, end * spec.length * (spec.bike ? 0.36 : 0.32));
@@ -16634,6 +16941,7 @@ void main(){
       route,
       index,
       steer: 0,
+      yawRate: 0,
       paint,
       health: 100,
       collisionTimer: 0,
@@ -16873,6 +17181,11 @@ void main(){
   SN.enterExit = function enterExit() {
     if (!SN.canControl() || SN.player.bail || SN.carjack)
       return;
+    if (SN.player.aircraft) {
+      SN.exitAircraft();
+      SN.refreshHUD();
+      return;
+    }
     if (!SN.player.car && SN.useDoor()) {
       SN.refreshHUD();
       return;
@@ -16892,6 +17205,10 @@ void main(){
       SN.toast(SN.player.bail ? "跳车 · 翻滚后起身" : "已下车", 2);
     }
     else {
+      if (SN.military && SN.military.nearest && SN.military.nearestDistance < 5.5 && SN.boardAircraft(SN.military.nearest)) {
+        SN.refreshHUD();
+        return;
+      }
       SN.findNearestCar(true);
       if (!SN.nearestCar || SN.nearDistance > 5.5) {
         SN.toast("靠近任意车辆后按 F，包括正在行驶的车辆。", 3);
@@ -17398,7 +17715,7 @@ void main(){
     // Steering reaches full lock in roughly a tenth of a second; throttle is much sharper than before.
     // A motorcycle leans into a curve instead of snapping to a heading, so its
     // lock builds slower and tightens less at speed than a car's.
-    c.steer = SN.lerp(c.steer, steer, 1 - Math.exp(-dt * (c.spec.bike ? 7.5 : 17)));
+    c.steer = SN.lerp(c.steer, steer, 1 - Math.exp(-dt * (c.spec.bike ? 6 : 17)));
     const spec = c.spec,
       speedAbs = Math.abs(c.speed),
       braking = 24 / Math.sqrt(spec.mass),
@@ -17415,7 +17732,18 @@ void main(){
     // wheels need a much smaller lock than a car or the bike whips sideways.
     const steerAngle = c.steer * (spec.bike ? 0.24 : 0.62) / (1 + speedAbs * (spec.bike ? 0.16 : 0.034));
     const previousYaw = c.yaw;
-    c.yaw -= Math.tan(steerAngle) * c.speed / (spec.length * 0.64) * dt * (handbrake ? 1.45 : 1);
+    if (spec.bike) {
+      // A steering wheel arcs into a turn instead of snapping the nose to a new
+      // heading. Smoothing the bars alone still let the bike pivot on the spot,
+      // so the heading itself follows the target yaw rate with a short lag; the
+      // lean, the handlebar and the arc now arrive together.
+      const targetYawRate = -Math.tan(steerAngle) * c.speed / (spec.length * 0.64) * (handbrake ? 1.45 : 1);
+      c.yawRate = SN.lerp(c.yawRate || 0, targetYawRate, 1 - Math.exp(-dt * 9));
+      c.yaw += c.yawRate * dt;
+    } else {
+      c.yawRate = 0;
+      c.yaw -= Math.tan(steerAngle) * c.speed / (spec.length * 0.64) * dt * (handbrake ? 1.45 : 1);
+    }
     if (SN.carBlocked(c.x, c.z, c.yaw, c)) c.yaw = previousYaw;
     const sn = Math.sin(c.yaw),
       co = Math.cos(c.yaw),
@@ -19530,7 +19858,7 @@ void main(){
         a.x = a.homeX;
         a.z = a.homeZ;
       }
-      if (a.kind === "police")
+      if (a.kind === "police" && !a.guard)
         a.active = false;
     }
     for (const c of SN.pursuitCars) {
@@ -21139,9 +21467,9 @@ void main(){
     const p = SN.roadSpawn(SN.rand(24, 42));
     if (!p)
       return false;
-    let a = SN.actors.find(item => item.kind === "police" && !item.active && !item.inCar);
+    let a = SN.actors.find(item => item.kind === "police" && !item.active && !item.inCar && !item.guard);
     if (!a)
-      a = SN.actors.find(item => item.kind === "police" && !item.inCar && !item.down && Math.hypot(item.x - SN.player.x, item.z - SN.player.z) > 170);
+      a = SN.actors.find(item => item.kind === "police" && !item.inCar && !item.down && !item.guard && Math.hypot(item.x - SN.player.x, item.z - SN.player.z) > 170);
     if (!a)
       return false;
     Object.assign(a, {
@@ -21260,7 +21588,7 @@ void main(){
       return;
     let driver;
     if (role === "police")
-      driver = SN.actors.find(a => a.kind === "police" && !a.active && !a.inCar);
+      driver = SN.actors.find(a => a.kind === "police" && !a.active && !a.inCar && !a.guard);
     else
       driver = SN.actors.find(a => a.kind === "gang" && !a.missionEnemy && a.crew === team && a.active && !a.down && !a.inCar);
     if (!driver)
@@ -22130,7 +22458,7 @@ void main(){
       }
       const distance = Math.hypot(a.x - SN.player.x, a.z - SN.player.z);
       if (distance > 150) {
-        if (a.kind === "police" && SN.heat === 0 && !a.footPolice)
+        if (a.kind === "police" && SN.heat === 0 && !a.footPolice && !a.guard)
           a.active = false;
         continue;
       }
@@ -24149,7 +24477,7 @@ void main(){
     for (const c of SN.crews)
       c.anger = 0;
     for (const officer of SN.actors)
-      if (officer.kind === "police") {
+      if (officer.kind === "police" && !officer.guard) {
         officer.active = false;
         officer.inCar = null;
       }
@@ -24389,8 +24717,21 @@ void main(){
       if (!a)
         continue;
       const role = o.melee ? 0 : o.room && i === count - 1 ? 3 : slot % 3, stats = SN.enemyRoles[role], angle = slot * 2.4;
-      const spot = o.room ? [[-531, 41], [-509, 41], [-523, 40.2], [-513, 45]][i % 4] : [o.x + Math.sin(angle) * (17 + slot % 2 * 4), o.z + Math.cos(angle) * (17 + slot % 2 * 4)],
-        p = SN.safePosition(spot[0], spot[1], 0.4);
+      const spot = o.room ? [[-531, 41], [-509, 41], [-523, 40.2], [-513, 45]][i % 4] : [o.x + Math.sin(angle) * (17 + slot % 2 * 4), o.z + Math.cos(angle) * (17 + slot % 2 * 4)];
+      let p = SN.safePosition(spot[0], spot[1], 0.4);
+      // A straight ring around the objective can drop a fighter on a roof, a
+      // raised terrace or a stair landing. They would be invincible up there and
+      // the mission could never advance, so keep every spawn on the objective's
+      // own walking level and walk the ring inward until one fits.
+      if (!o.room) {
+        const base = SN.surfaceHeight(o.x, o.z), sameLevel = (x, z) => Math.abs(SN.surfaceHeight(x, z) - base) <= 1.2;
+        for (let attempt = 0; attempt < 24 && !sameLevel(p.x, p.z); attempt++) {
+          const a = angle + attempt * 0.83, r = 17 - (attempt % 4) * 2.6;
+          p = SN.safePosition(o.x + Math.sin(a) * r, o.z + Math.cos(a) * r, 0.4);
+        }
+        if (!sameLevel(p.x, p.z))
+          p = SN.safePosition(o.x, o.z, 0.4);
+      }
       Object.assign(a, {
         x: p.x,
         z: p.z,
@@ -27022,7 +27363,9 @@ void main(){
     // interior floor tiling is visible from the street, so it belongs to the shell
     const floorMat = new SN.T.MeshStandardMaterial({ map: SN.shopTileTexture(), color: 0xf3eee2, roughness: 0.62, metalness: 0.02 });
     const floorMesh = new SN.T.Mesh(new SN.T.BoxGeometry(spec.w - 0.1, 0.035, spec.d - 0.1), floorMat);
-    floorMesh.position.set(spec.x, base + 0.018, spec.z);
+    // The walkable floor is `base`; put the visible tile top exactly on it so the
+    // customer's soles and the door mat do not float or sink.
+    floorMesh.position.set(spec.x, base - 0.0175, spec.z);
     floorMesh.receiveShadow = true;
     spec.shellGroup.add(floorMesh);
     // room record and door integration
@@ -27651,7 +27994,8 @@ void main(){
     a.z = a.shopBaseZ;
     if (a.shopState === "surrender") {
       r.root.position.set(a.x, b, a.z);
-      r.root.rotation.y = SN.approachAngle(a.yaw, Math.atan2(SN.player.x - a.x, SN.player.z - a.z), dt * 4);
+      a.yaw = SN.approachAngle(a.yaw, Math.atan2(SN.player.x - a.x, SN.player.z - a.z), dt * 4);
+      r.root.rotation.y = a.yaw;
       r.torso.position.set(0, 0.48, 0);
       r.torso.rotation.set(0, 0, 0);
       r.head.rotation.set(-0.08, 0, Math.sin(time * 13) * 0.05);
@@ -27664,7 +28008,8 @@ void main(){
     if (a.shopState === "greet") {
       a.shopTimer -= dt;
       r.root.position.set(a.x, b, a.z);
-      r.root.rotation.y = SN.approachAngle(a.yaw, Math.atan2(SN.player.x - a.x, SN.player.z - a.z), dt * 4);
+      a.yaw = SN.approachAngle(a.yaw, Math.atan2(SN.player.x - a.x, SN.player.z - a.z), dt * 4);
+      r.root.rotation.y = a.yaw;
       r.torso.position.set(0, 0.48, 0);
       r.torso.rotation.set(0, 0, 0);
       r.head.rotation.set(-0.04, 0, 0);
@@ -28595,6 +28940,1127 @@ void main(){
 })(window.SN);
     </script>
     <script>
+/* 弘大街区的夜间酒吧：霓虹门面、吧台客人与钢管舞舞台。 */
+"use strict";
+(function (SN) {
+  SN.nightBar = null;
+  // The main loop calls this every frame; stays a no-op until the bar is built.
+  SN.updateNightBar = function updateNightBar() {};
+  // Bar guests are drawn through the instanced pedestrian batches, so their own
+  // rigs stay hidden; this appends them after the street crowd has been flushed.
+  SN.flushNightBar = function flushNightBar() {
+    const bar = SN.nightBar;
+    if (!bar || !bar.shown)
+      return;
+    bar.dropped = 0;
+    for (const r of bar.shown) {
+      r.root.updateMatrixWorld(true);
+      for (const p of r.parts) {
+        if (!p.mesh.visible || p.mesh.parent === r.weapon && !r.weapon.visible)
+          continue;
+        const batch = SN.npcBatchMap.get(p.batchKey);
+        if (!batch || batch.count >= batch.capacity) {
+          bar.dropped++;
+          continue;
+        }
+        const i = batch.count++;
+        batch.mesh.setMatrixAt(i, p.mesh.matrixWorld);
+        batch.mesh.setColorAt(i, p.colorObject);
+      }
+    }
+  };
+
+  SN.registerInit(21.5, function initializeNightBar() {
+    const bx = -1867, bz = -556;
+    const ground = SN.footprintTerrain(bx, bz, 20, 14);
+    if (!ground.buildable || SN.isWater(bx, bz, 20))
+      return;
+    // The Hongdae busking square paves this corner of the block. Sit the room
+    // 2 cm above that paving instead of leaving the floor under it, which
+    // buried the dance-floor inlay and sank every guest to the ankles.
+    const plazaTop = SN.surfaceHeight(-1900, -570) + 0.05;
+    const gy = Math.max(ground.high + 0.12, plazaTop + 0.02 - 0.18);
+    const floorTop = gy + 0.18, stageTop = gy + 0.46;
+    const g = SN.cityGroup(bx, bz, 1500, gy);
+
+    // Two extra neon tints live beside the shared palette so they can be batched
+    // with the other landmark geometry instead of becoming loose meshes.
+    if (!SN.cityPalette.neonPink) {
+      SN.cityPalette.neonPink = SN.pbrMat("paint", 0xff4d9a, { uvScale: 0.5, emissive: 0xff2f80, emissiveIntensity: 1.3, roughness: 0.45 });
+      SN.cityPalette.neonCyan = SN.pbrMat("paint", 0x53e6d9, { uvScale: 0.5, emissive: 0x2fd0c2, emissiveIntensity: 1.1, roughness: 0.5 });
+      SN.cityPalette.lampWarm = SN.pbrMat("paint", 0xffe3b8, { uvScale: 0.5, emissive: 0xffd39a, emissiveIntensity: 1.7, roughness: 0.55 });
+      SN.cityPalette.barFloor = SN.pbrMat("wood", 0x4d3628, { uvScale: 0.9, roughness: 0.94 });
+      SN.cityPalette.barWall = SN.pbrMat("wood", 0x3a2830, { uvScale: 0.8, roughness: 0.9 });
+      SN.neonMats.push(SN.cityPalette.neonPink, SN.cityPalette.neonCyan, SN.cityPalette.lampWarm);
+    }
+
+    // ---------- shell ----------
+    SN.cityPart(g, "stone", 0, 0.08, 0, 20, 0.18, 14);
+    SN.cityPart(g, "barFloor", 0, 0.17, 0, 19.4, 0.02, 13.4);
+    SN.cityPart(g, "dark", 0, 4.85, 0, 20.6, 0.35, 15.2);
+    SN.cityPart(g, "barWall", 0, 4.6, 0, 19, 0.12, 13);
+    SN.cityPart(g, "barWall", 0, 2.35, 6.7, 19.4, 4.7, 0.6);
+    SN.cityPart(g, "barWall", 0, 1.35, 6.34, 19, 2.7, 0.12);
+    SN.citySolid(g, 0, 6.7, 19.4, 0.6, 4.7);
+    for (const side of [-1, 1]) {
+      SN.cityPart(g, "barWall", side * 9.7, 2.35, 0, 0.6, 4.7, 13.4);
+      SN.cityPart(g, "barWall", side * 9.34, 1.35, 0, 0.12, 2.7, 13);
+      SN.cityPart(g, "neonCyan", side * 9.28, 2.72, 0, 0.05, 0.06, 12.4);
+      SN.citySolid(g, side * 9.7, 0, 0.6, 13.4, 4.7);
+    }
+    // Warm ceiling panels carry the room's own light and read from the street.
+    for (let i = 0; i < 6; i++)
+      SN.cityPart(g, "lampWarm", -7 + i * 2.8, 4.52, i % 2 ? 4 : 1.4, 2.1, 0.06, 1.2);
+    // Front: gold columns, glass bays and a wide open doorway in the middle.
+    for (const cx of [-9.2, -2.9, 2.9, 9.2]) {
+      SN.cityPart(g, "gold", cx, 2.35, -6.7, 0.7, 4.7, 0.7);
+      SN.cityPart(g, "neonPink", cx, 2.2, -7.07, 0.1, 3.5, 0.1);
+      SN.citySolid(g, cx, -6.7, 0.7, 0.7, 4.7);
+    }
+    for (const side of [-1, 1]) {
+      const cx = side * 6.05;
+      SN.cityPart(g, "glass", cx, 2.05, -6.7, 5.5, 3.5, 0.12);
+      SN.cityPart(g, "dark", cx, 0.32, -6.7, 5.7, 0.5, 0.32);
+      SN.cityPart(g, "neonPink", cx, 3.92, -6.7, 5.5, 0.09, 0.18);
+      SN.citySolid(g, cx, -6.7, 5.7, 0.3, 3.9);
+    }
+    SN.cityPart(g, "cream", 0, 4.2, -6.7, 8.6, 0.85, 0.5);
+    SN.cityPart(g, "neonCyan", 0, 4.2, -6.98, 8.2, 0.07, 0.08);
+    // Canopy and the two shallow steps up from the pavement.
+    SN.cityPart(g, "glass", 0, 3.5, -8.1, 9.4, 0.16, 2.8);
+    SN.cityPart(g, "gold", 0, 3.42, -9.46, 9.6, 0.22, 0.22);
+    for (const side of [-1, 1])
+      SN.cityPart(g, "gold", side * 4.5, 1.75, -9.3, 0.12, 3.4, 0.12);
+    SN.cityPart(g, "stone", 0, -0.03, -8.5, 9.6, 0.18, 2);
+    SN.cityPart(g, "stone", 0, 0.09, -7.05, 9.6, 0.18, 1.3);
+    for (const side of [-1, 1])
+      SN.cityPart(g, "stone", side * 6.5, 0.3, -8.2, 1.3, 0.7, 1.3);
+    // Roof sign: a warm pink neon board above the whole facade.
+    SN.sign("홍대 나이트 · 弘大夜店 · BAR", bx, gy + 5.55, bz - 7.15, 15, 2.1, SN.PI, true);
+
+    // ---------- bar ----------
+    SN.cityPart(g, "dark", -4.6, 0.57, 5.1, 10.6, 1.14, 1.2);
+    SN.cityPart(g, "wood", -4.6, 1.2, 5.1, 11.2, 0.12, 1.55);
+    SN.cityPart(g, "red", -4.6, 0.48, 4.48, 10.8, 0.72, 0.08);
+    SN.cityPart(g, "neonPink", -4.6, 0.14, 4.46, 10.8, 0.06, 0.05);
+    SN.cityPart(g, "silver", -4.6, 0.3, 4.35, 10.6, 0.06, 0.06);
+    SN.citySolid(g, -4.6, 5.1, 11.2, 1.55, 1.3);
+    SN.cityPart(g, "dark", -4.2, 2.35, 6.4, 10.4, 1.8, 0.3);
+    for (const sy of [1.6, 2.3])
+      SN.cityPart(g, "wood", -4.2, sy, 6.25, 10, 0.06, 0.4);
+    SN.cityPart(g, "neonPink", -4.2, 3.1, 6.2, 9.8, 0.06, 0.06);
+    SN.cityPart(g, "neonCyan", -4.2, 1.55, 6.2, 9.8, 0.05, 0.06);
+    for (let i = 0; i < 14; i++) {
+      const key = ["teal", "red", "cream", "gold"][i % 4], x = -8.7 + i * 0.68, row = i % 2;
+      SN.cityPart(g, key, x, 1.8 + row * 0.7, 6.22, 0.16, 0.34, 0.16);
+      SN.cityPart(g, "silver", x, 1.99 + row * 0.7, 6.22, 0.07, 0.05, 0.07);
+    }
+
+    // ---------- stage ----------
+    SN.cityPart(g, "dark", 5.2, 0.32, 3, 7.2, 0.28, 5.4);
+    SN.cityPart(g, "wood", 5.2, 0.45, 3, 7.1, 0.02, 5.3);
+    SN.cityPart(g, "neonPink", 5.2, 0.3, 0.31, 7, 0.07, 0.08);
+    SN.cityPart(g, "neonCyan", 5.2, 0.46, 0.32, 7, 0.04, 0.04);
+    for (const side of [-1, 1]) {
+      SN.cityPart(g, "dark", side < 0 ? 1.7 : 8.7, 1.15, 4.85, 0.8, 1.4, 0.75);
+      SN.cityPart(g, "silver", side < 0 ? 1.7 : 8.7, 1.92, 4.85, 0.5, 0.1, 0.5);
+    }
+    SN.cityPart(g, "dark", 5.2, 0.95, 4.95, 3.4, 0.95, 0.7);
+    SN.cityPart(g, "neonCyan", 5.2, 1.47, 4.95, 3.1, 0.06, 0.5);
+    SN.cityPart(g, "dark", 5.2, 3.05, 6.35, 8, 2.4, 0.14);
+    for (let i = 0; i < 5; i++)
+      SN.cityPart(g, i % 2 ? "neonPink" : "neonCyan", 2.2 + i * 1.5, 3.05, 6.26, 0.75, 2.1, 0.05);
+
+    // Steel pole through the stage up into the ceiling.
+    const steel = SN.cityPalette.silver;
+    const pole = new SN.T.Mesh(new SN.T.CylinderGeometry(0.085, 0.085, 4.2, 12), steel);
+    pole.position.set(5.2, 2.56, 3.2);
+    pole.castShadow = true;
+    g.add(pole);
+    const poleBase = new SN.T.Mesh(new SN.T.CylinderGeometry(0.52, 0.58, 0.06, 18), steel);
+    poleBase.position.set(5.2, 0.49, 3.2);
+    g.add(poleBase);
+    SN.glow(SN.scene, bx + 5.2, floorTop + 2.5, bz + 3.2, 1.35, 0xff9ad0);
+
+    // ---------- lounge tables ----------
+    const tableMat = SN.cityPalette.wood, legMat = SN.cityPalette.dark;
+    const tables = [[-6.2, -2.4], [-1.6, -3.4]];
+    for (const [tx, tz] of tables) {
+      const top = new SN.T.Mesh(new SN.T.CylinderGeometry(0.62, 0.62, 0.08, 16), tableMat);
+      top.position.set(tx, 1.04, tz);
+      top.castShadow = true;
+      g.add(top);
+      const stem = new SN.T.Mesh(new SN.T.CylinderGeometry(0.08, 0.08, 0.98, 8), legMat);
+      stem.position.set(tx, 0.52, tz);
+      g.add(stem);
+      const foot = new SN.T.Mesh(new SN.T.CylinderGeometry(0.34, 0.36, 0.06, 12), legMat);
+      foot.position.set(tx, 0.05, tz);
+      g.add(foot);
+      SN.citySolid(g, tx, tz, 1.24, 1.24, 1.1);
+      for (let k = 0; k < 3; k++) {
+        const a = k * SN.TAU / 3 + 0.4, sax = Math.cos(a) * 1.08, saz = Math.sin(a) * 1.08;
+        SN.cityPart(g, "dark", tx + sax, 0.31, tz + saz, 0.34, 0.62, 0.34);
+        SN.cityPart(g, "wood", tx + sax, 0.64, tz + saz, 0.38, 0.06, 0.38);
+      }
+      for (let k = 0; k < 2; k++) {
+        const dx = k ? 0.2 : -0.22, dz = k ? 0.18 : 0.12;
+        const cup = new SN.T.Mesh(new SN.T.CylinderGeometry(0.05, 0.04, 0.14, 8), SN.mat(0xcdeef8, { transparent: true, opacity: 0.7, roughness: 0.2 }));
+        cup.position.set(tx + dx, 1.14, tz + dz);
+        g.add(cup);
+      }
+    }
+
+    // ---------- dance floor ----------
+    // A dark, glossy inlay separates the dance floor from the pale timber room and
+    // gives the neon its own reflective surface to sit on.
+    SN.cityPart(g, "dark", 1.2, 0.189, -2.2, 5.2, 0.018, 4.6);
+    SN.cityPart(g, "neonPink", 1.2, 0.206, 0.08, 5.2, 0.015, 0.07);
+    SN.cityPart(g, "neonCyan", 1.2, 0.206, -4.48, 5.2, 0.015, 0.07);
+    for (const side of [-1, 1]) {
+      SN.cityPart(g, "neonPink", 1.2 + side * 2.57, 0.206, -2.2, 0.07, 0.015, 4.6);
+      SN.cityPart(g, "teal", 1.2 + side * 1.05, 0.204, -2.2, 0.06, 0.012, 3.6);
+    }
+    // Speaker stacks: twin cabinets flanking the stage plus a pair by the booth.
+    for (const [sx, sz, rot] of [[1.95, 0.9, 0], [8.45, 0.9, 0], [3.05, 5.95, 1], [7.35, 5.95, 1]]) {
+      const tall = rot ? 1.05 : 1.35;
+      SN.cityPart(g, "dark", sx, tall / 2 + 0.19, sz, 0.62, tall, 0.58);
+      for (const wy of [0.55, 0.95])
+        for (const wx of [-0.17, 0.17]) {
+          SN.cityPart(g, "silver", sx + wx, tall / 2 + 0.19 + (wy - 0.72) * 0.9, sz - 0.31, 0.16, 0.16, 0.02);
+          SN.cityPart(g, "neonCyan", sx + wx, tall / 2 + 0.19 + (wy - 0.72) * 0.9, sz - 0.325, 0.1, 0.1, 0.012);
+        }
+      SN.citySolid(g, sx, sz, 0.66, 0.62, tall + 0.19);
+    }
+    // Poster lightboxes and a neon cocktail on the side wall.
+    for (const [pz, key, y] of [[-2.6, "teal", 2.55], [0.6, "red", 2.55], [-4.6, "gold", 2.4]]) {
+      SN.cityPart(g, "dark", -9.25, y, pz, 0.06, 1.75, 2.5);
+      SN.cityPart(g, key, -9.2, y, pz, 0.04, 1.5, 2.26);
+      SN.cityPart(g, "cream", -9.17, y + 0.5, pz, 0.03, 0.16, 1.7);
+      SN.cityPart(g, "neonPink", -9.16, y - 0.1, pz, 0.03, 0.1, 1.2);
+    }
+    // The east wall is what the room camera faces; give it the same lit posters
+    // so the dance floor is not backed by a bare purple plane.
+    for (const [pz, key] of [[-3.2, "gold"], [-0.4, "red"], [2.4, "teal"]]) {
+      SN.cityPart(g, "dark", 9.22, 1.9, pz, 0.06, 1.5, 2.1);
+      SN.cityPart(g, key, 9.18, 1.9, pz, 0.04, 1.28, 1.86);
+      SN.cityPart(g, "cream", 9.16, 2.36, pz, 0.03, 0.14, 1.4);
+    }
+    SN.cityPart(g, "neonCyan", 9.24, 2.6, -2.2, 0.05, 2.2, 0.09);
+    SN.cityPart(g, "neonPink", 9.24, 1.4, -2.2, 0.05, 0.09, 2.4);
+    // Ceiling truss with clamps: reads as a club rig rather than a bare slab.
+    for (const tz of [-4.2, 0.2]) {
+      SN.cityPart(g, "dark", 0, 4.42, tz, 18.4, 0.14, 0.18);
+      for (let i = 0; i < 7; i++) {
+        SN.cityPart(g, "silver", -8.4 + i * 2.8, 4.32, tz, 0.09, 0.12, 0.3);
+        SN.cityPart(g, "lampWarm", -8.4 + i * 2.8, 4.26, tz - 0.14, 0.12, 0.12, 0.12);
+      }
+    }
+
+    // ---------- mirror ball and sweeping beams ----------
+    const beamTex = (() => {
+      const c = document.createElement("canvas");
+      c.width = c.height = 64;
+      const ctx = c.getContext("2d"), img = ctx.createImageData(64, 64);
+      for (let x = 0; x < 64; x++) {
+        const a = Math.pow(0.5 + 0.5 * Math.sin(x / 64 * Math.PI * 10), 3) * 190;
+        for (let y = 0; y < 64; y++) {
+          const i = (y * 64 + x) * 4;
+          img.data[i] = 255; img.data[i + 1] = 255; img.data[i + 2] = 255; img.data[i + 3] = a;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+      const t = new SN.T.CanvasTexture(c);
+      t.wrapS = t.wrapT = SN.T.RepeatWrapping;
+      return t;
+    })();
+    const spotTex = (() => {
+      const c = document.createElement("canvas");
+      c.width = c.height = 64;
+      const ctx = c.getContext("2d"), gr = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+      gr.addColorStop(0, "rgba(255,255,255,0.95)");
+      gr.addColorStop(0.4, "rgba(255,255,255,0.32)");
+      gr.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = gr;
+      ctx.fillRect(0, 0, 64, 64);
+      return new SN.T.CanvasTexture(c);
+    })();
+    const ball = new SN.T.Mesh(new SN.T.SphereGeometry(0.42, 18, 12),
+      SN.mat(0xdfe7ff, { metalness: 0.92, roughness: 0.18, emissive: 0x2a3b66, emissiveIntensity: 0.55 }));
+    ball.position.set(bx + 1.2, floorTop + 3.62, bz - 2.2);
+    ball.castShadow = true;
+    SN.scene.add(ball);
+    SN.nightBarBall = ball;
+    SN.glow(SN.scene, bx + 1.2, floorTop + 3.66, bz - 2.2, 0.85, 0xbfd4ff);
+    const beams = [];
+    for (const [color, phase, lean] of [[0xff5aa2, 0, 0.18], [0x53e6d9, 2.1, -0.14]]) {
+      const cone = new SN.T.Mesh(new SN.T.ConeGeometry(2.5, 4.1, 24, 1, true),
+        new SN.T.MeshBasicMaterial({ color, map: beamTex, transparent: true, opacity: 0.3, blending: SN.T.AdditiveBlending, depthWrite: false, side: SN.T.DoubleSide }));
+      cone.position.set(bx + 1.2, floorTop + 1.9, bz - 2.2);
+      cone.rotation.z = lean;
+      SN.scene.add(cone);
+      beams.push({ mesh: cone, phase });
+    }
+    const spots = [];
+    for (let i = 0; i < 4; i++) {
+      const spot = new SN.T.Mesh(new SN.T.PlaneGeometry(2.6, 2.6),
+        new SN.T.MeshBasicMaterial({ color: i % 2 ? 0x53e6d9 : 0xff5aa2, map: spotTex, transparent: true, opacity: 0.5, blending: SN.T.AdditiveBlending, depthWrite: false }));
+      spot.rotation.x = -SN.PI / 2;
+      spot.position.set(bx + 1.2, floorTop + 0.03, bz - 2.2);
+      SN.scene.add(spot);
+      spots.push({ mesh: spot, phase: i * Math.PI / 2 });
+    }
+
+    SN.finishCityGroup(g);
+    // Self-lit lettering keeps the back wall readable in the dark room.
+    SN.sign("NIGHT CLUB", bx + 5.2, gy + 3.6, bz + 6.18, 7.2, 1.05, SN.PI, true);
+    SN.sign("BAR", bx - 4.6, gy + 3.62, bz + 6.22, 4, 0.8, SN.PI, true);
+    // Walkable floors: the entrance apron, the step, the room and the stage.
+    SN.rasterSurface(bx - 4.8, bx + 4.8, bz - 9.4, bz - 7.6, () => true, () => gy + 0.06, 2);
+    SN.rasterSurface(bx - 4.8, bx + 4.8, bz - 7.6, bz - 6.4, () => true, () => floorTop, 2);
+    SN.rasterSurface(bx - 9.4, bx + 9.4, bz - 6.4, bz + 6.4, () => true, () => floorTop, 2);
+    SN.rasterSurface(bx + 1.6, bx + 8.8, bz + 0.3, bz + 5.7, () => true, () => stageTop, 2);
+
+    // Warm interior light plus pink stage wash; enabled only near the venue.
+    const lampWarm = new SN.T.PointLight(0xffc98a, 1.7, 22, 2);
+    lampWarm.position.set(bx - 4, floorTop + 3.2, bz + 2.5);
+    lampWarm.visible = false;
+    SN.scene.add(lampWarm);
+    const lampPink = new SN.T.PointLight(0xff5aa2, 1.7, 17, 2);
+    lampPink.position.set(bx + 5, floorTop + 3.1, bz + 3);
+    lampPink.visible = false;
+    SN.scene.add(lampPink);
+    const lampAmber = new SN.T.PointLight(0xffb46e, 1.1, 15, 2);
+    lampAmber.position.set(bx - 2, floorTop + 2.9, bz - 4);
+    lampAmber.visible = false;
+    SN.scene.add(lampAmber);
+    // Downlights sit right under the ceiling; anything lower reads as floating balls.
+    for (const [lx, lz, color] of [[-7, 4.6, 0xffb46e], [-3, 1.2, 0xffd0a0], [1.5, -4, 0xff7ab8], [6.5, 2.4, 0x9ff3e8], [-6.5, -4.5, 0xffd0a0], [4, -5.5, 0xff8fc4]])
+      SN.glow(SN.scene, bx + lx, floorTop + 4.36, bz + lz, 0.26, color);
+    for (let i = 0; i < 8; i++)
+      SN.glow(SN.scene, bx - 4.6 + i * 1.3, floorTop + 4.34, bz + 2.6, 0.2, i % 2 ? 0xffb0d0 : 0xffe2b0);
+
+    // ---------- people ----------
+    const seed = SN.seed;
+    const drinkMat = SN.mat(0xffb64a, { transparent: true, opacity: 0.88, roughness: 0.25, metalness: 0.05 });
+    const people = [];
+    const dress = {
+      patron: () => ({ shirt: 0x2c2f3e, outer: 0x3b3550, accent: 0xff7fb1 }),
+      dancer: () => ({ shirt: 0x1f1a28, outer: 0x0f0d14, accent: 0xffd36e, skirt: true, skirtColor: 0x241c2c, men: false }),
+      staff: () => ({ shirt: 0x1a1d22, outer: 0x2b2c33, accent: 0xe9d8b0 })
+    };
+    const person = (px, pz, pyaw, role, index, opts) => {
+      const base = SN.makeProfile(index, "civilian", -1, role === "staff" ? "worker" : "nightlife");
+      const profile = Object.assign({}, base, dress[role === "dancer" ? "dancer" : role === "staff" ? "staff" : "patron"](), opts || {});
+      const rig = SN.makeRig(profile.outer, profile.skin, 1, profile);
+      rig.weapon.visible = false;
+      rig.root.rotation.y = pyaw;
+      rig.root.position.set(px, role === "dancer" || role === "dj" ? stageTop : floorTop, pz);
+      SN.scene.add(rig.root);
+      rig.root.visible = false;
+      const entry = { rig, role, x: px, z: pz, yaw: pyaw, phase: index * 1.37, drink: null };
+      if (role === "patron" || role === "staff") {
+        const glass = SN.meshAt(new SN.T.CylinderGeometry(0.04, 0.032, 0.12, 8), drinkMat, 0, 0, 0, 1, 1, 1, 0);
+        glass.visible = false;
+        entry.drink = glass;
+      }
+      people.push(entry);
+      return entry;
+    };
+    const patrons = [];
+    const counterXs = [-8.2, -6.5, -4.8, -3.1, -1.4, 0.3];
+    counterXs.forEach((x, i) => patrons.push(person(bx + x, bz + 3.7, 0, "patron", 301 + i)));
+    patrons.push(person(bx - 6.2, bz - 1.15, SN.PI, "patron", 321, { skirt: true, skirtColor: 0x3a2c3c }));
+    patrons.push(person(bx - 6.2, bz - 3.65, 0, "patron", 322, { glasses: true }));
+    patrons.push(person(bx - 1.6, bz - 2.15, SN.PI, "patron", 323, { skirt: true, skirtColor: 0x2c2636 }));
+    patrons.push(person(bx - 1.6, bz - 4.65, 0, "patron", 324));
+    const dancers = [
+      person(bx + 5.82, bz + 3.2, -SN.PI / 2, "dancer", 341),
+      person(bx + 4.58, bz + 3.2, SN.PI / 2, "dancer", 342)
+    ];
+    const floorDancers = [
+      person(bx + 3.4, bz + 0.1, -SN.PI / 2, "floor", 371, { skirt: true, skirtColor: 0x2e2438 }),
+      person(bx + 6.9, bz - 0.8, SN.PI / 2, "floor", 372),
+      person(bx + 2.4, bz - 1.7, 0.4, "floor", 373, { skirt: true, skirtColor: 0x1f2b33 })
+    ];
+    const dj = person(bx + 5.2, bz + 5.35, SN.PI, "dj", 351, { accessory: "headphones", accent: 0x53e6d9, men: true });
+    const bartender = person(bx - 4.2, bz + 6.12, SN.PI, "staff", 361, { accessory: "apron", men: true });
+    SN.seed = seed;
+    SN.nightBar = {
+      x: bx, z: bz, gy, floorTop, stageTop, group: g,
+      pole: { x: bx + 5.2, z: bz + 3.2 },
+      ball, beams, spots, danceX: bx + 1.2, danceZ: bz - 2.2,
+      people, patrons, dancers, floorDancers, dj, bartender,
+      shown: [], lamps: [lampWarm, lampPink, lampAmber], lightsOn: false
+    };
+
+    SN.updateNightBar = function updateNightBar(dt, time) {
+      const bar = SN.nightBar, p = SN.player;
+      const distance = Math.hypot(p.x - bar.x, p.z - bar.z);
+      const near = distance < 120;
+      bar.lamps[0].visible = bar.lamps[1].visible = bar.lamps[2].visible = distance < 44;
+      const inRoom = distance < 40;
+      bar.ball.visible = inRoom;
+      bar.ball.rotation.y = time * 0.7;
+      bar.ball.rotation.z = Math.sin(time * 0.4) * 0.12;
+      bar.beams[0].mesh.visible = bar.beams[1].mesh.visible = inRoom;
+      if (inRoom) {
+        bar.beams[0].mesh.rotation.y = time * 0.55;
+        bar.beams[1].mesh.rotation.y = -time * 0.43 + 1.4;
+        const pulse = 0.24 + Math.max(0, Math.sin(time * 2.6)) * 0.12;
+        bar.beams[0].mesh.material.opacity = pulse;
+        bar.beams[1].mesh.material.opacity = 0.36 - pulse * 0.35;
+        bar.spots.forEach((s, i) => {
+          const a = time * 0.42 + s.phase, r = 1.5;
+          s.mesh.visible = true;
+          s.mesh.position.set(bar.danceX + Math.cos(a) * r, bar.floorTop + 0.03, bar.danceZ + Math.sin(a) * r);
+          s.mesh.material.opacity = 0.34 + Math.abs(Math.sin(time * 1.8 + i)) * 0.26;
+        });
+      } else {
+        for (const s of bar.spots) s.mesh.visible = false;
+      }
+      bar.shown.length = 0;
+      if (!near)
+        for (const entry of bar.people)
+          if (entry.drink) entry.drink.visible = false;
+      if (!near)
+        return;
+      for (const entry of bar.people) {
+        const r = entry.rig;
+        bar.shown.push(r);
+        if (entry.role === "dancer") {
+          const i = bar.dancers.indexOf(entry);
+          const ang = time * (0.62 + i * 0.14) + i * SN.PI;
+          const px = bar.pole.x + Math.cos(ang) * 0.62, pz = bar.pole.z + Math.sin(ang) * 0.62;
+          r.root.position.set(px, bar.stageTop, pz);
+          r.root.rotation.y = Math.atan2(bar.pole.x - px, bar.pole.z - pz);
+          SN.poseRig(r, 0, 0, time + i, false, false, 0, -1);
+          const swing = Math.sin(time * 1.7 + i * 2.1);
+          r.arms[0].upper.rotation.set(-0.1, 0.2, 2.85);
+          r.arms[0].lower.rotation.set(-0.2, 0, 0);
+          r.arms[1].upper.rotation.set(-0.35 + swing * 0.22, 0.25, -1.15);
+          r.arms[1].lower.rotation.set(-0.58, 0, 0);
+          r.legs[0].upper.rotation.set(0.08, 0, 0.12);
+          r.legs[1].upper.rotation.set(-0.32 - Math.max(0, swing) * 0.22, 0, -0.08);
+          r.legs[1].lower.rotation.set(0.48 + Math.max(0, swing) * 0.28, 0, 0);
+          r.torso.rotation.z = swing * 0.17;
+        }
+        else if (entry.role === "dj") {
+          SN.poseRig(r, 0, 0, time, false, false, 0, -1);
+          const beat = Math.sin(time * 5.2);
+          r.arms[0].upper.rotation.set(-1.55 + beat * 0.35, 0, 0.28);
+          r.arms[1].upper.rotation.set(-1.55 - beat * 0.35, 0, -0.28);
+          r.arms[0].lower.rotation.set(-0.85 - beat * 0.25, 0, 0);
+          r.arms[1].lower.rotation.set(-0.85 + beat * 0.25, 0, 0);
+          r.torso.rotation.x = -0.08 + Math.abs(beat) * 0.05;
+          r.head.rotation.x = -0.15 + beat * 0.06;
+        }
+        else if (entry.role === "floor") {
+          const beat = Math.sin(time * 2.6 + entry.phase);
+          r.root.rotation.y = entry.yaw + Math.sin(time * 0.7 + entry.phase) * 0.5;
+          SN.poseRig(r, 0, 0, time + entry.phase, false, false, 0, -1);
+          r.torso.position.y = SN.TORSO_Y - 0.03 + Math.abs(beat) * 0.035;
+          r.arms[0].upper.rotation.set(-1.95 + beat * 0.5, 0, 0.5);
+          r.arms[1].upper.rotation.set(-1.95 - beat * 0.5, 0, -0.5);
+          r.arms[0].lower.rotation.set(-0.65, 0, 0);
+          r.arms[1].lower.rotation.set(-0.65, 0, 0);
+          r.legs[0].upper.rotation.set(-0.08, 0, 0.09);
+          r.legs[1].upper.rotation.set(-0.08, 0, -0.09);
+          r.torso.rotation.z = beat * 0.06;
+          r.head.rotation.x = -0.08;
+        }
+        else if (entry.role === "staff") {
+          SN.poseRig(r, 0, 0, time + entry.phase, false, false, 0, -1);
+          const wipe = Math.sin(time * 2.4);
+          r.arms[0].upper.rotation.set(-0.95, 0, 0.16);
+          r.arms[0].lower.rotation.set(-0.62, 0, wipe * 0.28);
+          r.arms[1].upper.rotation.set(-0.3, 0, -0.24);
+          r.arms[1].lower.rotation.set(-0.5, 0, 0);
+          r.torso.rotation.z = wipe * 0.03;
+        }
+        else {
+          // Patrons sway to the music and lift their glass now and then.
+          const lift = Math.max(0, Math.sin(time * 0.72 + entry.phase));
+          const sway = Math.sin(time * 1.1 + entry.phase);
+          r.root.rotation.y = entry.yaw + sway * 0.09;
+          SN.poseRig(r, 0, 0, time + entry.phase, false, false, 0, -1);
+          r.arms[0].upper.rotation.set(-0.22 - lift * 1.02, 0, 0.12);
+          r.arms[0].lower.rotation.set(-0.28 - lift * 1.18, 0, 0);
+          r.arms[1].upper.rotation.set(-0.1 + sway * 0.05, 0, -0.12);
+          r.arms[1].lower.rotation.set(-0.3, 0, 0);
+          r.torso.rotation.z = sway * 0.035;
+          r.head.rotation.x = -lift * 0.2;
+        }
+        r.root.updateMatrixWorld(true);
+        if (entry.drink) {
+          const hand = r.arms[0].hand;
+          hand.getWorldPosition(entry.drink.position);
+          entry.drink.position.y += 0.02;
+          entry.drink.visible = true;
+        }
+      }
+    };
+  });
+})(window.SN);
+    </script>
+    <script>
+/* 城西军事禁区：营区建筑、岗哨、坦克、军用直升机与轻型飞机。 */
+"use strict";
+(function (SN) {
+  const X0 = -2528, X1 = -2312, Z0 = -1006, Z1 = -880;
+  const CX = (X0 + X1) / 2, CZ = (Z0 + Z1) / 2;
+  const HW = (X1 - X0) / 2, HD = (Z1 - Z0) / 2;
+  const GATE_Z = -943, GATE_HALF = 10.5;
+  // Filled once the terrain exists; the module itself must load before any world init runs.
+  let Y = 0;
+  const WORLD = (lx, lz) => ({ x: CX + lx, z: CZ + lz });
+
+  SN.military = {
+    x0: X0, x1: X1, z0: Z0, z1: Z1, cx: CX, cz: CZ, y: Y,
+    inside: false, alarm: 0, tanks: [], aircraft: [], guards: [],
+    nearest: null, nearestDistance: Infinity, nextScan: 0,
+    rotorClock: 0
+  };
+  const M = SN.military;
+
+  function solidPart(g, key, x, y, z, w, h, d, yaw = 0, geo = SN.box, rx = 0) {
+    SN.cityPart(g, key, x, y, z, w, h, d, yaw, geo, rx);
+  }
+
+  function wall(g, x, z, w, d, h = 3.4) {
+    solidPart(g, "armyWall", x, h / 2, z, w, h, d);
+    solidPart(g, "armyDark", x, h + 0.08, z, w + 0.12, 0.16, d + 0.12);
+    SN.citySolid(g, x, z, Math.max(0.5, w), Math.max(0.5, d), h + 0.2);
+  }
+
+  function watchtower(g, x, z) {
+    const h = 6.4;
+    for (const sx of [-1, 1])
+      for (const sz of [-1, 1])
+        solidPart(g, "armyDark", x + sx * 1.35, h / 2, z + sz * 1.35, 0.34, h, 0.34);
+    solidPart(g, "armyWall", x, h + 0.15, z, 4.1, 0.3, 4.1);
+    solidPart(g, "armyWall", x, h + 1.35, z, 3.4, 2.3, 3.4);
+    solidPart(g, "glass", x, h + 1.55, z + 1.72, 2.9, 0.9, 0.1);
+    solidPart(g, "glass", x, h + 1.55, z - 1.72, 2.9, 0.9, 0.1);
+    solidPart(g, "glass", x + 1.72, h + 1.55, z, 0.1, 0.9, 2.9);
+    solidPart(g, "glass", x - 1.72, h + 1.55, z, 0.1, 0.9, 2.9);
+    solidPart(g, "armyDark", x, h + 2.7, z, 4.4, 0.3, 4.4);
+    SN.citySolid(g, x, z, 3.6, 3.6, h + 0.4);
+    const lamp = SN.glow(SN.scene, x + CX, Y + h + 3.4, z + CZ, 1.6, 0xffe0a8);
+    lamp.material.opacity = 0.55;
+  }
+
+  function crates(g, x, z, n) {
+    for (let i = 0; i < n; i++) {
+      const a = i * 2.1, r = 1.4 + (i % 3) * 0.7;
+      solidPart(g, i % 2 ? "armyDark" : "armyWall", x + Math.cos(a) * r, 0.5 + (i % 2) * 0.42,
+        z + Math.sin(a) * r, 1.1, 1.0, 1.1, a * 0.4);
+    }
+    SN.citySolid(g, x, z, 3.4, 3.4, 1.2);
+  }
+
+  SN.buildTankGeometry = function buildTankGeometry(spec) {
+    const L = spec.length, W = spec.width;
+    const body = [], glass = [], trim = [], chrome = [], accent = [], head = [], tail = [];
+    // Hull and sloped glacis.
+    body.push({ g: SN.roundedBox(W * 0.84, 0.86, L * 0.8, 0.16, 2), y: 1.02 });
+    body.push({ g: SN.box, y: 1.48, z: L * 0.31, sx: W * 0.7, sy: 0.44, sz: L * 0.18, rx: -0.32 });
+    // Turret, mantlet, gun barrel, cupola and hatches.
+    body.push({ g: SN.roundedBox(W * 0.58, 0.66, L * 0.34, 0.16, 2), y: 1.72, z: -L * 0.06 });
+    body.push({ g: SN.roundedBox(0.5, 0.46, 0.62, 0.1, 2), y: 1.7, z: L * 0.19 });
+    body.push({ g: new SN.T.CylinderGeometry(0.105, 0.135, L * 0.38, 10), y: 1.84, z: L * 0.33, rx: SN.PI / 2 });
+    body.push({ g: new SN.T.CylinderGeometry(0.32, 0.36, 0.22, 12), x: 0.56, y: 2.12, z: -L * 0.13 });
+    body.push({ g: SN.box, x: -0.54, y: 2.1, z: -L * 0.12, sx: 0.62, sy: 0.08, sz: 0.78 });
+    // Fenders and stowage.
+    for (const side of [-1, 1]) {
+      body.push({ g: SN.box, x: side * (W * 0.42), y: 1.3, z: 0, sx: 0.34, sy: 0.12, sz: L * 0.78 });
+      accent.push({ g: SN.roundedBox(0.4, 0.44, 1.2, 0.08, 2), x: side * (W * 0.29), y: 1.86, z: -L * 0.24 });
+      accent.push({ g: SN.roundedBox(0.36, 0.3, 0.86, 0.06, 2), x: side * (W * 0.24), y: 2.04, z: L * 0.02 });
+    }
+    // Tracks and road wheels.
+    for (const side of [-1, 1]) {
+      trim.push({ g: SN.roundedBox(0.62, 1.05, L * 0.94, 0.2, 2), x: side * (W * 0.43), y: 0.6 });
+      trim.push({ g: SN.box, x: side * (W * 0.43), y: 1.16, z: 0, sx: 0.68, sy: 0.18, sz: L * 0.9 });
+      for (let i = 0; i < 6; i++)
+        trim.push({ g: new SN.T.CylinderGeometry(0.4, 0.4, 0.68, 10), x: side * (W * 0.43), y: 0.52, z: -L * 0.36 + i * L * 0.144, rz: SN.PI / 2 });
+      for (let i = 0; i < 7; i++)
+        trim.push({ g: SN.box, x: side * (W * 0.43), y: 1.13, z: -L * 0.42 + i * L * 0.14, sx: 0.7, sy: 0.09, sz: 0.2 });
+    }
+    // Vision blocks and optics.
+    glass.push({ g: SN.box, x: 0, y: 1.82, z: L * 0.14, sx: 0.62, sy: 0.16, sz: 0.07 });
+    glass.push({ g: SN.box, x: 0.52, y: 2.12, z: -L * 0.09, sx: 0.3, sy: 0.16, sz: 0.3 });
+    for (const side of [-1, 1])
+      glass.push({ g: SN.box, x: side * 0.5, y: 1.82, z: -L * 0.01, sx: 0.08, sy: 0.14, sz: 0.34 });
+    // Antenna and tow hooks.
+    chrome.push({ g: new SN.T.CylinderGeometry(0.022, 0.03, 1.1, 6), x: -W * 0.2, y: 2.55, z: -L * 0.2 });
+    for (const side of [-1, 1])
+      head.push({ g: SN.box, x: side * W * 0.32, y: 1.26, z: L * 0.4, sx: 0.24, sy: 0.16, sz: 0.08 });
+    for (const side of [-1, 1])
+      tail.push({ g: SN.box, x: side * W * 0.32, y: 1.26, z: -L * 0.4, sx: 0.2, sy: 0.14, sz: 0.08 });
+    return {
+      body: SN.merged(body), glass: SN.merged(glass), trim: SN.merged(trim),
+      chrome: SN.merged(chrome), accent: SN.merged(accent),
+      head: SN.merged(head), tail: SN.merged(tail)
+    };
+  };
+
+  // ---------- Aircraft ----------
+  function buildMilitaryHelicopter() {
+    const root = new SN.T.Group(), body = new SN.T.Group();
+    root.add(body);
+    const olive = SN.mat(0x4d5a3e, { metalness: 0.32, roughness: 0.56 }),
+      oliveDark = SN.mat(0x37412e, { metalness: 0.4, roughness: 0.5 }),
+      glass = SN.mat(0x93cbd2, { metalness: 0.25, roughness: 0.1, transparent: true, opacity: 0.62 }),
+      dark = SN.mat(0x1c221d, { metalness: 0.62, roughness: 0.35 }),
+      tan = SN.mat(0x9a8f62, { metalness: 0.2, roughness: 0.8 });
+    const add = (geo, mat, x, y, z, sx = 1, sy = 1, sz = 1, rx = 0, ry = 0, rz = 0) => {
+      const m = new SN.T.Mesh(geo, mat);
+      m.position.set(x, y, z);
+      m.scale.set(sx, sy, sz);
+      m.rotation.set(rx, ry, rz);
+      m.castShadow = true;
+      body.add(m);
+      return m;
+    };
+    add(new SN.T.SphereGeometry(1, 16, 12), olive, 0, 0.15, 0, 1.12, 1.0, 2.1);
+    add(SN.box, oliveDark, 0, -0.4, 0.1, 1.85, 0.55, 3.0);
+    add(new SN.T.SphereGeometry(0.8, 14, 10), glass, 0, 0.18, 1.85, 0.86, 0.72, 1.0);
+    add(new SN.T.CylinderGeometry(0.14, 0.3, 3.6, 8), olive, 0, 0.38, -3.0, 1, 1, 1, SN.PI / 2);
+    add(SN.box, oliveDark, 0, 1.0, -4.55, 0.1, 1.2, 0.9, 0, 0, 0.16);
+    add(SN.box, olive, 0, 0.55, -4.5, 1.7, 0.1, 0.5);
+    for (const side of [-1, 1]) {
+      add(new SN.T.CylinderGeometry(0.055, 0.055, 2.9, 6), dark, side * 0.95, -0.95, 0.1, 1, 1, 1, SN.PI / 2);
+      add(new SN.T.CylinderGeometry(0.045, 0.045, 1.05, 6), dark, side * 0.72, -0.5, 0.35, 1, 1, 1, 0, 0, side * 0.4);
+      add(SN.box, tan, side * 1.02, -0.5, 0.35, 0.04, 0.5, 0.12, 0, 0, side * 0.4);
+      // Rocket pods: military silhouette without insignia.
+      add(new SN.T.CylinderGeometry(0.2, 0.2, 0.95, 10), oliveDark, side * 1.03, -0.18, 0.55, 1, 1, 1, SN.PI / 2);
+      for (let i = 0; i < 3; i++)
+        add(new SN.T.CylinderGeometry(0.055, 0.055, 0.99, 6), dark, side * (1.03 + (i - 1) * 0.1), -0.18 + (i % 2 ? 0.09 : -0.09), 0.56, 1, 1, 1, SN.PI / 2);
+    }
+    add(new SN.T.CylinderGeometry(0.09, 0.13, 0.55, 8), dark, 0, 1.2, 0);
+    const rotor = new SN.T.Group();
+    rotor.position.set(0, 1.48, 0);
+    body.add(rotor);
+    for (let i = 0; i < 4; i++) {
+      const blade = new SN.T.Mesh(SN.box, dark);
+      blade.scale.set(0.16, 0.035, 5.2);
+      blade.rotation.y = i * SN.PI / 2;
+      blade.castShadow = true;
+      rotor.add(blade);
+    }
+    const tailRotor = new SN.T.Group();
+    tailRotor.position.set(0.16, 0.92, -4.62);
+    body.add(tailRotor);
+    for (let i = 0; i < 3; i++) {
+      const blade = new SN.T.Mesh(SN.box, dark);
+      blade.scale.set(0.03, 1.05, 0.1);
+      blade.rotation.z = i * SN.PI / 3;
+      tailRotor.add(blade);
+    }
+    add(SN.box, oliveDark, 0, -1.0, 1.5, 1.4, 0.32, 0.5);
+    SN.glow(body, 0, -0.75, 1.95, 1.1, 0xdff2ff);
+    root.userData.rotor = rotor;
+    root.userData.tailRotor = tailRotor;
+    return root;
+  }
+
+  function buildLightPlane() {
+    const root = new SN.T.Group(), body = new SN.T.Group();
+    root.add(body);
+    const olive = SN.mat(0x556044, { metalness: 0.3, roughness: 0.58 }),
+      cream = SN.mat(0xc9c4ae, { metalness: 0.2, roughness: 0.7 }),
+      glass = SN.mat(0x9fd6df, { metalness: 0.25, roughness: 0.08, transparent: true, opacity: 0.6 }),
+      dark = SN.mat(0x20251f, { metalness: 0.6, roughness: 0.4 }),
+      tan = SN.mat(0x9a8f62, { metalness: 0.2, roughness: 0.8 });
+    const add = (geo, mat, x, y, z, sx = 1, sy = 1, sz = 1, rx = 0, ry = 0, rz = 0) => {
+      const m = new SN.T.Mesh(geo, mat);
+      m.position.set(x, y, z);
+      m.scale.set(sx, sy, sz);
+      m.rotation.set(rx, ry, rz);
+      m.castShadow = true;
+      body.add(m);
+      return m;
+    };
+    add(new SN.T.CylinderGeometry(0.52, 0.7, 6.4, 12), olive, 0, 0.05, 0, 1, 1, 1, SN.PI / 2);
+    add(new SN.T.SphereGeometry(0.52, 12, 9), olive, 0, 0.05, 3.2, 1, 1, 1.1);
+    add(new SN.T.SphereGeometry(0.48, 12, 9), glass, 0, 0.52, 1.55, 0.82, 0.72, 1.5);
+    add(SN.box, olive, 0, 0.05, -3.4, 4.2, 0.12, 0.9);
+    add(SN.box, olive, 0, 0.7, -3.55, 0.1, 1.0, 0.8);
+    add(SN.box, olive, 0, 0.0, 0, 11.2, 0.14, 1.7);
+    add(SN.box, tan, 0, 0.02, 0, 11.32, 0.03, 1.9);
+    for (const side of [-1, 1]) {
+      add(SN.box, oliveDarkWing(), side * 4.9, 0.03, 0, 0.16, 0.2, 1.2);
+      add(new SN.T.CylinderGeometry(0.035, 0.035, 1.55, 6), dark, side * 1.55, -0.65, 0.4, 1, 1, 1, SN.PI / 2);
+      add(new SN.T.CylinderGeometry(0.3, 0.3, 0.18, 10), dark, side * 1.55, -0.72, 0.4, 1, 1, 1, 0, 0, SN.PI / 2);
+    }
+    add(new SN.T.CylinderGeometry(0.16, 0.16, 0.3, 8), dark, 0, 0.05, 3.72, 1, 1, 1, SN.PI / 2);
+    const prop = new SN.T.Group();
+    prop.position.set(0, 0.05, 3.88);
+    body.add(prop);
+    for (let i = 0; i < 2; i++) {
+      const blade = new SN.T.Mesh(SN.box, dark);
+      blade.scale.set(0.14, 1.9, 0.05);
+      blade.rotation.z = i * SN.PI / 2;
+      prop.add(blade);
+    }
+    add(new SN.T.CylinderGeometry(0.035, 0.035, 1.4, 6), dark, 0, -0.75, 1.2, 1, 1, 1, SN.PI / 2);
+    add(new SN.T.CylinderGeometry(0.32, 0.32, 0.16, 10), dark, 0, -0.92, 1.9, 1, 1, 1, 0, 0, SN.PI / 2);
+    root.userData.prop = prop;
+    return root;
+  }
+  function oliveDarkWing() {
+    return SN.mat(0x37412e, { metalness: 0.4, roughness: 0.5 });
+  }
+
+  function makeAircraft(kind, x, z, yaw) {
+    const root = kind === "heli" ? buildMilitaryHelicopter() : buildLightPlane();
+    const ground = SN.surfaceHeight(x, z);
+    const rest = kind === "heli" ? 1.05 : 1.25;
+    root.position.set(x, ground + rest, z);
+    root.rotation.y = yaw;
+    SN.scene.add(root);
+    const a = {
+      kind, root, x, z, yaw, rest,
+      y: ground + rest,
+      ground, speed: 0, vy: 0, pitch: 0, roll: 0,
+      health: 140, occupied: false, airborne: false,
+      rotorSpin: 0, propSpin: 0,
+      spec: kind === "heli"
+        ? { name: "武直 · 军用直升机", width: 2.5, length: 6.5, height: 2.8, topSpeed: 34 }
+        : { name: "侦察机 · 轻型飞机", width: 11.2, length: 7.8, height: 2.2, topSpeed: 52 }
+    };
+    a.solid = SN.addOBB(x, z, kind === "heli" ? 3.2 : 6, kind === "heli" ? 7.2 : 8.4, 3.4, yaw, ground);
+    updateAircraftSolid(a);
+    M.aircraft.push(a);
+    return a;
+  }
+
+  function updateAircraftSolid(a) {
+    const b = a.solid;
+    if (!b) return;
+    b.x = a.x;
+    b.z = a.z;
+    b.hw = a.kind === "heli" ? 3.2 : 6;
+    b.hd = a.kind === "heli" ? 4.4 : 5.2;
+    b.minY = a.y - 1.2;
+    b.height = a.y + 3.2;
+    b.minX = a.x - b.hw;
+    b.maxX = a.x + b.hw;
+    b.minZ = a.z - b.hd;
+    b.maxZ = a.z + b.hd;
+  }
+
+  function aircraftBlocked(a, x, z, y) {
+    if (Math.abs(x) > SN.WORLD - 12 || Math.abs(z) > SN.WORLD - 12) return true;
+    for (const b of SN.colliders) {
+      if (b.height < y - 0.4 || b.minY > y + 2.4) continue;
+      if (x > b.minX - 1.6 && x < b.maxX + 1.6 && z > b.minZ - 1.6 && z < b.maxZ + 1.6) return true;
+    }
+    return false;
+  }
+
+  // ---------- Base construction ----------
+  SN.registerInit(21.7, function initializeMilitary21() {
+    Y = M.y = SN.surfaceHeight(CX, CZ);
+    if (!SN.cityPalette.armyWall) {
+      SN.cityPalette.armyWall = SN.pbrMat("stucco", 0x6d7259, { uvScale: 0.5, roughness: 0.92, metalness: 0.06 });
+      SN.cityPalette.armyDark = SN.pbrMat("metal", 0x3a4033, { uvScale: 0.6, roughness: 0.78, metalness: 0.3 });
+      SN.cityPalette.tarmac = SN.pbrMat("asphalt", 0x646b67, { uvScale: 1 / 7, roughness: 1, metalness: 0.03, envMapIntensity: 0.3 });
+      SN.cityPalette.hazard = SN.pbrMat("paint", 0xe3b23c, { uvScale: 0.6, roughness: 0.85 });
+      SN.cityPalette.armyTent = SN.pbrMat("fabric", 0x55603f, { uvScale: 0.9, roughness: 1, metalness: 0.02 });
+      SN.cityPalette.armySand = SN.pbrMat("stone", 0xb5a67c, { uvScale: 0.7, roughness: 1, metalness: 0.02 });
+    }
+    const g = SN.cityGroup(CX, CZ, 2200, Y + 0.01);
+    g.userData.id = "military-base";
+
+    // Paved compound.
+    solidPart(g, "tarmac", 0, 0.015, 0, HW * 2 - 1, 0.05, HD * 2 - 1);
+    // Perimeter: north, south, west, and east with a vehicle gate.
+    wall(g, 0, -HD, HW * 2, 0.45);
+    wall(g, 0, HD, HW * 2, 0.45);
+    wall(g, -HW, 0, 0.45, HD * 2);
+    const eastLen = HD - GATE_HALF;
+    wall(g, HW, -(GATE_HALF + eastLen / 2), 0.45, eastLen);
+    wall(g, HW, GATE_HALF + eastLen / 2, 0.45, eastLen);
+    for (const sz of [-1, 1]) {
+      solidPart(g, "armyWall", HW, 2.2, sz * (GATE_HALF + 0.6), 0.7, 4.4, 1.2);
+      SN.citySolid(g, HW, sz * (GATE_HALF + 0.6), 0.7, 1.2, 4.4);
+    }
+    // Gate sign and barrier arm.
+    SN.sign("军事禁区 · 禁止驶入", CX + HW + 0.6, Y + 4.4, CZ, 13, 1.7, Math.PI / 2, false);
+    const barrierPivot = new SN.T.Group();
+    barrierPivot.position.set(CX + HW - 0.4, Y + 1.35, CZ - GATE_HALF + 0.7);
+    SN.scene.add(barrierPivot);
+    SN.meshAt(SN.box, SN.cityPalette.hazard, 0, 0, 9.2, 0.16, 0.16, 18, 0, barrierPivot);
+    M.barrier = barrierPivot;
+
+    // Barracks, command post, armory and hangar.
+    const building = (lx, lz, w, d, h, key, roofKey, yaw = 0) => {
+      solidPart(g, key, lx, h / 2, lz, w, h, d, yaw);
+      solidPart(g, roofKey, lx, h + 0.22, lz, w + 0.7, 0.44, d + 0.7, yaw);
+      solidPart(g, "dark", lx, 1.05, lz + d / 2 + 0.04, w * 0.22, 2.1, 0.14, yaw);
+      SN.citySolid(g, lx, lz, w, d, h + 0.4);
+    };
+    building(-72, -48, 44, 16, 5.6, "armyWall", "armyDark");
+    building(-22, -48, 34, 16, 5.0, "armyWall", "armyDark");
+    building(26, -48, 28, 16, 6.6, "armyWall", "armyDark");
+    building(-96, -6, 18, 24, 5.0, "armyDark", "tarmac");
+    // Hangar: three walls and a roof, open toward the runway.
+    solidPart(g, "armyWall", 40, 4.5, -9, 44, 9, 0.7);
+    solidPart(g, "armyWall", 18, 4.5, 4.5, 0.7, 9, 27);
+    solidPart(g, "armyWall", 62, 4.5, 4.5, 0.7, 9, 27);
+    solidPart(g, "armyDark", 40, 9.2, 4.5, 45.4, 0.5, 28.4);
+    SN.citySolid(g, 40, -9, 44, 0.9, 9);
+    SN.citySolid(g, 18, 4.5, 0.9, 27, 9);
+    SN.citySolid(g, 62, 4.5, 0.9, 27, 9);
+    // Runway and markings.
+    solidPart(g, "tarmac", -10, 0.05, 38, 180, 0.06, 18);
+    for (let i = 0; i < 14; i++)
+      solidPart(g, "white", -92 + i * 12.4, 0.09, 38, 5.4, 0.02, 0.5);
+    for (const end of [-1, 1])
+      for (let i = 0; i < 6; i++)
+        solidPart(g, "white", end * 86, 0.09, 30.8 + i * 2.9, 3.4, 0.02, 0.34);
+    // Helipad.
+    solidPart(g, "armyDark", 74, 0.06, -38, 27, 0.06, 27, 0, new SN.T.CylinderGeometry(1, 1, 1, 28));
+    solidPart(g, "hazard", 74, 0.1, -38, 22, 0.02, 22, 0, new SN.T.RingGeometry(0.86, 1, 32, 1, 0, SN.TAU), -Math.PI / 2);
+    solidPart(g, "white", 68.5, 0.1, -38, 1.1, 0.02, 10);
+    solidPart(g, "white", 79.5, 0.1, -38, 1.1, 0.02, 10);
+    solidPart(g, "white", 74, 0.1, -38, 11, 0.02, 1.1);
+    // Tank bays.
+    for (const lz of [-16, 6]) {
+      solidPart(g, "hazard", -70, 0.09, lz, 12, 0.02, 0.3);
+      solidPart(g, "hazard", -70, 0.09, lz + 5.2, 12, 0.02, 0.3);
+    }
+    // Watchtowers and yard props.
+    watchtower(g, -HW + 4, -HD + 4);
+    watchtower(g, HW - 6, -HD + 4);
+    watchtower(g, -HW + 4, HD - 4);
+    watchtower(g, HW - 6, HD - 4);
+    crates(g, -52, -30, 5);
+    crates(g, 8, -34, 4);
+    // Fuel tanks.
+    for (let i = 0; i < 3; i++) {
+      solidPart(g, "armyDark", -92 + i * 4.2, 2.0, -30, 3.6, 2.4, 7.2, 0, new SN.T.CylinderGeometry(1, 1, 1, 16));
+      SN.citySolid(g, -92 + i * 4.2, -30, 3.4, 6.8, 3.4);
+    }
+    // Yard dressing: painted guide lines, truck bays, canvas tents, sandbag posts,
+    // concrete barriers, floodlights and a radar mast so the compound reads as a
+    // working base instead of an empty apron.
+    const paint = (lx, lz, w, d, color = "white") => solidPart(g, color, lx, 0.062, lz, w, 0.015, d);
+    paint(0, -60, HW * 2 - 6, 0.22);
+    paint(0, 60, HW * 2 - 6, 0.22);
+    paint(-103, 0, 0.22, HD * 2 - 6);
+    // Lane from the gate to the hangar, with a stop bar.
+    for (const lz of [-3.4, 3.4]) paint(84, lz, 50, 0.22, "hazard");
+    paint(97, 0, 0.36, 19);
+    for (let i = 0; i < 5; i++) {
+      paint(70 + i * 6, -8.6 + i * 0.4, 2.6, 0.2, "hazard");
+      paint(70 + i * 6, 8.6 - i * 0.4, 2.6, 0.2, "hazard");
+    }
+    // Parking bays in front of the barracks.
+    for (let i = 0; i < 7; i++) paint(-92 + i * 6.4, -33.5, 0.16, 5.4);
+    paint(-74.2, -36.2, 24, 0.16);
+    // Sandbag posts: two arcs covering the gate approach.
+    const sandbag = (lx, lz) => solidPart(g, "armySand", lx, 0.17, lz, 0.66, 0.3, 0.4);
+    for (const side of [-1, 1])
+      for (let row = 0; row < 3; row++)
+        for (let i = 0; i < 5; i++)
+          sandbag(93 - i * 0.7, side * (12.6 + row * 0.34) - i * side * 0.28 + (row % 2) * 0.3);
+    // Concrete barriers flanking the gate.
+    for (const side of [-1, 1])
+      for (let i = 0; i < 4; i++) {
+        const bx = 89 - i * 2.7, bz = side * (15 + i * 0.3);
+        solidPart(g, "stone", bx, 0.55, bz, 2.5, 1.1, 0.62);
+        solidPart(g, "hazard", bx, 1.12, bz, 2.5, 0.12, 0.66);
+      }
+    // Parked canvas trucks.
+    const truck = (lx, lz, yaw, cab = 1) => {
+      solidPart(g, "armyDark", lx, 1.02, lz, 6.4, 1.5, 2.3, yaw);
+      solidPart(g, "armyTent", lx - 0.8 * cab, 1.86, lz, 3.2, 1.24, 2.2, yaw);
+      solidPart(g, "armyWall", lx + 2.42 * cab, 1.16, lz, 1.5, 1.8, 2.16, yaw);
+      solidPart(g, "glass", lx + 3.18 * cab, 1.62, lz, 0.06, 0.56, 1.7, yaw);
+      for (const sx of [-2.2, 1.9])
+        for (const sz of [-1.06, 1.06])
+          solidPart(g, "dark", lx + sx * cab, 0.42, lz + sz, 0.72, 0.84, 0.36, yaw);
+      SN.citySolid(g, lx, lz, 6.4, 2.3, 2.6);
+    };
+    truck(-40, -34.4, 0);
+    truck(-31, -34.4, 0);
+    truck(-22, -34.4, 0, -1);
+    truck(-70, 23.4, 0);
+    // Field tents along the yard edge.
+    for (let i = 0; i < 3; i++) {
+      const lx = -44 + i * 11, lz = 21;
+      solidPart(g, "armyTent", lx, 1.02, lz, 6, 1.62, 5);
+      for (const s of [-1, 1])
+        solidPart(g, "armyTent", lx, 2.28, lz + s * 1.3, 6.24, 0.16, 2.9, 0, SN.box, s * 0.6);
+      solidPart(g, "armyDark", lx, 1.02, lz - 2.52, 0.9, 1.7, 0.08);
+      SN.citySolid(g, lx, lz, 6, 5, 2.9);
+    }
+    // Radar mast on the command post roof.
+    solidPart(g, "armyDark", -22, 7.1, -48, 0.28, 4.2, 0.28);
+    solidPart(g, "silver", -22, 9.35, -48, 0.46, 0.46, 0.46);
+    solidPart(g, "armyWall", -22, 9.72, -48.25, 3, 0.16, 1.5, 0, new SN.T.SphereGeometry(1, 12, 6, 0, SN.TAU, 0, Math.PI / 2), -0.9);
+    // Floodlight masts around the yard; warm heads double as night beacons.
+    for (const [lx, lz] of [[12, 25], [-62, 25], [99, 26], [-101, -52]]) {
+      solidPart(g, "armyDark", lx, 4.6, lz, 0.3, 9.2, 0.3);
+      solidPart(g, "armyDark", lx, 9.12, lz, 2.2, 0.18, 0.5);
+      for (const s of [-1, 1]) {
+        solidPart(g, "white", lx + s * 0.85, 8.94, lz - 0.24, 0.62, 0.42, 0.14);
+        SN.glow(SN.scene, CX + lx + s * 0.85, Y + 8.9, CZ + lz - 0.3, 1.15, 0xffe3b0);
+      }
+    }
+    // Striped windsock beside the helipad.
+    solidPart(g, "silver", 90, 2.6, -27, 0.12, 5.2, 0.12);
+    solidPart(g, "red", 90, 4.85, -25.75, 0.72, 2.4, 0.72, 0, new SN.T.CylinderGeometry(0.3, 0.15, 1, 8), Math.PI / 2);
+    solidPart(g, "white", 90, 4.85, -24.35, 0.5, 0.7, 0.5, 0, new SN.T.CylinderGeometry(0.15, 0.05, 1, 8), Math.PI / 2);
+
+    // Flag mast.
+    solidPart(g, "silver", 0, 5.5, -22, 0.18, 11, 0.18);
+    solidPart(g, "red", 1.9, 9.9, -22, 3.6, 1.8, 0.05);
+    SN.cityLabel(g, "城西军事禁区", HD - 2, 20);
+    SN.finishCityGroup(g);
+
+    // Two tanks use the regular car system so every existing driving rule applies.
+    SN.vehicleSpecs.push({
+      name: "K1 · 主战坦克", shape: "tank", length: 7.2, width: 3.4, height: 2.6,
+      topSpeed: 15, accel: 5.2, mass: 26, grip: 12.5, damage: 0.16, pitch: 26, cruise: 5, tank: true
+    });
+    const tankType = SN.vehicleSpecs.length - 1;
+    SN.vehicleGeometry.push(SN.buildTankGeometry(SN.vehicleSpecs[tankType]));
+    for (const [lx, lz] of [[-70, -16], [-70, 6]]) {
+      const p = WORLD(lx, lz);
+      const tank = SN.makeCar(p.x, p.z, Math.PI / 2, true, null, 0, tankType, "military");
+      tank.paint.color.copy(SN.srgb(0x55603f));
+      tank.paintColor = 0x55603f;
+      tank.military = true;
+      M.tanks.push(tank);
+    }
+
+    const heliP = WORLD(74, -38), planeP = WORLD(40, 38);
+    makeAircraft("heli", heliP.x, heliP.z, Math.PI / 2);
+    makeAircraft("plane", planeP.x, planeP.z, -Math.PI / 2);
+  });
+
+  SN.registerInit(22.4, function initializeMilitaryGuards() {
+    if (!SN.actors || !SN.actors.length) return;
+    const spots = [[HW - 22, GATE_Z + 6], [HW - 22, GATE_Z - 6], [26, -36], [34, 15]];
+    for (const [lx, lz] of spots) {
+      const p = WORLD(lx, lz);
+      const actor = SN.actors.find(a => a.kind === "police" && !a.active && !a.inCar && !a.guard);
+      if (!actor) break;
+      Object.assign(actor, {
+        x: p.x, z: p.z, homeX: p.x, homeZ: p.z, yaw: Math.atan2(X1 - p.x, CZ - p.z),
+        active: true, guard: true, footPolice: false, inCar: null, down: 0, fall: 0,
+        health: 160, armored: true, armedWeapon: 2, meleeOnly: false,
+        hostile: false, panic: 0, cool: 0.9, linger: 0,
+        wanderX: 5, wanderZ: 5, pedWindowX: p.x, pedWindowZ: p.z,
+        mode: "idle", modeTimer: 999
+      });
+      actor.rig.root.scale.setScalar(1.05);
+      actor.rig.height = 1.05;
+      for (const part of actor.rig.parts)
+        if (part.matType === "cloth" && (part.geoName === "torso" || part.geoName === "box" || part.geoName === "legs"))
+          part.colorObject.setHex(0x4c573b);
+      actor.rig.root.position.set(p.x, SN.surfaceHeight(p.x, p.z), p.z);
+      actor.rig.root.rotation.y = actor.yaw;
+      M.guards.push(actor);
+    }
+  });
+
+  // ---------- Entry, guarding and alarm ----------
+  SN.updateMilitary = function updateMilitary(dt) {
+    const m = SN.military, p = SN.player;
+    const inside = p.x > X0 && p.x < X1 && p.z > Z0 && p.z < Z1 && p.y < Y + 10;
+    if (SN.started && inside && !m.inside && !p.aircraft) {
+      m.inside = true;
+      if (SN.heat < 5) {
+        SN.forceWanted(5, "擅闯军事禁区 ★5");
+        SN.toast("警报：擅闯军事禁区 · 通缉 ★5", 4);
+      }
+      m.alarm = 10;
+    }
+    if (!inside) m.inside = false;
+    m.alarm = Math.max(0, m.alarm - dt);
+    // Nearest aircraft wins the F prompt when the player is not in a car.
+    m.nextScan -= dt;
+    if (!p.car && !p.aircraft && m.nextScan <= 0) {
+      m.nextScan = 0.18;
+      m.nearest = null;
+      m.nearestDistance = Infinity;
+      for (const a of m.aircraft) {
+        if (a.health <= 0) continue;
+        const d = Math.hypot(a.x - p.x, a.z - p.z);
+        if (d < m.nearestDistance) { m.nearestDistance = d; m.nearest = a; }
+      }
+    }
+    if (p.car || p.aircraft) { m.nearest = null; m.nearestDistance = Infinity; }
+    // Idle rotors and propellers.
+    m.rotorClock += dt;
+    for (const a of m.aircraft) {
+      if (a === p.aircraft) continue;
+      const spin = a.kind === "heli" ? 2.2 : 0.6;
+      const rotor = a.root.userData.rotor, tailRotor = a.root.userData.tailRotor, prop = a.root.userData.prop;
+      if (rotor) rotor.rotation.y += dt * spin;
+      if (tailRotor) tailRotor.rotation.x += dt * spin * 1.6;
+      if (prop) prop.rotation.z += dt * spin;
+      updateAircraftSolid(a);
+    }
+    // Red alarm beacons over the gate while the alert is live.
+    if (m.beaconA) {
+      const on = m.alarm > 0 && (Math.floor(m.alarm * 3) % 2 === 0);
+      m.beaconA.material.opacity = on ? 0.95 : 0.08;
+      m.beaconB.material.opacity = on ? 0.08 : 0.95;
+    }
+    // Barrier lifts for any approaching vehicle or the player on foot.
+    if (m.barrier) {
+      const near = Math.hypot(p.x - (X1 + 4), p.z - GATE_Z) < 16 || m.inside;
+      m.barrier.rotation.x = SN.lerp(m.barrier.rotation.x, near ? -1.35 : 0, 1 - Math.exp(-dt * 3.2));
+    }
+  };
+
+  SN.boardAircraft = function boardAircraft(a) {
+    if (!a || a.occupied || a.health <= 0) return false;
+    SN.player.aircraft = a;
+    a.occupied = true;
+    a.airborne = a.kind === "plane" ? false : a.y - a.ground > 2;
+    SN.player.car = null;
+    Object.assign(SN.player, { x: a.x, z: a.z, y: a.y, yaw: a.yaw, speed: 0, vy: 0, grounded: false, vault: null });
+    SN.playerRoot.visible = false;
+    SN.camYaw = a.yaw;
+    SN.camPitch = 0.06;
+    SN.lookDelay = 0;
+    SN.snapPlayer();
+    SN.flying = SN.aiming = false;
+    SN.toast(a.kind === "heli"
+      ? "直升机启动 · W/S 前后 · A/D 转向 · 空格下降并着陆"
+      : "飞机滑跑 · 按住 W 加速离地 · A/D 转向 · 空格下降", 5);
+    SN.refreshHUD();
+    return true;
+  };
+
+  SN.exitAircraft = function exitAircraft() {
+    const a = SN.player.aircraft;
+    if (!a) return false;
+    const ground = SN.surfaceHeight(a.x, a.z);
+    if (a.y - ground > 2.4) {
+      SN.toast(a.kind === "heli" ? "旋翼仍在空中 · 按住空格降到地面再离开" : "飞机仍在空中 · 按住空格降落再离开", 3);
+      return false;
+    }
+    const off = a.kind === "plane" ? 6.2 : 3.6;
+    const px = a.x + Math.cos(a.yaw) * off, pz = a.z - Math.sin(a.yaw) * off;
+    const safe = SN.safePosition(px, pz, 0.4);
+    SN.player.aircraft = null;
+    a.occupied = false;
+    a.speed = 0;
+    a.airborne = false;
+    a.y = ground + a.rest;
+    a.pitch = 0;
+    a.root.rotation.set(0, a.yaw, 0);
+    Object.assign(SN.player, { x: safe.x, z: safe.z, y: SN.surfaceHeight(safe.x, safe.z), vy: 0, grounded: true, yaw: a.yaw });
+    SN.playerRoot.visible = true;
+    SN.playerRoot.rotation.set(0, a.yaw, 0);
+    SN.snapPlayer();
+    SN.toast("已离开驾驶座", 2);
+    SN.refreshHUD();
+    return true;
+  };
+
+  SN.updateAircraft = function updateAircraft(dt) {
+    const a = SN.player.aircraft, input = SN.driveControls();
+    if (!a) return;
+    const ground = SN.surfaceHeight(a.x, a.z);
+    a.ground = ground;
+    a.steer = SN.lerp(a.steer || 0, input.steer, 1 - Math.exp(-dt * 8));
+    if (a.kind === "heli") {
+      a.root.userData.rotor.rotation.y += dt * 34;
+      a.root.userData.tailRotor.rotation.x += dt * 56;
+      const accel = input.throttle * 13;
+      a.speed += (accel - a.speed * (input.throttle ? 0.28 : 1.35)) * dt;
+      a.speed = SN.clamp(a.speed, -9, 34);
+      a.yaw -= a.steer * (0.55 + Math.min(1.05, Math.abs(a.speed) / 22)) * dt;
+      const targetY = ground + (input.brake ? 0.95 : 15);
+      a.y += SN.clamp(targetY - a.y, -6.5 * dt, 4.8 * dt);
+      a.pitch = SN.lerp(a.pitch, input.throttle * -0.09, 1 - Math.exp(-dt * 3));
+      a.roll = SN.lerp(a.roll, -a.steer * 0.13, 1 - Math.exp(-dt * 4));
+    } else {
+      if (a.root.userData.prop) a.root.userData.prop.rotation.z += dt * (4 + Math.abs(a.speed) * 1.8);
+      if (!a.airborne) {
+        a.speed += (input.throttle > 0 ? 9.5 : input.throttle < 0 ? -14 : -3.2) * dt;
+        a.speed = SN.clamp(a.speed, 0, 52);
+        a.yaw -= a.steer * Math.min(0.7, a.speed / 34) * dt;
+        if (a.speed > 22) {
+          a.airborne = true;
+          a.vy = 2.6;
+          SN.toast("已离地 · 空格下降着陆", 3);
+        }
+      } else {
+        a.speed += (input.throttle > 0 ? 7 : input.throttle < 0 ? -9 : -1.2) * dt;
+        a.speed = SN.clamp(a.speed, 12, 52);
+        a.yaw -= a.steer * 0.62 * dt;
+        const cruise = Math.max(a.y, ground + 26);
+        a.vy = SN.lerp(a.vy, input.brake ? -7 : a.y < cruise ? 3.4 : 0, 1 - Math.exp(-dt * 2.2));
+        a.y += a.vy * dt;
+        if (a.y <= ground + a.rest) {
+          a.y = ground + a.rest;
+          a.airborne = false;
+          a.vy = 0;
+          a.speed = Math.min(a.speed, 16);
+          SN.toast("已着陆 · 停稳后按 F 离开", 3);
+        }
+      }
+      a.pitch = SN.lerp(a.pitch, a.airborne ? SN.clamp(-a.vy * 0.03 + input.throttle * -0.05, -0.24, 0.24) : 0, 1 - Math.exp(-dt * 3));
+      a.roll = SN.lerp(a.roll, a.airborne ? -a.steer * 0.2 : 0, 1 - Math.exp(-dt * 3));
+    }
+    const nx = a.x + Math.sin(a.yaw) * a.speed * dt;
+    const nz = a.z + Math.cos(a.yaw) * a.speed * dt;
+    if (aircraftBlocked(a, nx, nz, a.y)) {
+      a.speed *= -0.18;
+      a.health = Math.max(0, a.health - 8);
+      SN.camShake = 0.35;
+      SN.camShakeTime = 0.3;
+      if (SN.simTime > (a.bumpToast || 0)) { a.bumpToast = SN.simTime + 2.5; SN.toast("撞击 · 机体受损", 2); }
+    } else {
+      a.x = nx;
+      a.z = nz;
+    }
+    if (a.y < ground + a.rest) a.y = ground + a.rest;
+    if (!a.airborne && input.brake) a.speed *= Math.exp(-dt * 2.2);
+    a.root.position.set(a.x, a.y, a.z);
+    a.root.rotation.set(a.pitch, a.yaw, a.roll);
+    updateAircraftSolid(a);
+    Object.assign(SN.player, { x: a.x, z: a.z, y: a.y, yaw: a.yaw, speed: Math.abs(a.speed), grounded: a.y - ground < 1.4 });
+    if (SN.lookDelay <= 0 && !SN.keys.KeyX && !SN.touch.rear)
+      SN.camYaw = SN.approachAngle(SN.camYaw, a.yaw, dt * 2.6);
+    if (a.health <= 0 && !a.crashed) {
+      a.crashed = true;
+      SN.toast("机体严重受损 · 立即降落", 4);
+    }
+  };
+
+  SN.renderAircraft = function renderAircraft(alpha) {
+    const p = SN.player, a = p.aircraft;
+    if (a) {
+      const rx = SN.lerp(SN.playerPrev.x, p.x, alpha), rz = SN.lerp(SN.playerPrev.z, p.z, alpha);
+      a.root.position.set(rx, a.y, rz);
+      a.root.rotation.set(a.pitch, SN.playerPrev.yaw + SN.angleDelta(SN.playerPrev.yaw, p.yaw) * alpha, a.roll);
+    }
+    for (const other of M.aircraft) {
+      if (other === a) continue;
+      other.root.rotation.set(other.pitch, other.yaw, other.roll || 0);
+    }
+  };
+
+  // Base alarm beacons are attached to the gate once the scene is live.
+  SN.registerInit(22.6, function initializeMilitaryBeacons() {
+    const x = X1 + 3.4, z = GATE_Z;
+    M.beaconA = SN.glow(SN.scene, x, Y + 6.2, z - 1.1, 2.4, 0xff3b30);
+    M.beaconB = SN.glow(SN.scene, x, Y + 6.2, z + 1.1, 2.4, 0x3c7bff);
+    M.beaconA.material.opacity = 0.08;
+    M.beaconB.material.opacity = 0.08;
+  });
+})(window.SN);
+    </script>
+    <script>
 /* HUD、提示、武器栏、小地图与全城地图。 */
 "use strict";
 (function (SN) {
@@ -28654,7 +30120,7 @@ void main(){
     }
     SN.feedbackHurtVisible = visible;
     if (!visible) SN.feedbackHurtAngle = NaN;
-    const carMode = !!SN.player.car;
+    const carMode = !!(SN.player.car || SN.player.aircraft);
     if (SN.touchVehicleMode !== carMode) {
       SN.touchVehicleMode = carMode;
       feedbackEl("touchRear").hidden = !carMode;
@@ -29207,7 +30673,7 @@ void main(){
   };
 
   SN.refreshHUD = function refreshHUD() {
-    const c = SN.player.car, w = SN.weapons[SN.selectedWeapon];
+    const c = SN.player.car, ac = SN.player.aircraft, w = SN.weapons[SN.selectedWeapon];
     const area = SN.cityDistrictAt(SN.player.x, SN.player.z);
     if (SN.lastDistrict !== area.name) {
       SN.lastDistrict = area.name;
@@ -29215,12 +30681,14 @@ void main(){
       SN.setText("area", area.name);
     }
     SN.$("districtToast").classList.toggle("show", SN.renderTime < SN.districtToastUntil);
-    document.documentElement.classList.toggle("driving", !!c);
+    document.documentElement.classList.toggle("driving", !!(c || ac));
     const turf = SN.crews.find(g => Math.hypot(g.x - SN.player.x, g.z - SN.player.z) < g.radius);
     SN.setText("district", turf ? turf.name + " 地盘 · " + (turf.anger > 0 ? "敌对" : "保持克制") : "");
     SN.setText("clock", String(Math.floor(SN.minutes / 60) % 24).padStart(2, "0") + ":" + String(Math.floor(SN.minutes) % 60).padStart(2, "0"));
-    SN.setText("speed", String(Math.round(Math.abs(c ? c.speed : SN.player.speed) * 3.6)));
-    SN.setText("mode", c ? c.spec.name + " · 车况 " + Math.ceil(c.health) + "%" : SN.GAITS[SN.player.gait].name + " · 首尔探索者");
+    SN.setText("speed", String(Math.round(Math.abs(c ? c.speed : ac ? ac.speed : SN.player.speed) * 3.6)));
+    SN.setText("mode", c ? c.spec.name + " · 车况 " + Math.ceil(c.health) + "%" :
+      ac ? ac.spec.name + " · 高度 " + Math.max(0, Math.round(ac.y - SN.surfaceHeight(ac.x, ac.z))) + " m" :
+      SN.GAITS[SN.player.gait].name + " · 首尔探索者");
     SN.setText("money", "¥ " + SN.money.toLocaleString("zh-CN"));
     SN.setStyle("healthBar", "width", SN.player.health + "%");
     SN.setStyle("armorBar", "width", SN.player.armor + "%");
@@ -29237,7 +30705,7 @@ void main(){
     SN.$("crosshair").classList.toggle("target-locked", !!SN.aimTarget);
     SN.setText("weaponName", SN.holstered || !w ? "徒手" : w.name);
     SN.setText("ammo", c && c.recoveryReady ? "复位" : SN.reloadTime > 0 ? "换弹中…" : w && !SN.holstered ? (w.capacity ? w.mag + " / " + w.reserve : "近战") : "—");
-    SN.setText("weaponHint", c && c.recoveryReady ? "按 R 复位 · 触屏点右上角「复位」" : c ? "F 下车 · 空格手刹 · G 鸣笛 · 左键车内射击" : SN.holstered ? "Q / 1–6 装备 · 滚轮变焦" : "Q / 1–6 武器 · 滚轮变焦 · H 收起");
+    SN.setText("weaponHint", c && c.recoveryReady ? "按 R 复位 · 触屏点右上角「复位」" : c ? "F 下车 · 空格手刹 · G 鸣笛 · 左键车内射击" : ac ? "F 下机 · W/S 升降与前飞 · A/D 转向 · 空格下降" : SN.holstered ? "Q / 1–6 装备 · 滚轮变焦" : "Q / 1–6 武器 · 滚轮变焦 · H 收起");
     if (SN.counterTarget && SN.streetServices.includes(SN.counterTarget.shop)) {
       SN.setHtml("interaction", "<kbd>E</kbd>" + SN.counterTarget.name);
       SN.$("interaction").classList.add("visible");
@@ -29246,8 +30714,16 @@ void main(){
       SN.setHtml("interaction", "<kbd>F</kbd>下车");
       SN.$("interaction").classList.add("visible");
     }
+    else if (ac) {
+      SN.setHtml("interaction", "<kbd>F</kbd>下机" + (ac.y - SN.surfaceHeight(ac.x, ac.z) > 2.4 ? "（需先降落）" : ""));
+      SN.$("interaction").classList.add("visible");
+    }
     else if (SN.doorTarget) {
       SN.setHtml("interaction", "<kbd>F</kbd>「" + (SN.doorTarget.dir > 0 ? "进入" : "离开") + "」" + SN.doorTarget.e.name);
+      SN.$("interaction").classList.add("visible");
+    }
+    else if (SN.military && SN.military.nearest && SN.military.nearestDistance < 5.5) {
+      SN.setHtml("interaction", "<kbd>F</kbd>驾驶 · " + SN.military.nearest.spec.name);
       SN.$("interaction").classList.add("visible");
     }
     else if (SN.nearestCar && SN.nearDistance < 5.5) {
@@ -29256,7 +30732,7 @@ void main(){
     }
     else
       SN.$("interaction").classList.remove("visible");
-    SN.setText("touchEnter", c ? "下车" : SN.doorTarget ? (SN.doorTarget.dir > 0 ? "进门" : "出门") : "上车");
+    SN.setText("touchEnter", c ? "下车" : ac ? "下机" : SN.doorTarget ? (SN.doorTarget.dir > 0 ? "进门" : "出门") : "上车");
     SN.setText("touchSprint", c ? "鸣笛" : "疾跑");
     SN.setText("touchJump", c ? "手刹" : "跳跃");
     SN.$("touchJump").setAttribute("aria-label", c ? "按住手刹" : "跳跃");
@@ -30086,7 +31562,7 @@ void main(){
       SN.menuCamera(SN.renderTime);
       return;
     }
-    const c = SN.player.car;
+    const c = SN.player.car || SN.player.aircraft;
     const rear = !!(c && (SN.keys.KeyX || SN.touch.rear));
     if (!c && !SN.aiming && !SN.firing && SN.lookDelay <= 0 && SN.player.speed > 0.8 &&
         (SN.keys.KeyW || SN.touch.y > 0.25) && !SN.keys.KeyA && !SN.keys.KeyD && Math.abs(SN.touch.x) < 0.2)
@@ -30248,7 +31724,9 @@ void main(){
       if (SN.arrestState)
         SN.updateArrest(dt);
       else if (!SN.player.dead) {
-        if (SN.player.car)
+        if (SN.player.aircraft)
+          SN.updateAircraft(dt);
+        else if (SN.player.car)
           SN.carMotion(dt);
         else
           SN.playerMotion(dt);
@@ -30260,10 +31738,11 @@ void main(){
       else {
         SN.poseRig(SN.playerRig, 0, 0, SN.simTime, false, false, 0, -1, Math.min(1, (4 - SN.player.dead) * 2));
       }
-      if (SN.player.car)
+      if (SN.player.car || SN.player.aircraft)
         SN.doorTarget = null;
       else
         SN.updateDoorTarget();
+      if (SN.updateMilitary) SN.updateMilitary(dt);
       SN.updateShops(dt);
       SN.updateCityPopulation();
       SN.trafficMotion(dt);
@@ -30271,6 +31750,7 @@ void main(){
       SN.updateStreetLife(dt);
       SN.updateWeather(dt);
       SN.updateLivingCity(dt);
+      SN.updateNightBar(dt, SN.simTime);
       SN.updateRadio(dt);
       SN.updateStreetEvent(dt);
       if (SN.toastTime > 0) {
@@ -30304,6 +31784,7 @@ void main(){
       c.body.position.y = SN.lerp(c.psuspension, c.suspension, alpha);
       SN.placeVehicleWheels(c);
     }
+    if (SN.renderAircraft) SN.renderAircraft(alpha);
     if (SN.carjack) {
       const j = SN.carjack, k = 1 - j.time / 0.6;
       SN.playerRoot.visible = true;
@@ -30493,6 +31974,18 @@ void main(){
       const grade = SN.slopeShot, target = SN.roadPointAt(grade.road, Math.min(grade.road.length, grade.s + 26));
       SN.camera.position.set(p.x + Math.cos(grade.yaw) * grade.side * 3.4, y + 4.6, p.z - Math.sin(grade.yaw) * grade.side * 3.4);
       SN.lookTarget.set(target.x, SN.roadProfileHeight(grade.road.profile, Math.min(grade.road.length, grade.s + 26)) + 0.6, target.z);
+    } else if (shot.name === "mall") {
+      SN.camera.fov = 58;
+      SN.camera.position.set(p.x + 48, y + 9.5, p.z + 14);
+      SN.lookTarget.set(1756, y + 8.2, 1421);
+    } else if (shot.name === "bar") {
+      SN.camera.fov = 66;
+      SN.camera.position.set(p.x - 2.6, y + 2.7, p.z + 1.2);
+      SN.lookTarget.set(-1861.8, y + 1.55, -552.6);
+    } else if (shot.name === "base" && SN.military) {
+      SN.camera.fov = 60;
+      SN.camera.position.set(SN.military.cx - 94, SN.military.y + 12, SN.military.cz + 42);
+      SN.lookTarget.set(SN.military.cx + 16, SN.military.y + 3, SN.military.cz - 18);
     } else {
       const distance = p.car ? 10.5 : 6.7, yaw = shot.yaw;
       SN.camera.position.set(p.x - Math.sin(yaw) * distance, y + (p.car ? 4.4 : 3.1), p.z - Math.cos(yaw) * distance);
@@ -30530,10 +32023,13 @@ void main(){
     if (name === "closeup") { x = 410; z = -430; yaw = SN.PI / 2; minutes = 630; }
     if (name === "carclose") { x = 210; z = 1056; yaw = -SN.PI / 2; minutes = 705; }
     if (name === "rain") { x = 210; z = 1072; yaw = SN.PI / 2; minutes = 1125; }
+    if (name === "mall") { x = 1760; z = 1478; yaw = SN.PI; minutes = 950; }
+    if (name === "bar") { x = -1869; z = -561; yaw = 0; minutes = 1290; }
+    if (name === "base" && SN.military) { x = SN.military.cx + 4; z = SN.military.cz; yaw = -SN.PI / 2; minutes = 705; }
     const drive = ["drive", "chase", "mission"].includes(name);
     // Authored camera marks stay on the actual shopping terrace / avenue sidewalk.
     // Nearest-shop selection could silently move the view onto the Namsan hillside.
-    const p = drive || name === "rain" || name === "carclose" ? { x, z } : SN.safePosition(x, z, 0.35);
+    const p = drive || name === "rain" || name === "carclose" || name === "bar" ? { x, z } : SN.safePosition(x, z, 0.35);
     Object.assign(SN.player, p, { y: SN.surfaceHeight(p.x, p.z), yaw, vy: 0, speed: 0, motionSpeed: 0, dead: 0, grounded: true });
     const stageCar = (car, px, pz, heading, type, speed) => {
       if (car.occupant) { car.occupant.inCar = null; car.occupant.active = false; car.occupant = null; }
@@ -30545,6 +32041,17 @@ void main(){
     };
     for (const car of SN.cars) { car.active = false; car.root.visible = false; }
     for (const actor of SN.actors) { actor.active = false; actor.rig.root.visible = false; }
+    if (name === "base" && SN.military) {
+      for (const tank of SN.military.tanks) { tank.active = true; tank.root.visible = true; }
+      for (const a of SN.military.aircraft) a.root.visible = true;
+      for (const guard of SN.military.guards) {
+        guard.active = true;
+        guard.rig.root.visible = !guard.modelAgent;
+        guard.rig.root.position.set(guard.x, SN.surfaceHeight(guard.x, guard.z), guard.z);
+        guard.rig.root.rotation.y = guard.yaw;
+        guard.poseDirty = true;
+      }
+    }
     if (drive) {
       SN.player.car = stageCar(SN.contractCar, x, z, yaw, name === "mission" ? 3 : 7, 18);
       SN.player.car.paintColor = name === "chase" ? 0xd52c35 : 0x126bd5; SN.repairVehicle(SN.player.car);
@@ -30648,6 +32155,7 @@ void main(){
   SN.updateShowcase = function updateShowcase(dt) {
     SN.simTime += dt; SN.stepCount++; SN.minutes = SN.showcase.minutes;
     SN.updateWeather(dt);
+    SN.updateNightBar(dt, SN.simTime);
     SN.updateRadio(dt);
     SN.clearInput();
     SN.poseRig(SN.playerRig, 0, 0, SN.simTime, false, false, 0, -1);
@@ -30744,6 +32252,85 @@ void main(){
         assert(SN.skidMesh.count > 0 && SN.debrisMesh.count > 0, "胎痕或碎片未生成");
         assert(SN.skidMesh.instanceColor && SN.debrisMesh.instanceColor, "实例颜色缺失");
         SN.clearInput(); SN.player.car = null; c.speed = c.vx = c.vz = 0; SN.repairVehicle(c);
+      }],
+      [12.8, "feel-military-base", () => {
+        const M = SN.military;
+        assert(M && M.tanks.length === 2 && M.aircraft.length === 2 && M.guards.length === 4, "军营内容缺失");
+        const heights = [[-100, -60], [90, -50], [-10, 38], [40, 60], [0, 0]]
+          .map(([lx, lz]) => SN.surfaceHeight(M.cx + lx, M.cz + lz));
+        const spread = Math.max(...heights) - Math.min(...heights);
+        assert(spread < 1.2, "军营地面不平 " + spread.toFixed(2));
+        assert(!SN.blocked(M.x1 - 1.5, M.cz, 0.4) && !SN.blocked(M.x1 + 1.5, M.cz, 0.4), "营门被挡");
+        assert(SN.blocked(M.x1, M.z0 + 18, 0.4), "营墙不实");
+        assert(SN.blocked(M.cx - 72, M.cz - 48, 0.4), "营房不实");
+        const p = SN.player;
+        const tank = M.tanks[0], heli = M.aircraft.find(a => a.kind === "heli"), plane = M.aircraft.find(a => a.kind === "plane");
+        const saved = { x: p.x, y: p.y, z: p.z, yaw: p.yaw, car: p.car, camYaw: SN.camYaw, camPitch: SN.camPitch, heat: SN.heat };
+        const airSaved = M.aircraft.map(a => ({ a, x: a.x, z: a.z, y: a.y, yaw: a.yaw, speed: a.speed, vy: a.vy,
+          airborne: a.airborne, pitch: a.pitch, roll: a.roll, health: a.health, occupied: a.occupied }));
+        const tankSaved = { x: tank.x, z: tank.z, yaw: tank.yaw };
+        try {
+          SN.clearInput(); p.car = null;
+          Object.assign(p, { x: M.cx, z: M.cz, y: SN.surfaceHeight(M.cx, M.cz), grounded: true });
+          M.inside = false;
+          SN.updateMilitary(0.05);
+          assert(SN.heat === 5, "进入军营未触发五星通缉");
+          assert(M.inside, "军营进入状态未记录");
+          assert(M.guards.every(g => g.active && g.guard), "武警未上岗");
+          // Tank: tracked, no floating car wheels, drives under the shared car physics.
+          assert(tank.spec.tank && tank.wheels.length === 0, "坦克仍装配车轮");
+          tank.speed = 0; tank.vx = tank.vz = 0;
+          for (let i = 0; i < 150; i++) SN.moveCar(tank, 1 / 60, 1, 0);
+          const travelled = Math.hypot(tank.x - tankSaved.x, tank.z - tankSaved.z);
+          assert(travelled > 4, "坦克无法行驶 " + travelled.toFixed(2));
+          // Helicopter: lifts on its own, flies forward, then lands and lets the player out.
+          heli.x = M.cx - 8; heli.z = M.cz + 38; heli.yaw = -Math.PI / 2;
+          heli.y = SN.surfaceHeight(heli.x, heli.z) + heli.rest;
+          Object.assign(heli, { speed: 0, vy: 0, airborne: false, health: 140 });
+          assert(SN.boardAircraft(heli), "无法驾驶直升机");
+          SN.clearInput();
+          for (let i = 0; i < 150; i++) SN.updateAircraft(1 / 60);
+          const lift = heli.y - SN.surfaceHeight(heli.x, heli.z);
+          assert(lift > 6, "直升机未升空 " + lift.toFixed(1));
+          const hx = heli.x;
+          SN.keys.KeyW = true;
+          for (let i = 0; i < 90; i++) SN.updateAircraft(1 / 60);
+          SN.clearInput();
+          assert(heli.x < hx - 4, "直升机无法前飞");
+          heli.y = SN.surfaceHeight(heli.x, heli.z) + heli.rest; heli.airborne = false; heli.vy = 0;
+          assert(SN.exitAircraft() && !SN.player.aircraft, "直升机无法下机");
+          // Plane: rolls, gets airborne above its takeoff speed, climbs, then lands.
+          plane.x = M.cx + 40; plane.z = M.cz + 38; plane.yaw = -Math.PI / 2;
+          plane.y = SN.surfaceHeight(plane.x, plane.z) + plane.rest;
+          Object.assign(plane, { speed: 24, vy: 0, airborne: false, health: 140 });
+          assert(SN.boardAircraft(plane), "无法驾驶飞机");
+          SN.clearInput(); SN.updateAircraft(1 / 60);
+          assert(plane.airborne, "飞机达到速度仍未离地");
+          for (let i = 0; i < 90; i++) SN.updateAircraft(1 / 60);
+          const alt = plane.y - SN.surfaceHeight(plane.x, plane.z);
+          assert(alt > 5, "飞机未爬升 " + alt.toFixed(1));
+          plane.y = SN.surfaceHeight(plane.x, plane.z) + plane.rest; plane.airborne = false; plane.vy = 0; plane.speed = 0;
+          assert(SN.exitAircraft() && !SN.player.aircraft, "飞机无法下机");
+          assert(M.aircraft.every(a => a.y >= SN.surfaceHeight(a.x, a.z) - 0.2), "飞行器陷进地面");
+        } finally {
+          SN.clearInput();
+          if (SN.player.aircraft) SN.exitAircraft();
+          for (const s of airSaved) {
+            Object.assign(s.a, { x: s.x, z: s.z, y: s.y, yaw: s.yaw, speed: s.speed, vy: s.vy,
+              airborne: s.airborne, pitch: s.pitch, roll: s.roll, health: s.health, occupied: s.occupied });
+            if (s.a === SN.player.aircraft) SN.player.aircraft = null;
+            s.a.root.position.set(s.x, s.y, s.z);
+            s.a.root.rotation.set(s.pitch, s.yaw, s.roll);
+          }
+          Object.assign(tank, { x: tankSaved.x, z: tankSaved.z, yaw: tankSaved.yaw, speed: 0, vx: 0, vz: 0 });
+          Object.assign(p, { x: saved.x, y: saved.y, z: saved.z, yaw: saved.yaw, car: saved.car, aircraft: null, grounded: true, vy: 0 });
+          SN.playerRoot.visible = true;
+          SN.camYaw = saved.camYaw; SN.camPitch = saved.camPitch;
+          SN.heat = saved.heat;
+          if (saved.heat === 0) SN.clearWantedResponse();
+          M.inside = false; M.alarm = 0;
+          SN.snapPlayer();
+        }
       }]
     );
   };
@@ -30885,6 +32472,55 @@ void main(){
         assert(Number.isFinite(car.x) && Number.isFinite(car.speed) && Math.abs(car.speed) > 1, "车辆没有加速");
         SN.keys.KeyD = SN.keys.Space = true;
       }],
+      [4.0, "bike-steering", () => {
+        const spec = SN.vehicleSpecs.find(s => s.bike);
+        assert(spec, "缺少摩托车型");
+        const blocked = SN.carBlocked, water = SN.carWater;
+        SN.carBlocked = () => false;
+        SN.carWater = () => false;
+        try {
+          const makeBike = () => {
+            const root = new SN.T.Group(), body = new SN.T.Group();
+            root.add(body);
+            root.visible = false;
+            return {
+              spec, x: 500, z: 500, yaw: 0, speed: 18, vx: 0, vz: 0, steer: 0, yawRate: 0,
+              health: 100, maxHealth: 100, exploded: false, airborne: false, active: false,
+              collisionTimer: 0, collisionCooldown: 0, stuck: 0, suspension: 0, suspensionV: 0,
+              pitch: 0, pitchV: 0, roll: 0, rollV: 0, terrainRoll: 0, vy: 0, groundY: 0,
+              wheelRadius: 0.32, wheels: [], occupants: [], root, body, lights: null, spin: 0,
+              driver: null, parked: true
+            };
+          };
+          const sample = dir => {
+            const c = makeBike();
+            const rates = [];
+            for (let f = 0; f < 60; f++) {
+              const before = c.yaw;
+              c.speed = 18;
+              SN.moveCar(c, 1 / 60, 0, f < 6 ? 0 : dir);
+              rates.push(Math.abs(c.yaw - before) * 60);
+            }
+            return { c, rates };
+          };
+          const left = sample(1), right = sample(-1);
+          const steadyLeft = left.rates[45], steadyRight = right.rates[45];
+          assert([left.c.yaw, right.c.yaw, steadyLeft, steadyRight].every(Number.isFinite), "摩托转向出现无效角度");
+          assert(steadyLeft > 0.25 && steadyRight > 0.25, "摩托无法转向 " + steadyLeft.toFixed(2) + "/" + steadyRight.toFixed(2));
+          assert(Math.abs(steadyLeft - steadyRight) / Math.max(steadyLeft, steadyRight) < 0.08, "左右转向不对称");
+          // A steering wheel builds its arc: the first tenth of a second must not
+          // already carry the full yaw rate.
+          assert(left.rates[8] < steadyLeft * 0.45, "转向瞬间到位，没有弧度 " + (left.rates[8] / steadyLeft).toFixed(2));
+          assert(left.rates[2] <= left.rates[8] + 1e-6, "转向响应不是逐渐增大");
+          const c = left.c;
+          for (let f = 0; f < 40; f++) { c.speed = 18; SN.moveCar(c, 1 / 60, 0, 0); }
+          const settle = Math.abs(c.yawRate);
+          assert(settle < steadyLeft * 0.15, "松开转向后车身回正太慢 " + settle.toFixed(3));
+        } finally {
+          SN.carBlocked = blocked;
+          SN.carWater = water;
+        }
+      }],
       [4.2, "reverse", () => {
         SN.clearInput(); car.speed = car.vx = car.vz = 0; SN.keys.KeyS = true;
       }],
@@ -30935,7 +32571,7 @@ void main(){
       }],
       [8.6, "escape", () => {
         SN.clearWantedResponse();
-        for (const a of SN.actors) if (a.kind === "police") a.active = false;
+        for (const a of SN.actors) if (a.kind === "police" && !a.guard) a.active = false;
         SN.heat = 1; SN.searchX = SN.player.x + 250; SN.searchZ = SN.player.z; SN.searchRadius = 60;
         SN.updateWanted(8); assert(SN.heat === 0, "脱离搜索圈未消除通缉");
         SN.player.health = 100; SN.player.armor = 100;
@@ -31071,6 +32707,57 @@ void main(){
       assert(result.curvatureIssues === 0, "道路坡度变化过大：" + result.issues.slice(0, 3).join(" | "));
       assert(result.jointIssues === 0, "路口或桥头高差：" + result.issues.slice(0, 3).join(" | "));
       assert(SN.slopeShot && Math.abs(SN.slopeShot.grade) > 0.005, "缺少坡度展示路段");
+    }]);
+    SN.smoke.stages.push([20.2, "road-surface-steps", () => {
+      // Walking the centre line of every street and sampling the ground with the
+      // height the wheels expect must never find a ledge: a roof, a stair or an
+      // overpass deck used to hijack the surface and throw cars into the air.
+      let worstUp = 0, worstAt = "", checked = 0;
+      for (const road of SN.roads) {
+        if (!road.profile || road.length < 8)
+          continue;
+        let s = 0, prev = null;
+        for (let j = 1; j < road.points.length; j++) {
+          const a = road.points[j - 1], b = road.points[j];
+          const dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz);
+          const n = Math.max(1, Math.ceil(len));
+          for (let k = 0; k < n; k++) {
+            const t = k / n, x = a[0] + dx * t, z = a[1] + dz * t, along = s + len * t;
+            if (along > road.length - 0.5) { prev = null; continue; }
+            const expected = SN.roadProfileHeight(road.profile, along) + 0.17;
+            const h = SN.surfaceHeight(x, z, expected);
+            checked++;
+            if (prev !== null && h - prev > worstUp) {
+              worstUp = h - prev;
+              worstAt = road.name + " " + x.toFixed(1) + "," + z.toFixed(1) + " " + prev.toFixed(2) + "→" + h.toFixed(2);
+            }
+            prev = h;
+          }
+          s += len;
+        }
+      }
+      assert(checked > 60000, "路面采样不足：" + checked);
+      assert(worstUp < 0.45, "路面突然凸起，车会被弹飞：" + worstAt);
+      const underBridge = SN.surfaceHeight(-165.2, -199.4, 1.2);
+      const underStair = SN.surfaceHeight(-41.7, -278.3, 79.8);
+      assert(underBridge < 2.5, "高架桥下的路面被桥面顶起：" + underBridge.toFixed(2));
+      assert(underStair < 81, "南山步道盖住了下方车道：" + underStair.toFixed(2));
+      console.log("SMOKE road-surface: samples=" + checked + " worstUp=" + worstUp.toFixed(3) + "m at " + worstAt);
+    }]);
+    SN.smoke.stages.push([20.3, "lawns-dressed", () => {
+      const spots = SN.lawnSpots || [];
+      assert(spots.length >= 500, "草坪几乎没有设施：" + spots.length);
+      let bad = 0;
+      for (const s of spots)
+        if (SN.onRoadway(s.x, s.z, 3) || SN.isWater(s.x, s.z, 1))
+          bad++;
+      assert(bad === 0, "草坪设施压在水面或道路上：" + bad);
+      assert(SN.benchSpots.length >= 200, "草坪没有可坐的长椅：" + SN.benchSpots.length);
+      const mall = SN.cityLandmarks.find(g => Math.hypot(g.position.x - 1760, g.position.z - 1330) < 6);
+      assert(mall, "大商场不见了");
+      assert(!SN.isWater(1760, 1440) && !SN.onRoadway(1760, 1440), "大商场门前是水或者车道");
+      assert(SN.showcaseNames.includes("mall"), "缺少大商场展示镜头");
+      console.log("SMOKE lawns: spots=" + spots.length + " benches=" + SN.benchSpots.length);
     }]);
     SN.smoke.stages.push([22.5, "pedestrians-walk", () => {
       const check = (ok, message) => { if (!ok) throw new Error(message); };
@@ -31583,11 +33270,11 @@ void main(){
           let inner = 0;
           for (let i = 0; i < position.count; i++) {
             const dx = (position.getX(i) - cuff.x) * cuff.side;
-            if (dx < -0.06 || dx > -0.012) continue;
+            if (dx < -0.024 || dx > -0.004) continue;
             const dy = position.getY(i) - cuff.y, dz = position.getZ(i) - cuff.z;
-            if (Math.sqrt(dy * dy + dz * dz) < cuff.radius - 0.002) inner++;
+            if (Math.sqrt(dy * dy + dz * dz) < cuff.radius * 0.85) inner++;
           }
-          check(inner >= 6, "袖口没有内折闭合：" + inner);
+          check(inner >= 6, "袖口没有封口：" + inner);
         }
         const proto = M.prototypes[agent.sex];
         if (agent.garmentKeys.top === "topLong" && proto && proto.bones && proto.bones.hand_l) {
@@ -31632,7 +33319,18 @@ void main(){
             worstCenter = Math.max(worstCenter, centerOffset);
             check(ease <= 0.012, "袖口离手腕太远（手像断开了）：" + ease.toFixed(3) + " m");
             check(ease >= 0.002, "袖口勒进手腕：" + ease.toFixed(3) + " m");
-            check(centerOffset <= 0.012, "袖口没有对准手腕：" + centerOffset.toFixed(3) + " m");
+            check(centerOffset <= 0.006, "袖口没有对准手腕：" + centerOffset.toFixed(3) + " m");
+            // 手腕处皮肤必须整个待在袖口里面。之前内折圈比手臂最粗处小 7 mm，
+            // 皮肤在袖口边缘穿出一圈锯齿，看上去就像手是贴上去的。
+            let skinMax = 0;
+            for (let i = 0; i < bodyPos.count; i++) {
+              const dx = Math.abs(bodyPos.getX(i)) - Math.abs(cuff.x);
+              if (dx < -0.008 || dx > 0.006) continue;
+              const dy = bodyPos.getY(i) - cuff.y, dz = bodyPos.getZ(i) - cuff.z;
+              skinMax = Math.max(skinMax, Math.hypot(dy, dz));
+            }
+            check(skinMax <= cuff.radius + 0.001, "手腕皮肤穿出袖口：" + skinMax.toFixed(3) +
+              " / 袖口 " + cuff.radius.toFixed(3) + " m");
           }
           const uniforms = agent.body.material && agent.body.material.userData &&
             agent.body.material.userData.clothUniforms;
@@ -31726,11 +33424,11 @@ void main(){
             let inner = 0;
             for (let i = 0; i < shortPosition.count; i++) {
               const dx = (shortPosition.getX(i) - cuff.x) * cuff.side;
-              if (dx < -0.06 || dx > -0.012) continue;
+              if (dx < -0.024 || dx > -0.004) continue;
               const dy = shortPosition.getY(i) - cuff.y, dz = shortPosition.getZ(i) - cuff.z;
-              if (Math.sqrt(dy * dy + dz * dz) < cuff.radius - 0.002) inner++;
+              if (Math.sqrt(dy * dy + dz * dz) < cuff.radius * 0.85) inner++;
             }
-            check(inner >= 6, "短袖袖口没有内折闭合：" + inner);
+            check(inner >= 6, "短袖袖口没有封口：" + inner);
           }
           // Short sleeves had an 8 cm flared mouth around a 5 cm bicep; measure
           // the same ease the long cuff test uses so the arm cannot float inside
@@ -32078,7 +33776,7 @@ void main(){
       if (active && (SN.campaign.active !== active || active.step !== step)) { SN.clearInput(); return; }
       idle = Math.hypot(p.x - before.x, p.z - before.z) < 0.005 ? idle + 1 / 30 : 0;
       if (idle > 1 && retries < 3) { SN.clearInput(); return SN.smokeWalkTo(target, tick, radius, retries + 1); }
-      if (idle > 3) throw new Error("步行受阻 " + p.x.toFixed(1) + "," + p.z.toFixed(1));
+      if (idle > 3) throw new Error("步行受阻 " + p.x.toFixed(1) + "," + p.z.toFixed(1) + " 目标 " + target.x.toFixed(1) + "," + target.z.toFixed(1) + " 路点 " + index + "/" + path.length + " 坡 " + (SN.groundUnder(p.x + Math.sin(SN.camYaw), p.z + Math.cos(SN.camYaw), 0.22, p.y) - p.y).toFixed(2) + " 障碍 " + SN.blocked(p.x + Math.sin(SN.camYaw), p.z + Math.cos(SN.camYaw), 0.28, p.y) + " 高度 " + p.y.toFixed(2));
     }
     SN.clearInput();
     if (Math.hypot(p.x - target.x, p.z - target.z) > radius) throw new Error("步行超时");
@@ -32598,8 +34296,61 @@ void main(){
         const data = JSON.parse(JSON.stringify(SN.progression)); SN.restoreProgression(data);
         assert(SN.progression.hair === data.hair && SN.progression.cityOutfit === data.cityOutfit, "外观未随存档恢复"); reset();
       }],
-      [20.32, "living-street-events", () => {
+      [20.21, "shop-floor-and-clerk", () => {
         reset();
+        const spec = SN.allShopSpecs.find(s => s.clerk);
+        assert(spec, "缺少店员");
+        SN.buildShopInterior(spec);
+        const tile = spec.shellGroup.children.find(c => c.geometry && c.geometry.parameters && Math.abs(c.geometry.parameters.height - 0.035) < 1e-6);
+        assert(tile, "店内没有地板");
+        const top = tile.position.y + 0.0175;
+        assert(Math.abs(top - spec.base) < 0.006, "地板和行走面差了 " + (top - spec.base).toFixed(3) + " m");
+        const clerk = spec.clerk;
+        move(clerk.x + 2.4, clerk.z + 0.6);
+        clerk.shopState = "greet"; clerk.shopTimer = 30;
+        for (let i = 0; i < 30; i++) SN.shopPoseClerk(clerk, 1 / 30, i / 30);
+        const want = Math.atan2(SN.player.x - clerk.x, SN.player.z - clerk.z);
+        const off = Math.abs(SN.angleDelta(clerk.yaw, want));
+        assert(off < 0.35, "店员没有转身面向顾客：" + off.toFixed(2));
+        clerk.shopState = "idle"; clerk.shopTimer = 3;
+      }],
+      [20.26, "nightlife-bar", () => {
+        reset();
+        const bar = SN.nightBar;
+        assert(bar, "酒吧没有建成");
+        assert(bar.patrons.length >= 9 && bar.dancers.length >= 2, "酒吧人物不足");
+        assert(SN.surfaceHeight(bar.x, bar.z, bar.floorTop) - bar.floorTop < 0.02, "酒吧地板没有登记行走面");
+        assert(SN.surfaceHeight(bar.pole.x, bar.pole.z, bar.floorTop) > bar.floorTop + 0.2, "舞台高度异常");
+        assert(!SN.blocked(bar.x, bar.z - 7.2, 0.25, bar.floorTop), "酒吧门口被挡住");
+        assert(SN.blocked(bar.x, bar.z + 6.7, 0.25, bar.floorTop), "酒吧后墙没有碰撞");
+        assert(SN.blocked(bar.x - 9.7, bar.z, 0.25, bar.floorTop), "酒吧侧墙没有碰撞");
+        move(bar.x, bar.z - 5);
+        SN.updateNightBar(0, 10);
+        assert(bar.shown.length === bar.people.length, "酒吧人物未显示");
+        const angle = d => Math.atan2(d.rig.root.position.x - bar.pole.x, d.rig.root.position.z - bar.pole.z);
+        const before = bar.dancers.map(angle);
+        SN.updateNightBar(0, 11);
+        bar.dancers.forEach((d, i) => {
+          assert(Math.abs(SN.angleDelta(before[i], angle(d))) > 0.25, "舞者没有绕杆");
+          assert(Math.abs(Math.hypot(d.rig.root.position.x - bar.pole.x, d.rig.root.position.z - bar.pole.z) - 0.62) < 0.03, "舞者离杆距离异常");
+          assert(Math.abs(d.rig.root.position.y - bar.stageTop) < 0.02, "舞者没有站在舞台上");
+        });
+        for (const p of bar.patrons) assert(Math.abs(p.rig.root.position.y - bar.floorTop) < 0.02, "顾客没有站在地板上");
+        let missing = 0, glasses = 0;
+        const hand = new SN.T.Vector3();
+        for (const p of bar.patrons) {
+          assert(p.drink && p.drink.visible, "顾客没有酒杯");
+          p.rig.arms[0].hand.getWorldPosition(hand);
+          assert(p.drink.position.distanceTo(hand) < 0.12, "酒杯没有拿在手上");
+          glasses++;
+        }
+        for (const r of bar.shown) for (const part of r.parts) if (!SN.npcBatchMap.has(part.batchKey)) missing++;
+        assert(missing === 0, "酒吧人物有部件无法批量绘制：" + missing);
+        SN.flushActors();
+        assert(bar.dropped === 0, "酒吧人物批量容量不足：" + bar.dropped);
+        assert(glasses >= 9, "酒杯数量不足");
+      }],
+      [20.32, "living-street-events", () => {        reset();
         for (const type of SN.streetEventTypes) {
           reset();
           if (type === "snatch") { const p = SN.safePosition(-15, -765, 0.3); const a = SN.actors[0]; Object.assign(a, p, { active: true, inCar: null, down: 0, hostile: false, interior: false, health: 100 }); }

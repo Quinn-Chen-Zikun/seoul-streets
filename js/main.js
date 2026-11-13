@@ -63,7 +63,7 @@
       SN.menuCamera(SN.renderTime);
       return;
     }
-    const c = SN.player.car;
+    const c = SN.player.car || SN.player.aircraft;
     const rear = !!(c && (SN.keys.KeyX || SN.touch.rear));
     if (!c && !SN.aiming && !SN.firing && SN.lookDelay <= 0 && SN.player.speed > 0.8 &&
         (SN.keys.KeyW || SN.touch.y > 0.25) && !SN.keys.KeyA && !SN.keys.KeyD && Math.abs(SN.touch.x) < 0.2)
@@ -225,7 +225,9 @@
       if (SN.arrestState)
         SN.updateArrest(dt);
       else if (!SN.player.dead) {
-        if (SN.player.car)
+        if (SN.player.aircraft)
+          SN.updateAircraft(dt);
+        else if (SN.player.car)
           SN.carMotion(dt);
         else
           SN.playerMotion(dt);
@@ -237,10 +239,11 @@
       else {
         SN.poseRig(SN.playerRig, 0, 0, SN.simTime, false, false, 0, -1, Math.min(1, (4 - SN.player.dead) * 2));
       }
-      if (SN.player.car)
+      if (SN.player.car || SN.player.aircraft)
         SN.doorTarget = null;
       else
         SN.updateDoorTarget();
+      if (SN.updateMilitary) SN.updateMilitary(dt);
       SN.updateShops(dt);
       SN.updateCityPopulation();
       SN.trafficMotion(dt);
@@ -248,6 +251,7 @@
       SN.updateStreetLife(dt);
       SN.updateWeather(dt);
       SN.updateLivingCity(dt);
+      SN.updateNightBar(dt, SN.simTime);
       SN.updateRadio(dt);
       SN.updateStreetEvent(dt);
       if (SN.toastTime > 0) {
@@ -281,6 +285,7 @@
       c.body.position.y = SN.lerp(c.psuspension, c.suspension, alpha);
       SN.placeVehicleWheels(c);
     }
+    if (SN.renderAircraft) SN.renderAircraft(alpha);
     if (SN.carjack) {
       const j = SN.carjack, k = 1 - j.time / 0.6;
       SN.playerRoot.visible = true;
@@ -470,6 +475,18 @@
       const grade = SN.slopeShot, target = SN.roadPointAt(grade.road, Math.min(grade.road.length, grade.s + 26));
       SN.camera.position.set(p.x + Math.cos(grade.yaw) * grade.side * 3.4, y + 4.6, p.z - Math.sin(grade.yaw) * grade.side * 3.4);
       SN.lookTarget.set(target.x, SN.roadProfileHeight(grade.road.profile, Math.min(grade.road.length, grade.s + 26)) + 0.6, target.z);
+    } else if (shot.name === "mall") {
+      SN.camera.fov = 58;
+      SN.camera.position.set(p.x + 48, y + 9.5, p.z + 14);
+      SN.lookTarget.set(1756, y + 8.2, 1421);
+    } else if (shot.name === "bar") {
+      SN.camera.fov = 66;
+      SN.camera.position.set(p.x - 2.6, y + 2.7, p.z + 1.2);
+      SN.lookTarget.set(-1861.8, y + 1.55, -552.6);
+    } else if (shot.name === "base" && SN.military) {
+      SN.camera.fov = 60;
+      SN.camera.position.set(SN.military.cx - 94, SN.military.y + 12, SN.military.cz + 42);
+      SN.lookTarget.set(SN.military.cx + 16, SN.military.y + 3, SN.military.cz - 18);
     } else {
       const distance = p.car ? 10.5 : 6.7, yaw = shot.yaw;
       SN.camera.position.set(p.x - Math.sin(yaw) * distance, y + (p.car ? 4.4 : 3.1), p.z - Math.cos(yaw) * distance);
@@ -507,10 +524,13 @@
     if (name === "closeup") { x = 410; z = -430; yaw = SN.PI / 2; minutes = 630; }
     if (name === "carclose") { x = 210; z = 1056; yaw = -SN.PI / 2; minutes = 705; }
     if (name === "rain") { x = 210; z = 1072; yaw = SN.PI / 2; minutes = 1125; }
+    if (name === "mall") { x = 1760; z = 1478; yaw = SN.PI; minutes = 950; }
+    if (name === "bar") { x = -1869; z = -561; yaw = 0; minutes = 1290; }
+    if (name === "base" && SN.military) { x = SN.military.cx + 4; z = SN.military.cz; yaw = -SN.PI / 2; minutes = 705; }
     const drive = ["drive", "chase", "mission"].includes(name);
     // Authored camera marks stay on the actual shopping terrace / avenue sidewalk.
     // Nearest-shop selection could silently move the view onto the Namsan hillside.
-    const p = drive || name === "rain" || name === "carclose" ? { x, z } : SN.safePosition(x, z, 0.35);
+    const p = drive || name === "rain" || name === "carclose" || name === "bar" ? { x, z } : SN.safePosition(x, z, 0.35);
     Object.assign(SN.player, p, { y: SN.surfaceHeight(p.x, p.z), yaw, vy: 0, speed: 0, motionSpeed: 0, dead: 0, grounded: true });
     const stageCar = (car, px, pz, heading, type, speed) => {
       if (car.occupant) { car.occupant.inCar = null; car.occupant.active = false; car.occupant = null; }
@@ -522,6 +542,17 @@
     };
     for (const car of SN.cars) { car.active = false; car.root.visible = false; }
     for (const actor of SN.actors) { actor.active = false; actor.rig.root.visible = false; }
+    if (name === "base" && SN.military) {
+      for (const tank of SN.military.tanks) { tank.active = true; tank.root.visible = true; }
+      for (const a of SN.military.aircraft) a.root.visible = true;
+      for (const guard of SN.military.guards) {
+        guard.active = true;
+        guard.rig.root.visible = !guard.modelAgent;
+        guard.rig.root.position.set(guard.x, SN.surfaceHeight(guard.x, guard.z), guard.z);
+        guard.rig.root.rotation.y = guard.yaw;
+        guard.poseDirty = true;
+      }
+    }
     if (drive) {
       SN.player.car = stageCar(SN.contractCar, x, z, yaw, name === "mission" ? 3 : 7, 18);
       SN.player.car.paintColor = name === "chase" ? 0xd52c35 : 0x126bd5; SN.repairVehicle(SN.player.car);
@@ -625,6 +656,7 @@
   SN.updateShowcase = function updateShowcase(dt) {
     SN.simTime += dt; SN.stepCount++; SN.minutes = SN.showcase.minutes;
     SN.updateWeather(dt);
+    SN.updateNightBar(dt, SN.simTime);
     SN.updateRadio(dt);
     SN.clearInput();
     SN.poseRig(SN.playerRig, 0, 0, SN.simTime, false, false, 0, -1);
@@ -721,6 +753,85 @@
         assert(SN.skidMesh.count > 0 && SN.debrisMesh.count > 0, "胎痕或碎片未生成");
         assert(SN.skidMesh.instanceColor && SN.debrisMesh.instanceColor, "实例颜色缺失");
         SN.clearInput(); SN.player.car = null; c.speed = c.vx = c.vz = 0; SN.repairVehicle(c);
+      }],
+      [12.8, "feel-military-base", () => {
+        const M = SN.military;
+        assert(M && M.tanks.length === 2 && M.aircraft.length === 2 && M.guards.length === 4, "军营内容缺失");
+        const heights = [[-100, -60], [90, -50], [-10, 38], [40, 60], [0, 0]]
+          .map(([lx, lz]) => SN.surfaceHeight(M.cx + lx, M.cz + lz));
+        const spread = Math.max(...heights) - Math.min(...heights);
+        assert(spread < 1.2, "军营地面不平 " + spread.toFixed(2));
+        assert(!SN.blocked(M.x1 - 1.5, M.cz, 0.4) && !SN.blocked(M.x1 + 1.5, M.cz, 0.4), "营门被挡");
+        assert(SN.blocked(M.x1, M.z0 + 18, 0.4), "营墙不实");
+        assert(SN.blocked(M.cx - 72, M.cz - 48, 0.4), "营房不实");
+        const p = SN.player;
+        const tank = M.tanks[0], heli = M.aircraft.find(a => a.kind === "heli"), plane = M.aircraft.find(a => a.kind === "plane");
+        const saved = { x: p.x, y: p.y, z: p.z, yaw: p.yaw, car: p.car, camYaw: SN.camYaw, camPitch: SN.camPitch, heat: SN.heat };
+        const airSaved = M.aircraft.map(a => ({ a, x: a.x, z: a.z, y: a.y, yaw: a.yaw, speed: a.speed, vy: a.vy,
+          airborne: a.airborne, pitch: a.pitch, roll: a.roll, health: a.health, occupied: a.occupied }));
+        const tankSaved = { x: tank.x, z: tank.z, yaw: tank.yaw };
+        try {
+          SN.clearInput(); p.car = null;
+          Object.assign(p, { x: M.cx, z: M.cz, y: SN.surfaceHeight(M.cx, M.cz), grounded: true });
+          M.inside = false;
+          SN.updateMilitary(0.05);
+          assert(SN.heat === 5, "进入军营未触发五星通缉");
+          assert(M.inside, "军营进入状态未记录");
+          assert(M.guards.every(g => g.active && g.guard), "武警未上岗");
+          // Tank: tracked, no floating car wheels, drives under the shared car physics.
+          assert(tank.spec.tank && tank.wheels.length === 0, "坦克仍装配车轮");
+          tank.speed = 0; tank.vx = tank.vz = 0;
+          for (let i = 0; i < 150; i++) SN.moveCar(tank, 1 / 60, 1, 0);
+          const travelled = Math.hypot(tank.x - tankSaved.x, tank.z - tankSaved.z);
+          assert(travelled > 4, "坦克无法行驶 " + travelled.toFixed(2));
+          // Helicopter: lifts on its own, flies forward, then lands and lets the player out.
+          heli.x = M.cx - 8; heli.z = M.cz + 38; heli.yaw = -Math.PI / 2;
+          heli.y = SN.surfaceHeight(heli.x, heli.z) + heli.rest;
+          Object.assign(heli, { speed: 0, vy: 0, airborne: false, health: 140 });
+          assert(SN.boardAircraft(heli), "无法驾驶直升机");
+          SN.clearInput();
+          for (let i = 0; i < 150; i++) SN.updateAircraft(1 / 60);
+          const lift = heli.y - SN.surfaceHeight(heli.x, heli.z);
+          assert(lift > 6, "直升机未升空 " + lift.toFixed(1));
+          const hx = heli.x;
+          SN.keys.KeyW = true;
+          for (let i = 0; i < 90; i++) SN.updateAircraft(1 / 60);
+          SN.clearInput();
+          assert(heli.x < hx - 4, "直升机无法前飞");
+          heli.y = SN.surfaceHeight(heli.x, heli.z) + heli.rest; heli.airborne = false; heli.vy = 0;
+          assert(SN.exitAircraft() && !SN.player.aircraft, "直升机无法下机");
+          // Plane: rolls, gets airborne above its takeoff speed, climbs, then lands.
+          plane.x = M.cx + 40; plane.z = M.cz + 38; plane.yaw = -Math.PI / 2;
+          plane.y = SN.surfaceHeight(plane.x, plane.z) + plane.rest;
+          Object.assign(plane, { speed: 24, vy: 0, airborne: false, health: 140 });
+          assert(SN.boardAircraft(plane), "无法驾驶飞机");
+          SN.clearInput(); SN.updateAircraft(1 / 60);
+          assert(plane.airborne, "飞机达到速度仍未离地");
+          for (let i = 0; i < 90; i++) SN.updateAircraft(1 / 60);
+          const alt = plane.y - SN.surfaceHeight(plane.x, plane.z);
+          assert(alt > 5, "飞机未爬升 " + alt.toFixed(1));
+          plane.y = SN.surfaceHeight(plane.x, plane.z) + plane.rest; plane.airborne = false; plane.vy = 0; plane.speed = 0;
+          assert(SN.exitAircraft() && !SN.player.aircraft, "飞机无法下机");
+          assert(M.aircraft.every(a => a.y >= SN.surfaceHeight(a.x, a.z) - 0.2), "飞行器陷进地面");
+        } finally {
+          SN.clearInput();
+          if (SN.player.aircraft) SN.exitAircraft();
+          for (const s of airSaved) {
+            Object.assign(s.a, { x: s.x, z: s.z, y: s.y, yaw: s.yaw, speed: s.speed, vy: s.vy,
+              airborne: s.airborne, pitch: s.pitch, roll: s.roll, health: s.health, occupied: s.occupied });
+            if (s.a === SN.player.aircraft) SN.player.aircraft = null;
+            s.a.root.position.set(s.x, s.y, s.z);
+            s.a.root.rotation.set(s.pitch, s.yaw, s.roll);
+          }
+          Object.assign(tank, { x: tankSaved.x, z: tankSaved.z, yaw: tankSaved.yaw, speed: 0, vx: 0, vz: 0 });
+          Object.assign(p, { x: saved.x, y: saved.y, z: saved.z, yaw: saved.yaw, car: saved.car, aircraft: null, grounded: true, vy: 0 });
+          SN.playerRoot.visible = true;
+          SN.camYaw = saved.camYaw; SN.camPitch = saved.camPitch;
+          SN.heat = saved.heat;
+          if (saved.heat === 0) SN.clearWantedResponse();
+          M.inside = false; M.alarm = 0;
+          SN.snapPlayer();
+        }
       }]
     );
   };
@@ -862,6 +973,55 @@
         assert(Number.isFinite(car.x) && Number.isFinite(car.speed) && Math.abs(car.speed) > 1, "车辆没有加速");
         SN.keys.KeyD = SN.keys.Space = true;
       }],
+      [4.0, "bike-steering", () => {
+        const spec = SN.vehicleSpecs.find(s => s.bike);
+        assert(spec, "缺少摩托车型");
+        const blocked = SN.carBlocked, water = SN.carWater;
+        SN.carBlocked = () => false;
+        SN.carWater = () => false;
+        try {
+          const makeBike = () => {
+            const root = new SN.T.Group(), body = new SN.T.Group();
+            root.add(body);
+            root.visible = false;
+            return {
+              spec, x: 500, z: 500, yaw: 0, speed: 18, vx: 0, vz: 0, steer: 0, yawRate: 0,
+              health: 100, maxHealth: 100, exploded: false, airborne: false, active: false,
+              collisionTimer: 0, collisionCooldown: 0, stuck: 0, suspension: 0, suspensionV: 0,
+              pitch: 0, pitchV: 0, roll: 0, rollV: 0, terrainRoll: 0, vy: 0, groundY: 0,
+              wheelRadius: 0.32, wheels: [], occupants: [], root, body, lights: null, spin: 0,
+              driver: null, parked: true
+            };
+          };
+          const sample = dir => {
+            const c = makeBike();
+            const rates = [];
+            for (let f = 0; f < 60; f++) {
+              const before = c.yaw;
+              c.speed = 18;
+              SN.moveCar(c, 1 / 60, 0, f < 6 ? 0 : dir);
+              rates.push(Math.abs(c.yaw - before) * 60);
+            }
+            return { c, rates };
+          };
+          const left = sample(1), right = sample(-1);
+          const steadyLeft = left.rates[45], steadyRight = right.rates[45];
+          assert([left.c.yaw, right.c.yaw, steadyLeft, steadyRight].every(Number.isFinite), "摩托转向出现无效角度");
+          assert(steadyLeft > 0.25 && steadyRight > 0.25, "摩托无法转向 " + steadyLeft.toFixed(2) + "/" + steadyRight.toFixed(2));
+          assert(Math.abs(steadyLeft - steadyRight) / Math.max(steadyLeft, steadyRight) < 0.08, "左右转向不对称");
+          // A steering wheel builds its arc: the first tenth of a second must not
+          // already carry the full yaw rate.
+          assert(left.rates[8] < steadyLeft * 0.45, "转向瞬间到位，没有弧度 " + (left.rates[8] / steadyLeft).toFixed(2));
+          assert(left.rates[2] <= left.rates[8] + 1e-6, "转向响应不是逐渐增大");
+          const c = left.c;
+          for (let f = 0; f < 40; f++) { c.speed = 18; SN.moveCar(c, 1 / 60, 0, 0); }
+          const settle = Math.abs(c.yawRate);
+          assert(settle < steadyLeft * 0.15, "松开转向后车身回正太慢 " + settle.toFixed(3));
+        } finally {
+          SN.carBlocked = blocked;
+          SN.carWater = water;
+        }
+      }],
       [4.2, "reverse", () => {
         SN.clearInput(); car.speed = car.vx = car.vz = 0; SN.keys.KeyS = true;
       }],
@@ -912,7 +1072,7 @@
       }],
       [8.6, "escape", () => {
         SN.clearWantedResponse();
-        for (const a of SN.actors) if (a.kind === "police") a.active = false;
+        for (const a of SN.actors) if (a.kind === "police" && !a.guard) a.active = false;
         SN.heat = 1; SN.searchX = SN.player.x + 250; SN.searchZ = SN.player.z; SN.searchRadius = 60;
         SN.updateWanted(8); assert(SN.heat === 0, "脱离搜索圈未消除通缉");
         SN.player.health = 100; SN.player.armor = 100;
@@ -1048,6 +1208,57 @@
       assert(result.curvatureIssues === 0, "道路坡度变化过大：" + result.issues.slice(0, 3).join(" | "));
       assert(result.jointIssues === 0, "路口或桥头高差：" + result.issues.slice(0, 3).join(" | "));
       assert(SN.slopeShot && Math.abs(SN.slopeShot.grade) > 0.005, "缺少坡度展示路段");
+    }]);
+    SN.smoke.stages.push([20.2, "road-surface-steps", () => {
+      // Walking the centre line of every street and sampling the ground with the
+      // height the wheels expect must never find a ledge: a roof, a stair or an
+      // overpass deck used to hijack the surface and throw cars into the air.
+      let worstUp = 0, worstAt = "", checked = 0;
+      for (const road of SN.roads) {
+        if (!road.profile || road.length < 8)
+          continue;
+        let s = 0, prev = null;
+        for (let j = 1; j < road.points.length; j++) {
+          const a = road.points[j - 1], b = road.points[j];
+          const dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz);
+          const n = Math.max(1, Math.ceil(len));
+          for (let k = 0; k < n; k++) {
+            const t = k / n, x = a[0] + dx * t, z = a[1] + dz * t, along = s + len * t;
+            if (along > road.length - 0.5) { prev = null; continue; }
+            const expected = SN.roadProfileHeight(road.profile, along) + 0.17;
+            const h = SN.surfaceHeight(x, z, expected);
+            checked++;
+            if (prev !== null && h - prev > worstUp) {
+              worstUp = h - prev;
+              worstAt = road.name + " " + x.toFixed(1) + "," + z.toFixed(1) + " " + prev.toFixed(2) + "→" + h.toFixed(2);
+            }
+            prev = h;
+          }
+          s += len;
+        }
+      }
+      assert(checked > 60000, "路面采样不足：" + checked);
+      assert(worstUp < 0.45, "路面突然凸起，车会被弹飞：" + worstAt);
+      const underBridge = SN.surfaceHeight(-165.2, -199.4, 1.2);
+      const underStair = SN.surfaceHeight(-41.7, -278.3, 79.8);
+      assert(underBridge < 2.5, "高架桥下的路面被桥面顶起：" + underBridge.toFixed(2));
+      assert(underStair < 81, "南山步道盖住了下方车道：" + underStair.toFixed(2));
+      console.log("SMOKE road-surface: samples=" + checked + " worstUp=" + worstUp.toFixed(3) + "m at " + worstAt);
+    }]);
+    SN.smoke.stages.push([20.3, "lawns-dressed", () => {
+      const spots = SN.lawnSpots || [];
+      assert(spots.length >= 500, "草坪几乎没有设施：" + spots.length);
+      let bad = 0;
+      for (const s of spots)
+        if (SN.onRoadway(s.x, s.z, 3) || SN.isWater(s.x, s.z, 1))
+          bad++;
+      assert(bad === 0, "草坪设施压在水面或道路上：" + bad);
+      assert(SN.benchSpots.length >= 200, "草坪没有可坐的长椅：" + SN.benchSpots.length);
+      const mall = SN.cityLandmarks.find(g => Math.hypot(g.position.x - 1760, g.position.z - 1330) < 6);
+      assert(mall, "大商场不见了");
+      assert(!SN.isWater(1760, 1440) && !SN.onRoadway(1760, 1440), "大商场门前是水或者车道");
+      assert(SN.showcaseNames.includes("mall"), "缺少大商场展示镜头");
+      console.log("SMOKE lawns: spots=" + spots.length + " benches=" + SN.benchSpots.length);
     }]);
     SN.smoke.stages.push([22.5, "pedestrians-walk", () => {
       const check = (ok, message) => { if (!ok) throw new Error(message); };
@@ -1560,11 +1771,11 @@
           let inner = 0;
           for (let i = 0; i < position.count; i++) {
             const dx = (position.getX(i) - cuff.x) * cuff.side;
-            if (dx < -0.06 || dx > -0.012) continue;
+            if (dx < -0.024 || dx > -0.004) continue;
             const dy = position.getY(i) - cuff.y, dz = position.getZ(i) - cuff.z;
-            if (Math.sqrt(dy * dy + dz * dz) < cuff.radius - 0.002) inner++;
+            if (Math.sqrt(dy * dy + dz * dz) < cuff.radius * 0.85) inner++;
           }
-          check(inner >= 6, "袖口没有内折闭合：" + inner);
+          check(inner >= 6, "袖口没有封口：" + inner);
         }
         const proto = M.prototypes[agent.sex];
         if (agent.garmentKeys.top === "topLong" && proto && proto.bones && proto.bones.hand_l) {
@@ -1609,7 +1820,18 @@
             worstCenter = Math.max(worstCenter, centerOffset);
             check(ease <= 0.012, "袖口离手腕太远（手像断开了）：" + ease.toFixed(3) + " m");
             check(ease >= 0.002, "袖口勒进手腕：" + ease.toFixed(3) + " m");
-            check(centerOffset <= 0.012, "袖口没有对准手腕：" + centerOffset.toFixed(3) + " m");
+            check(centerOffset <= 0.006, "袖口没有对准手腕：" + centerOffset.toFixed(3) + " m");
+            // 手腕处皮肤必须整个待在袖口里面。之前内折圈比手臂最粗处小 7 mm，
+            // 皮肤在袖口边缘穿出一圈锯齿，看上去就像手是贴上去的。
+            let skinMax = 0;
+            for (let i = 0; i < bodyPos.count; i++) {
+              const dx = Math.abs(bodyPos.getX(i)) - Math.abs(cuff.x);
+              if (dx < -0.008 || dx > 0.006) continue;
+              const dy = bodyPos.getY(i) - cuff.y, dz = bodyPos.getZ(i) - cuff.z;
+              skinMax = Math.max(skinMax, Math.hypot(dy, dz));
+            }
+            check(skinMax <= cuff.radius + 0.001, "手腕皮肤穿出袖口：" + skinMax.toFixed(3) +
+              " / 袖口 " + cuff.radius.toFixed(3) + " m");
           }
           const uniforms = agent.body.material && agent.body.material.userData &&
             agent.body.material.userData.clothUniforms;
@@ -1703,11 +1925,11 @@
             let inner = 0;
             for (let i = 0; i < shortPosition.count; i++) {
               const dx = (shortPosition.getX(i) - cuff.x) * cuff.side;
-              if (dx < -0.06 || dx > -0.012) continue;
+              if (dx < -0.024 || dx > -0.004) continue;
               const dy = shortPosition.getY(i) - cuff.y, dz = shortPosition.getZ(i) - cuff.z;
-              if (Math.sqrt(dy * dy + dz * dz) < cuff.radius - 0.002) inner++;
+              if (Math.sqrt(dy * dy + dz * dz) < cuff.radius * 0.85) inner++;
             }
-            check(inner >= 6, "短袖袖口没有内折闭合：" + inner);
+            check(inner >= 6, "短袖袖口没有封口：" + inner);
           }
           // Short sleeves had an 8 cm flared mouth around a 5 cm bicep; measure
           // the same ease the long cuff test uses so the arm cannot float inside
@@ -2055,7 +2277,7 @@
       if (active && (SN.campaign.active !== active || active.step !== step)) { SN.clearInput(); return; }
       idle = Math.hypot(p.x - before.x, p.z - before.z) < 0.005 ? idle + 1 / 30 : 0;
       if (idle > 1 && retries < 3) { SN.clearInput(); return SN.smokeWalkTo(target, tick, radius, retries + 1); }
-      if (idle > 3) throw new Error("步行受阻 " + p.x.toFixed(1) + "," + p.z.toFixed(1));
+      if (idle > 3) throw new Error("步行受阻 " + p.x.toFixed(1) + "," + p.z.toFixed(1) + " 目标 " + target.x.toFixed(1) + "," + target.z.toFixed(1) + " 路点 " + index + "/" + path.length + " 坡 " + (SN.groundUnder(p.x + Math.sin(SN.camYaw), p.z + Math.cos(SN.camYaw), 0.22, p.y) - p.y).toFixed(2) + " 障碍 " + SN.blocked(p.x + Math.sin(SN.camYaw), p.z + Math.cos(SN.camYaw), 0.28, p.y) + " 高度 " + p.y.toFixed(2));
     }
     SN.clearInput();
     if (Math.hypot(p.x - target.x, p.z - target.z) > radius) throw new Error("步行超时");
@@ -2575,8 +2797,61 @@
         const data = JSON.parse(JSON.stringify(SN.progression)); SN.restoreProgression(data);
         assert(SN.progression.hair === data.hair && SN.progression.cityOutfit === data.cityOutfit, "外观未随存档恢复"); reset();
       }],
-      [20.32, "living-street-events", () => {
+      [20.21, "shop-floor-and-clerk", () => {
         reset();
+        const spec = SN.allShopSpecs.find(s => s.clerk);
+        assert(spec, "缺少店员");
+        SN.buildShopInterior(spec);
+        const tile = spec.shellGroup.children.find(c => c.geometry && c.geometry.parameters && Math.abs(c.geometry.parameters.height - 0.035) < 1e-6);
+        assert(tile, "店内没有地板");
+        const top = tile.position.y + 0.0175;
+        assert(Math.abs(top - spec.base) < 0.006, "地板和行走面差了 " + (top - spec.base).toFixed(3) + " m");
+        const clerk = spec.clerk;
+        move(clerk.x + 2.4, clerk.z + 0.6);
+        clerk.shopState = "greet"; clerk.shopTimer = 30;
+        for (let i = 0; i < 30; i++) SN.shopPoseClerk(clerk, 1 / 30, i / 30);
+        const want = Math.atan2(SN.player.x - clerk.x, SN.player.z - clerk.z);
+        const off = Math.abs(SN.angleDelta(clerk.yaw, want));
+        assert(off < 0.35, "店员没有转身面向顾客：" + off.toFixed(2));
+        clerk.shopState = "idle"; clerk.shopTimer = 3;
+      }],
+      [20.26, "nightlife-bar", () => {
+        reset();
+        const bar = SN.nightBar;
+        assert(bar, "酒吧没有建成");
+        assert(bar.patrons.length >= 9 && bar.dancers.length >= 2, "酒吧人物不足");
+        assert(SN.surfaceHeight(bar.x, bar.z, bar.floorTop) - bar.floorTop < 0.02, "酒吧地板没有登记行走面");
+        assert(SN.surfaceHeight(bar.pole.x, bar.pole.z, bar.floorTop) > bar.floorTop + 0.2, "舞台高度异常");
+        assert(!SN.blocked(bar.x, bar.z - 7.2, 0.25, bar.floorTop), "酒吧门口被挡住");
+        assert(SN.blocked(bar.x, bar.z + 6.7, 0.25, bar.floorTop), "酒吧后墙没有碰撞");
+        assert(SN.blocked(bar.x - 9.7, bar.z, 0.25, bar.floorTop), "酒吧侧墙没有碰撞");
+        move(bar.x, bar.z - 5);
+        SN.updateNightBar(0, 10);
+        assert(bar.shown.length === bar.people.length, "酒吧人物未显示");
+        const angle = d => Math.atan2(d.rig.root.position.x - bar.pole.x, d.rig.root.position.z - bar.pole.z);
+        const before = bar.dancers.map(angle);
+        SN.updateNightBar(0, 11);
+        bar.dancers.forEach((d, i) => {
+          assert(Math.abs(SN.angleDelta(before[i], angle(d))) > 0.25, "舞者没有绕杆");
+          assert(Math.abs(Math.hypot(d.rig.root.position.x - bar.pole.x, d.rig.root.position.z - bar.pole.z) - 0.62) < 0.03, "舞者离杆距离异常");
+          assert(Math.abs(d.rig.root.position.y - bar.stageTop) < 0.02, "舞者没有站在舞台上");
+        });
+        for (const p of bar.patrons) assert(Math.abs(p.rig.root.position.y - bar.floorTop) < 0.02, "顾客没有站在地板上");
+        let missing = 0, glasses = 0;
+        const hand = new SN.T.Vector3();
+        for (const p of bar.patrons) {
+          assert(p.drink && p.drink.visible, "顾客没有酒杯");
+          p.rig.arms[0].hand.getWorldPosition(hand);
+          assert(p.drink.position.distanceTo(hand) < 0.12, "酒杯没有拿在手上");
+          glasses++;
+        }
+        for (const r of bar.shown) for (const part of r.parts) if (!SN.npcBatchMap.has(part.batchKey)) missing++;
+        assert(missing === 0, "酒吧人物有部件无法批量绘制：" + missing);
+        SN.flushActors();
+        assert(bar.dropped === 0, "酒吧人物批量容量不足：" + bar.dropped);
+        assert(glasses >= 9, "酒杯数量不足");
+      }],
+      [20.32, "living-street-events", () => {        reset();
         for (const type of SN.streetEventTypes) {
           reset();
           if (type === "snatch") { const p = SN.safePosition(-15, -765, 0.3); const a = SN.actors[0]; Object.assign(a, p, { active: true, inCar: null, down: 0, hostile: false, interior: false, health: 100 }); }

@@ -30,10 +30,10 @@
       // foliage instead of a single low-poly ball.
       for (let i = 0; i < 3; i++) {
         const a = i * SN.TAU / 3;
-        SN.record(SN.leafBatch, x + Math.sin(a) * 1.2 * scale, y + (6.1 + i * 0.45) * scale, z + Math.cos(a) * 1.2 * scale, 2.9 * scale, 3 * scale, 2.8 * scale, a, [0x668970, 0x719b78, 0x8ca67c][i]);
+        SN.record(SN.leafBatch, x + Math.sin(a) * 1.2 * scale, y + (6.1 + i * 0.45) * scale, z + Math.cos(a) * 1.2 * scale, 2.9 * scale, 3 * scale, 2.8 * scale, a, [0x7d9c80, 0x8aab84, 0xa3bb8e][i]);
       }
-      SN.record(SN.leafBatch, x + SN.rand(-0.4, 0.4) * scale, y + 4.9 * scale, z + SN.rand(-0.4, 0.4) * scale, 3.6 * scale, 2.1 * scale, 3.4 * scale, SN.rand(0, SN.TAU), 0x587a5a);
-      SN.record(SN.leafBatch, x + SN.rand(-0.5, 0.5) * scale, y + 8.35 * scale, z + SN.rand(-0.5, 0.5) * scale, 2 * scale, 1.8 * scale, 1.9 * scale, SN.rand(0, SN.TAU), 0x8aa87e);
+      SN.record(SN.leafBatch, x + SN.rand(-0.4, 0.4) * scale, y + 4.9 * scale, z + SN.rand(-0.4, 0.4) * scale, 3.6 * scale, 2.1 * scale, 3.4 * scale, SN.rand(0, SN.TAU), 0x6c8e68);
+      SN.record(SN.leafBatch, x + SN.rand(-0.5, 0.5) * scale, y + 8.35 * scale, z + SN.rand(-0.5, 0.5) * scale, 2 * scale, 1.8 * scale, 1.9 * scale, SN.rand(0, SN.TAU), 0xa2bb90);
     }
   };
 
@@ -245,6 +245,10 @@
         continue;
       if (SN.hillHeight(x, z) > 2.5)
         continue;
+      // The military compound is paved even where the terrain layer still reads
+      // as grass, so its asphalt must not sprout tufts.
+      if (SN.military && x > SN.military.x0 && x < SN.military.x1 && z > SN.military.z0 && z < SN.military.z1)
+        continue;
       const s = SN.rand(0.6, 1.3);
       SN.dummy.position.set(x, SN.surfaceHeight(x, z), z);
       SN.dummy.rotation.set(0, SN.rand(0, SN.TAU), 0);
@@ -382,6 +386,12 @@
       light: SN.pbrMat("paint", 0xffe9c8, { uvScale: 0.5, emissive: 0x9fe0cc, emissiveIntensity: 0.7, roughness: 0.42 })
     };
     SN.cityPalette.silver = SN.pbrMat("metal", 0xb4d5ec, { uvScale: 0.16, metalness: 0.6, roughness: 0.5, envMapIntensity: 0.7 });
+    // Warm sodium lamp glass: the shared "light" material is a mint-white strip
+    // for vehicle lamps, which reads wrong on a plaza street lamp.
+    SN.cityPalette.warmLamp = SN.pbrMat("paint", 0xffe2b0, { uvScale: 0.5, emissive: 0xffb45e, emissiveIntensity: 1.5, roughness: 0.5 });
+    SN.cityPalette.plazaPink = SN.pbrMat("paint", 0xff5d9e, { uvScale: 0.5, emissive: 0xff2f80, emissiveIntensity: 1.25, roughness: 0.5 });
+    SN.cityPalette.plazaCyan = SN.pbrMat("paint", 0x5fe6da, { uvScale: 0.5, emissive: 0x2fd0c2, emissiveIntensity: 1.1, roughness: 0.5 });
+    SN.neonMats.push(SN.cityPalette.warmLamp, SN.cityPalette.plazaPink, SN.cityPalette.plazaCyan);
     SN.cityPalette.curtain = SN.buildingMats[3].clone();
     SN.cityPalette.curtain.onBeforeCompile = shader => {
       SN.buildingMats[3].onBeforeCompile(shader);
@@ -476,8 +486,10 @@
       SN.cityPart(g, "cream", 0, 2.4, 36, 150, 0.5, 5);
       SN.cityPart(g, "glass", 0, 13, 34, 138, 13, 1);
       for (const x of [-54, 0, 54]) {
-        SN.cityPart(g, "cream", x, 22, 0, 23, 12, 38, 0, new SN.T.CylinderGeometry(1, 1, 1, 12), SN.PI / 2);
-        SN.cityPart(g, "gold", x, 28, 0, 4, 1, 70);
+        // Barrel vault over the concourse: length (h) runs along z and the
+        // section radii (w/d) give a 23 x 12 m profile.
+        SN.cityPart(g, "cream", x, 24.5, 0, 11.5, 38, 6, 0, new SN.T.CylinderGeometry(1, 1, 1, 12), SN.PI / 2);
+        SN.cityPart(g, "gold", x, 30.9, 0, 1.2, 0.8, 40);
       }
       SN.cityPart(g, "stone", 0, 0.2, 70, 175, 0.4, 65);
       SN.citySolid(g, 0, 0, 150, 65, 28);
@@ -516,11 +528,107 @@
     // Hongdae busking square and Sinchon campus cloisters.
     {
       const g = SN.cityGroup(-1900, -570, 1300);
-      SN.cityPart(g, "stone", 0, 0.15, 0, 170, 0.3, 95);
+      // A flush stone paving, not a 30 cm raised deck: the props and pedestrian
+      // surface all sit at the group's ground level, so a thick slab would sink
+      // everyone to the ankles across the whole square.
+      SN.cityPart(g, "stone", 0, 0.02, 0, 170, 0.06, 95);
+      // The square is 170 x 95 m: one uniform slab reads as a car park. Band it
+      // like a real plaza - a dark perimeter, a stone grid and a dark apron in
+      // front of the stage - so the eye gets scale cues at ground level.
+      for (const side of [-1, 1]) {
+        SN.cityPart(g, "dark", side * 83, 0.055, 0, 3.6, 0.012, 95);
+        SN.cityPart(g, "dark", 0, 0.055, side * 46, 170, 0.012, 3.6);
+      }
+      for (const x of [-62, -28, 28, 62])
+        SN.cityPart(g, "dark", x, 0.052, 0, 1.1, 0.012, 92);
+      for (const z of [-30, -15, 15, 30])
+        SN.cityPart(g, "dark", 0, 0.052, z, 166, 0.012, 1.1);
+      SN.cityPart(g, "dark", 50, 0.054, -14, 38, 0.012, 18);
+      // Busking stage: wooden deck, dark backdrop, truss and warm deck lights.
       SN.cityPart(g, "wood", 50, 0.6, -27, 30, 1.2, 14);
+      SN.cityPart(g, "dark", 50, 3, -34.1, 30, 5.6, 0.5);
+      SN.cityPart(g, "plazaPink", 50, 4.9, -33.82, 26, 0.12, 0.05);
+      SN.cityPart(g, "plazaCyan", 50, 1.7, -33.82, 26, 0.08, 0.05);
       for (const x of [32, 68]) {
         SN.cityPart(g, "dark", x, 2, -27, 2, 4, 2);
         SN.cityPart(g, "gold", x, 6, -27, 0.25, 8, 0.25);
+      }
+      for (const x of [34, 66])
+        SN.cityPart(g, "silver", x, 7.4, -24, 0.18, 0.18, 0.18);
+      SN.cityPart(g, "silver", 50, 7.4, -24, 32, 0.18, 0.18);
+      for (const x of [40, 46, 54, 60])
+        SN.cityPart(g, "warmLamp", x, 7.05, -24, 1.1, 0.5, 0.7);
+      // Spectator barriers facing the deck keep the busking circle readable.
+      for (let i = 0; i < 6; i++) {
+        const x = 32 + i * 7.2;
+        SN.cityPart(g, "silver", x, 1.05, -16.5, 6.6, 0.09, 0.09);
+        SN.cityPart(g, "silver", x, 0.56, -16.5, 6.6, 0.07, 0.07);
+        for (const side of [-1, 1])
+          SN.cityPart(g, "silver", x + side * 3.2, 0.55, -16.5, 0.09, 1.1, 0.09);
+      }
+      // Market corner along the north edge: three awning stalls with counters.
+      for (const [i, sx] of [-70, -57, -44].entries()) {
+        const aw = ["red", "cream", "teal"][i];
+        SN.cityPart(g, "wood", sx, 0.55, -29, 5, 1.1, 2.8);
+        SN.cityPart(g, "dark", sx, 1.5, -30.2, 5, 2.6, 0.18);
+        for (const side of [-1, 1])
+          SN.cityPart(g, "dark", sx + side * 2.35, 1.4, -29, 0.14, 2.8, 0.14);
+        SN.cityPart(g, aw, sx, 2.85, -29, 5.8, 0.16, 3.6);
+        SN.cityPart(g, aw, sx, 2.4, -27.25, 5.8, 0.42, 0.08);
+        SN.cityPart(g, i === 1 ? "plazaCyan" : "plazaPink", sx, 2.18, -27.2, 5.6, 0.06, 0.05);
+        SN.cityPart(g, "warmLamp", sx, 2.62, -30.1, 3.6, 0.16, 0.1);
+        SN.cityPart(g, "gold", sx, 0.78, -27.55, 0.9, 0.06, 0.45);
+      }
+      // Café corner on the south side: parasols, round tables and stools, with
+      // two runs of festoon lights overhead so the corner reads after dark.
+      for (const z of [14, 30]) {
+        for (const x of [-72, -18])
+          SN.cityPart(g, "silver", x, 1.65, z, 0.1, 3.3, 0.1);
+        SN.cityPart(g, "dark", -45, 3.3, z, 54, 0.03, 0.03);
+        for (let i = 0; i < 13; i++)
+          SN.cityPart(g, "warmLamp", -70.5 + i * 4.3, 3.18, z, 0.16, 0.2, 0.16);
+      }
+      for (const [tx, tz, uk] of [[-60, 16, "red"], [-42, 31, "cream"], [-24, 16, "teal"], [-60, 34, "cream"]]) {
+        SN.cityPart(g, "silver", tx, 1.3, tz, 0.12, 2.6, 0.12);
+        SN.cityPart(g, uk, tx, 2.6, tz, 4.6, 0.34, 4.6, 0, new SN.T.CylinderGeometry(1, 1, 1, 8));
+        SN.cityPart(g, "dark", tx, 0.74, tz, 2.2, 0.1, 2.2, 0, new SN.T.CylinderGeometry(1, 1, 1, 16));
+        SN.cityPart(g, "silver", tx, 0.37, tz, 0.14, 0.74, 0.14);
+        for (const a of [0.2, 2.3, 4.4]) {
+          const px = tx + Math.sin(a) * 1.6, pz = tz + Math.cos(a) * 1.6;
+          SN.cityPart(g, "dark", px, 0.44, pz, 0.5, 0.07, 0.5);
+          SN.cityPart(g, "silver", px, 0.22, pz, 0.07, 0.44, 0.07);
+        }
+      }
+      // Planters and banner poles frame the entrances without blocking the alley.
+      for (const [px, pz] of [[-80, -20], [-80, 20], [80, -20], [80, 20], [15, 40], [-15, -40]]) {
+        SN.cityPart(g, "stone", px, 0.3, pz, 3.6, 0.6, 3.6);
+        SN.cityPart(g, "grass", px, 0.68, pz, 3.1, 0.4, 3.1);
+      }
+      for (const [bx, bz, bk] of [[78, -13, "red"], [78, 13, "teal"], [78, -21, "gold"]]) {
+        SN.cityPart(g, "silver", bx, 4, bz, 0.12, 8, 0.12);
+        SN.cityPart(g, bk, bx - 0.7, 6.4, bz, 1.3, 2.4, 0.06);
+      }
+      // Street lamps on the two long edges. Their glow sprites are queued here
+      // and created in phase 18: the shared glow material does not exist yet
+      // while the props phase is building.
+      SN.hongdaeLampGlows = [];
+      for (const x of [-72, -36, 0, 36, 72])
+        for (const z of [-38, 38]) {
+          SN.cityPart(g, "dark", x, 2.9, z, 0.18, 5.8, 0.18);
+          SN.cityPart(g, "warmLamp", x, 5.85, z, 0.9, 0.34, 0.9);
+          SN.cityPart(g, "dark", x, 6.06, z, 1.0, 0.1, 1.0);
+          SN.hongdaeLampGlows.push([g.position.x + x, g.position.y + 5.85, g.position.z + z]);
+        }
+      // Corner trees soften the hard edge of the plaza.
+      for (const [tx, tz] of [[-77, -41], [77, -41], [-77, 41], [77, 41]]) {
+        const ty = g.position.y + 0.05;
+        SN.addProp(tx, tz, 0.9, 0.9, 6.8);
+        SN.record(SN.trunkBatch, tx, ty + 3.4, tz, 0.5, 6.8, 0.5);
+        for (let i = 0; i < 3; i++) {
+          const a = i * SN.TAU / 3;
+          SN.record(SN.leafBatch, tx + Math.sin(a) * 1.3, ty + 6.7 + i * 0.5, tz + Math.cos(a) * 1.3, 3.1, 3.2, 3, a, [0x7d9c80, 0x8aab84, 0xa3bb8e][i]);
+        }
+        SN.record(SN.leafBatch, tx, ty + 5.4, tz, 3.9, 2.3, 3.7, SN.rand(0, SN.TAU), 0x6c8e68);
       }
       for (let i = 0; i < 9; i++)
         SN.cityPart(g, "red", -64 + i * 16, 0.65, 25, 6, 0.3, 1.5);
@@ -571,13 +679,84 @@
     {
       const g = SN.cityGroup(1760, 1330, 2600);
       SN.cityPart(g, "glass", 0, 16, 0, 265, 32, 180);
+      // Scale is applied before rotation: a barrel lying along z needs its length
+      // in h and its radius in w/d, or it becomes a 380 m cream wall.
       for (let i = 0; i < 5; i++)
-        SN.cityPart(g, "cream", -112 + i * 56, 37, 0, 35, 9, 190, 0, new SN.T.CylinderGeometry(1, 1, 1, 6), SN.PI / 2);
+        SN.cityPart(g, "cream", -112 + i * 56, 36.6, 0, 17.5, 190, 4.6, 0, new SN.T.CylinderGeometry(1, 1, 1, 6), SN.PI / 2);
       SN.cityPart(g, "teal", 0, 5, 93, 235, 10, 8);
       SN.cityWindows(g, 0, 0, 265, 180, 32);
       SN.citySolid(g, 0, 0, 265, 180, 40);
-      SN.cityLabel(g, "삼성 · 겹빛 컨벤션 / 몰", 99, 60);
+      // 겹빛 몰: a grand glass entrance, an escalator stair down to a paved
+      // forecourt, and a fountain court with kiosks so the mall has a real front
+      // instead of ending at a blank wall.
+      SN.cityPart(g, "stone", 0, 0.12, 128, 170, 0.24, 62);
+      SN.cityPart(g, "stone", 0, 0.28, 128, 60, 0.08, 56);
+      for (const side of [-1, 1]) {
+        SN.cityPart(g, "gold", side * 44, 13, 99, 5, 26, 5);
+        SN.cityPart(g, "cream", side * 44, 27, 99, 7, 3, 7);
+        SN.citySolid(g, side * 44, 99, 5, 5, 29);
+      }
+      SN.cityPart(g, "cream", 0, 27, 99, 93, 4, 8);
+      SN.cityPart(g, "glass", 0, 12, 97, 76, 24, 1);
+      SN.cityPart(g, "dark", 0, 5, 96.5, 18, 10, 1);
+      SN.cityPart(g, "glass", 0, 24.8, 112, 96, 0.8, 30);
+      // Ribs under the glass canopy: without them the 30 m awning reads as a
+      // floating pale sheet from the forecourt.
+      for (let i = -3; i <= 3; i++)
+        SN.cityPart(g, "silver", i * 14, 24.34, 112, 0.5, 0.5, 30);
+      SN.cityPart(g, "silver", 0, 24.34, 126.7, 96, 0.55, 0.55);
+      SN.cityPart(g, "gold", 0, 30.2, 99, 100, 2.2, 1.2);
+      SN.cityPart(g, "curtain", 76, 20, 90.6, 56, 14, 0.5);
+      SN.cityPart(g, "curtain", -76, 20, 90.6, 56, 14, 0.5);
+      for (const x of [-100, -88, 88, 100])
+        SN.cityPart(g, "cream", x, 16, 90.8, 3, 32, 1.4);
+      for (const side of [-1, 1])
+        SN.cityPart(g, "silver", side * 47, 12, 126, 0.8, 24, 0.8);
+      for (let i = 0; i < 6; i++)
+        SN.cityPart(g, "stone", 0, 0.28 + i * 0.4, 108 - i * 2.4, 46 - i * 3, 0.4, 2.4);
+      SN.cityPart(g, "teal", 0, 0.62, 131, 25, 0.06, 17, 0, new SN.T.CylinderGeometry(1, 1, 1, 32));
+      SN.cityPart(g, "stone", 0, 0.32, 131, 28, 0.62, 20, 0, new SN.T.CylinderGeometry(1, 1, 1, 32));
+      SN.cityPart(g, "gold", 0, 4.6, 131, 0.9, 8.6, 0.9);
+      SN.cityPart(g, "gold", 0, 8.6, 131, 3.2, 1.1, 3.2, SN.PI / 4, SN.box);
+      for (const side of [-1, 1]) for (let i = 0; i < 3; i++) {
+        const x = side * (36 + i * 9), z = 118 + i * 10;
+        SN.cityPart(g, "dark", x, 1.15, z, 6.4, 2.3, 3.8);
+        SN.cityPart(g, "cream", x, 2.15, z - 1.92, 6, 0.7, 0.08);
+        SN.cityPart(g, "red", x, 2.55, z, 7.2, 0.22, 4.6);
+        SN.cityPart(g, "cream", x, 2.75, z, 7.6, 0.18, 5);
+        SN.citySolid(g, x, z, 7.6, 5, 3.4);
+      }
+      for (const side of [-1, 1]) for (let i = 0; i < 2; i++) {
+        const x = side * (16 + i * 8), z = 146;
+        SN.cityPart(g, "wood", x, 0.62, z, 3.4, 0.16, 0.8);
+        SN.cityPart(g, "wood", x, 1.02, z - 0.35, 3.4, 0.7, 0.12);
+        SN.cityPart(g, "dark", x, 0.3, z, 0.16, 0.6, 0.6);
+      }
+      for (const side of [-1, 1]) for (let i = 0; i < 3; i++) {
+        const x = side * (68 + i * 4), z = 120 + i * 12;
+        SN.cityPart(g, "cream", x, 0.75, z, 2.2, 1.5, 2.2);
+        SN.cityPart(g, "teal", x, 1.62, z, 2.4, 0.3, 2.4);
+      }
+      SN.citySolid(g, 0, 131, 28, 20, 1.2);
+      // Forecourt furniture: bollards along the street edge and shin-high
+      // planters with clipped shrubs frame the fountain.
+      for (let i = -5; i <= 5; i++) {
+        SN.cityPart(g, "dark", i * 15, 0.45, 156, 0.5, 0.9, 0.5);
+        SN.cityPart(g, "gold", i * 15, 0.92, 156, 0.58, 0.1, 0.58);
+      }
+      for (const x of [-40, 40]) {
+        SN.cityPart(g, "stone", x, 0.55, 146, 4.4, 1.1, 3.2);
+        SN.cityPart(g, "grass", x, 1.16, 146, 4, 0.14, 2.8);
+        SN.cityPart(g, "grass", x, 1.95, 146, 2.6, 1.5, 2.2, 0, new SN.T.SphereGeometry(1, 8, 6));
+        SN.citySolid(g, x, 146, 4.4, 3.2, 2.4);
+      }
+      // One entrance sign only: two labels at the same depth overlapped into
+      // unreadable double lettering.
+      SN.cityLabel(g, "겹빛몰 · 대형상가 大商场", 104, 46);
       SN.finishCityGroup(g);
+      for (const side of [-1, 1])
+        for (let i = 0; i < 3; i++)
+          SN.tree(1760 + side * (84 + i * 6), 1330 + 142 + i * 8, false, 0.9);
     }
     {
       const g = SN.cityGroup(770, 1510, 1800);
@@ -797,7 +976,7 @@
     SN.foliageFocus = { value: new SN.T.Vector3() };
     SN.leafMat = SN.pbrMat("grass", 0xffffff, { uvScale: 0.4, flatShading: true, roughness: 1, metalness: 0, envMapIntensity: 0.25, emissive: 0x355d45, emissiveIntensity: 0.18 });
     const leafCompile = SN.leafMat.onBeforeCompile;
-    SN.leafMat.customProgramCacheKey = () => "foliage-camera-corridor-v1";
+    SN.leafMat.customProgramCacheKey = () => "foliage-camera-corridor-v2";
     SN.leafMat.onBeforeCompile = shader => {
       leafCompile(shader);
       shader.uniforms.uFoliageFocus = SN.foliageFocus;
@@ -806,9 +985,9 @@
         vec3 boom = uFoliageFocus - cameraPosition;
         float along = clamp(dot(vPbrWorld - cameraPosition, boom) / max(dot(boom, boom), .01), 0., 1.);
         float corridor = length(vPbrWorld - cameraPosition - boom * along);
-        float keep = min(smoothstep(2.0, 3.4, corridor), smoothstep(2.8, 4.6, distance(vPbrWorld, cameraPosition)));
-        float dither = fract(dot(floor(gl_FragCoord.xy), vec2(.75487766, .56984029)));
-        if (dither > mix(.035, 1., keep)) discard;`);
+        float keep = min(smoothstep(1.1, 2.1, corridor), smoothstep(1.5, 2.6, distance(vPbrWorld, cameraPosition)));
+        float dither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+        if (dither > mix(.03, 1., keep)) discard;`);
     };
     SN.poleMat = SN.pbrMat("metal", 0x768688, { uvScale: 0.6, metalness: 0.55, roughness: 0.62 });
     SN.lampGlow = SN.pbrMat("paint", 0xfff0d0, { uvScale: 0.8, emissive: 0xffd791, emissiveIntensity: 0, roughness: 0.4 });
@@ -882,6 +1061,12 @@
       SN.poolBatch[i].sy = 1;
     }
     SN.buildInstances(SN.poolGeo, SN.poolMat, SN.poolBatch, false);
+  });
+  // Startup phase 18.5: the plaza lamp halos, once the shared glow material exists.
+  SN.registerInit(18.5, function initializePlazaGlows() {
+    for (const p of SN.hongdaeLampGlows || [])
+      SN.glow(SN.scene, p[0], p[1], p[2], 1.45, 0xffd9a0);
+    SN.hongdaeLampGlows = null;
   });
   // Startup phase 12: keep this order relative to the other systems.
 
@@ -1758,6 +1943,72 @@
     SN.cycleLegs.instanceMatrix.needsUpdate = true;
   };
 
+  // Large open lawns used to be bare green plates. Walk a deterministic grid over
+  // the city and give each suitable patch a grove, a bench and lamp, a picnic
+  // blanket, a flower bed or a low hedge, so the grass reads as used parkland.
+  SN.dressOpenLawns = function dressOpenLawns(batch) {
+    SN.lawnSpots = [];
+    const hash = (i, j, k) => {
+      const v = Math.sin(i * 127.1 + j * 311.7 + k * 74.7) * 43758.5453;
+      return v - Math.floor(v);
+    };
+    const part = (list, x, y, z, w, h, d, color, yaw = 0) =>
+      list.push({ g: SN.box, x, y, z, sx: w, sy: h, sz: d, yaw, pitch: 0, color });
+    for (let i = 0; i < 88; i++)
+      for (let j = 0; j < 76; j++) {
+        if (hash(i, j, 3) > 0.46)
+          continue;
+        const x = -2816 + i * 64 + (hash(i, j, 1) - 0.5) * 26;
+        const z = -2432 + j * 64 + (hash(i, j, 2) - 0.5) * 26;
+        if (SN.isWater(x, z, 5) || SN.onRoadway(x, z, 9) || SN.blocked(x, z, 2.6))
+          continue;
+        if (SN.surfaceTypeAt(x, z) !== 0)
+          continue;
+        if (x > -340 && x < 360 && z > -890 && z < -755)
+          continue;
+        if (Math.hypot(x - 2260, z - 1300) < 165)
+          continue;
+        const y = SN.surfaceHeight(x, z);
+        if (!Number.isFinite(y) || Math.abs(SN.hillHeight(x, z) - SN.hillHeight(x + 6, z + 6)) > 1.6)
+          continue;
+        const roll = hash(i, j, 4), yaw = hash(i, j, 5) * SN.TAU;
+        if (roll < 0.42) {
+          SN.tree(x, z, false, 0.72 + hash(i, j, 6) * 0.4);
+          if (hash(i, j, 7) < 0.62) {
+            const a = hash(i, j, 8) * SN.TAU;
+            SN.tree(x + Math.cos(a) * 4.6, z + Math.sin(a) * 4.6, false, 0.62 + hash(i, j, 9) * 0.3);
+          }
+        } else if (roll < 0.62) {
+          // A bench facing the lawn, with a lamp beside it and a seat registered
+          // so pedestrians in the crowd can actually stop and use it.
+          part(batch.props, x, y + 0.44, z, 1.9, 0.12, 0.55, 0xb98654, yaw);
+          part(batch.props, x - Math.sin(yaw) * 0.26, y + 0.8, z - Math.cos(yaw) * 0.26, 1.9, 0.5, 0.1, 0xb98654, yaw);
+          part(batch.props, x, y + 0.21, z, 0.12, 0.42, 0.5, 0x364954, yaw);
+          SN.benchSpots.push({ x, z, yaw });
+          SN.addOBB(x, z, 1.9, 0.65, 1.05, yaw, y);
+          const lx = x + Math.sin(yaw) * 2.6, lz = z + Math.cos(yaw) * 2.6;
+          part(batch.props, lx, y + 1.5, lz, 0.12, 3, 0.12, 0x3d4b4a);
+          part(batch.props, lx, y + 3.02, lz, 0.5, 0.18, 0.5, 0xe9d8a6);
+        } else if (roll < 0.78) {
+          part(batch.fabric, x, y + 0.035, z, 2.6, 0.04, 2.1, [0xd86f6f, 0xe3b04f, 0x5fa7b8][Math.floor(hash(i, j, 9) * 3)], yaw);
+          part(batch.props, x + Math.cos(yaw) * 0.9, y + 0.24, z + Math.sin(yaw) * 0.9, 0.5, 0.3, 0.35, 0xc9a96a, yaw + 0.4);
+        } else if (roll < 0.92) {
+          for (let k = 0; k < 5; k++) {
+            const a = k * SN.TAU / 5 + yaw;
+            part(batch.grass, x + Math.sin(a) * 1.7, y + 0.2, z + Math.cos(a) * 1.7, 0.9, 0.3, 0.9,
+              [0xe6a8b4, 0xe8cf78, 0xc78fce][k % 3], a);
+          }
+          part(batch.paving, x, y + 0.015, z, 5, 0.03, 5, 0xcfc9b4, yaw);
+        } else {
+          for (let k = 0; k < 3; k++) {
+            const a = yaw + k * 1.3;
+            part(batch.grass, x + Math.sin(a) * 2.6, y + 0.55, z + Math.cos(a) * 2.6, 2.4, 1.1, 1.1, 0x6f9b62, a);
+          }
+        }
+        SN.lawnSpots.push({ x, z, y });
+      }
+  };
+
   SN.registerInit(17.6, function* initializeOccupiedLots() {
     SN.lookLots = []; SN.lookParking = [];
     SN.lookTentGeo = new SN.T.BufferGeometry();
@@ -1797,6 +2048,12 @@
         if (lot) SN.buildLookLot(lot, "camp", batch);
       }
     }
+    yield "铺设草坪设施";
+    // Planting trees consumes the simulation's random stream; put the seed back
+    // so colours and spawn choices later in the build stay as authored.
+    const lawnSeed = SN.seed;
+    SN.dressOpenLawns(batch);
+    SN.seed = lawnSeed;
     SN.staticCityTiles(SN.detailConcrete, batch.props, 760, 240, false, false);
     SN.staticCityTiles(SN.sidewalk, batch.paving, 650, 240, false, false);
     SN.staticCityTiles(SN.laundryMat, batch.fabric, 500, 240, false, false);

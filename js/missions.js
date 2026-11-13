@@ -873,7 +873,7 @@
     for (const c of SN.crews)
       c.anger = 0;
     for (const officer of SN.actors)
-      if (officer.kind === "police") {
+      if (officer.kind === "police" && !officer.guard) {
         officer.active = false;
         officer.inCar = null;
       }
@@ -1113,8 +1113,21 @@
       if (!a)
         continue;
       const role = o.melee ? 0 : o.room && i === count - 1 ? 3 : slot % 3, stats = SN.enemyRoles[role], angle = slot * 2.4;
-      const spot = o.room ? [[-531, 41], [-509, 41], [-523, 40.2], [-513, 45]][i % 4] : [o.x + Math.sin(angle) * (17 + slot % 2 * 4), o.z + Math.cos(angle) * (17 + slot % 2 * 4)],
-        p = SN.safePosition(spot[0], spot[1], 0.4);
+      const spot = o.room ? [[-531, 41], [-509, 41], [-523, 40.2], [-513, 45]][i % 4] : [o.x + Math.sin(angle) * (17 + slot % 2 * 4), o.z + Math.cos(angle) * (17 + slot % 2 * 4)];
+      let p = SN.safePosition(spot[0], spot[1], 0.4);
+      // A straight ring around the objective can drop a fighter on a roof, a
+      // raised terrace or a stair landing. They would be invincible up there and
+      // the mission could never advance, so keep every spawn on the objective's
+      // own walking level and walk the ring inward until one fits.
+      if (!o.room) {
+        const base = SN.surfaceHeight(o.x, o.z), sameLevel = (x, z) => Math.abs(SN.surfaceHeight(x, z) - base) <= 1.2;
+        for (let attempt = 0; attempt < 24 && !sameLevel(p.x, p.z); attempt++) {
+          const a = angle + attempt * 0.83, r = 17 - (attempt % 4) * 2.6;
+          p = SN.safePosition(o.x + Math.sin(a) * r, o.z + Math.cos(a) * r, 0.4);
+        }
+        if (!sameLevel(p.x, p.z))
+          p = SN.safePosition(o.x, o.z, 0.4);
+      }
       Object.assign(a, {
         x: p.x,
         z: p.z,
