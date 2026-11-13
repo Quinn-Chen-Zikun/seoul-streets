@@ -2774,8 +2774,14 @@
         Object.assign(SN.player, { x: boat.x, z: boat.z, y: boat.y, health: 100, dead: 0, bail: null, vy: 0 });
         SN.player.car = boat; SN.playerRoot.visible = true;
         SN.enterExit();
-        assert(!SN.player.car, "快艇无法下车");
+        assert(!SN.player.car, "快艇无法下船");
         assert(!SN.isWater(SN.player.x, SN.player.z, 0.2), "下船后落在水里");
+        const bridge = SN.bridges[0], pier = bridge.boatPiers.find(p => p.z > 420);
+        const channelZ = pier.z - 23;
+        assert(!SN.isWater(bridge.x, channelZ), "桥面不应变成水面");
+        assert(!SN.boatBlocked(bridge.x, channelZ, SN.PI / 2, boat), "快艇无法通过桥下航道");
+        assert(SN.boatBlocked(pier.x, pier.z, SN.PI / 2, boat), "快艇穿过了桥墩");
+        assert(!SN.boatLanding({ x: bridge.x, z: channelZ }), "快艇不能在江心下船到桥面");
         SN.player.bail = null; SN.playerRoot.visible = true;
         assert((SN.ambientBoats || []).length >= 2, "江面没有往来快艇");
         const amb = SN.ambientBoats[0], ax = amb.x;

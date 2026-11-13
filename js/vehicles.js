@@ -223,10 +223,8 @@
   };
 
   SN.exitPosition = function exitPosition(c) {
-    if (c.spec.boat) {
-      const land = SN.boatLanding(c);
-      if (land) return land;
-    }
+    if (c.spec.boat)
+      return SN.boatLanding(c);
     for (let ring = 0; ring < 4; ring++)
       for (let i = 0; i < 8; i++) {
         const a = c.yaw + SN.PI / 2 + i * SN.PI / 4, x = c.x + Math.sin(a) * (2.8 + ring), z = c.z + Math.cos(a) * (2.8 + ring);
@@ -385,8 +383,12 @@
       return;
     }
     if (SN.player.car) {
-      const c = SN.player.car,
-        exit = SN.exitPosition(c) || SN.safePosition(c.x + Math.cos(c.yaw) * (c.spec.width / 2 + 0.8), c.z - Math.sin(c.yaw) * (c.spec.width / 2 + 0.8), 0.3);
+      const c = SN.player.car, landing = SN.exitPosition(c);
+      if (c.spec.boat && !landing) {
+        SN.toast("靠近岸边后再下船", 2);
+        return;
+      }
+      const exit = landing || SN.safePosition(c.x + Math.cos(c.yaw) * (c.spec.width / 2 + 0.8), c.z - Math.sin(c.yaw) * (c.spec.width / 2 + 0.8), 0.3);
       c.parked = false;
       c.freeRolling = !c.spec.boat;
       if (c.spec.boat) {
@@ -400,7 +402,7 @@
       for (const leg of SN.playerRig.legs)
         leg.planted = false;
       SN.beginBailout(SN.player, c, exit, true);
-      SN.toast(SN.player.bail ? "跳车 · 翻滚后起身" : "已下车", 2);
+      SN.toast(c.spec.boat ? "已下船" : SN.player.bail ? "跳车 · 翻滚后起身" : "已下车", 2);
     }
     else {
       if (SN.military && SN.military.nearest && SN.military.nearestDistance < 5.5 && SN.boardAircraft(SN.military.nearest)) {
@@ -519,9 +521,14 @@
       sn = Math.sin(yaw), co = Math.cos(yaw);
     for (let i = 0; i <= segments; i++) {
       const along = span * (i / segments * 2 - 1), px = x + sn * along, pz = z + co * along;
-      // SN.blocked treats water itself as blocked, so only land under the hull
-      // counts here; open water and bridge decks stay navigable.
-      if (!SN.isWater(px, pz, 0))
+      // The road layer treats the bridge footprint as dry. On the river layer
+      // only the piers and low bridge sections block the hull.
+      if (!SN.inLake(px, pz) && (!SN.pointInRiver(px, pz) || SN.onIsland(px, pz)))
+        return true;
+      const bridge = SN.causewayAt(px, pz, -radius);
+      if (bridge && (SN.bridgeProfile(bridge, pz) - 2.15 < SN.WATER_Y + 0.18 + c.spec.height + 0.25 ||
+          bridge.boatPiers.some(pier => Math.abs(px - pier.x) < pier.halfWidth + radius &&
+            Math.abs(pz - pier.z) < pier.halfDepth + radius)))
         return true;
     }
     return false;
@@ -533,7 +540,7 @@
       for (let i = 0; i < 16; i++) {
         const a = i * SN.TAU / 16, d = 3.2 + ring * 1.4,
           x = c.x + Math.sin(a) * d, z = c.z + Math.cos(a) * d;
-        if (!SN.isWater(x, z, 0.45) && !SN.blocked(x, z, 0.32))
+        if ((!SN.pointInRiver(x, z) || SN.onIsland(x, z)) && !SN.isWater(x, z, 0.45) && !SN.blocked(x, z, 0.32))
           return { x, z };
       }
     return null;

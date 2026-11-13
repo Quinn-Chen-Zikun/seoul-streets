@@ -11298,10 +11298,14 @@ void main(){
         SN.addProp(lx, lz, 0.45, 0.45, 8.8);
       }
     }
+    b.boatPiers = [];
     for (let z = b.z0 + 75; z < b.z1 - 60; z += 46) {
       const top = SN.bridgeProfile(b, z) - 2.1;
-      for (const side of [-1, 1])
-        SN.record(SN.sideBatch, b.x + side * half * 0.55, (top - 2.5) / 2, z, 2.2, top + 2.5, 3.6);
+      for (const side of [-1, 1]) {
+        const x = b.x + side * half * 0.55;
+        SN.record(SN.sideBatch, x, (top - 2.5) / 2, z, 2.2, top + 2.5, 3.6);
+        b.boatPiers.push({ x, z, halfWidth: 1.1, halfDepth: 1.8 });
+      }
       SN.record(SN.sideBatch, b.x, top - 0.3, z, deckW * 0.77, 0.8, 3.9);
     }
     for (let z = b.z0 + 80; z < b.z1 - 80; z += 30)
@@ -17224,10 +17228,8 @@ void main(){
   };
 
   SN.exitPosition = function exitPosition(c) {
-    if (c.spec.boat) {
-      const land = SN.boatLanding(c);
-      if (land) return land;
-    }
+    if (c.spec.boat)
+      return SN.boatLanding(c);
     for (let ring = 0; ring < 4; ring++)
       for (let i = 0; i < 8; i++) {
         const a = c.yaw + SN.PI / 2 + i * SN.PI / 4, x = c.x + Math.sin(a) * (2.8 + ring), z = c.z + Math.cos(a) * (2.8 + ring);
@@ -17386,8 +17388,12 @@ void main(){
       return;
     }
     if (SN.player.car) {
-      const c = SN.player.car,
-        exit = SN.exitPosition(c) || SN.safePosition(c.x + Math.cos(c.yaw) * (c.spec.width / 2 + 0.8), c.z - Math.sin(c.yaw) * (c.spec.width / 2 + 0.8), 0.3);
+      const c = SN.player.car, landing = SN.exitPosition(c);
+      if (c.spec.boat && !landing) {
+        SN.toast("靠近岸边后再下船", 2);
+        return;
+      }
+      const exit = landing || SN.safePosition(c.x + Math.cos(c.yaw) * (c.spec.width / 2 + 0.8), c.z - Math.sin(c.yaw) * (c.spec.width / 2 + 0.8), 0.3);
       c.parked = false;
       c.freeRolling = !c.spec.boat;
       if (c.spec.boat) {
@@ -17401,7 +17407,7 @@ void main(){
       for (const leg of SN.playerRig.legs)
         leg.planted = false;
       SN.beginBailout(SN.player, c, exit, true);
-      SN.toast(SN.player.bail ? "跳车 · 翻滚后起身" : "已下车", 2);
+      SN.toast(c.spec.boat ? "已下船" : SN.player.bail ? "跳车 · 翻滚后起身" : "已下车", 2);
     }
     else {
       if (SN.military && SN.military.nearest && SN.military.nearestDistance < 5.5 && SN.boardAircraft(SN.military.nearest)) {
@@ -17520,9 +17526,14 @@ void main(){
       sn = Math.sin(yaw), co = Math.cos(yaw);
     for (let i = 0; i <= segments; i++) {
       const along = span * (i / segments * 2 - 1), px = x + sn * along, pz = z + co * along;
-      // SN.blocked treats water itself as blocked, so only land under the hull
-      // counts here; open water and bridge decks stay navigable.
-      if (!SN.isWater(px, pz, 0))
+      // The road layer treats the bridge footprint as dry. On the river layer
+      // only the piers and low bridge sections block the hull.
+      if (!SN.inLake(px, pz) && (!SN.pointInRiver(px, pz) || SN.onIsland(px, pz)))
+        return true;
+      const bridge = SN.causewayAt(px, pz, -radius);
+      if (bridge && (SN.bridgeProfile(bridge, pz) - 2.15 < SN.WATER_Y + 0.18 + c.spec.height + 0.25 ||
+          bridge.boatPiers.some(pier => Math.abs(px - pier.x) < pier.halfWidth + radius &&
+            Math.abs(pz - pier.z) < pier.halfDepth + radius)))
         return true;
     }
     return false;
@@ -17534,7 +17545,7 @@ void main(){
       for (let i = 0; i < 16; i++) {
         const a = i * SN.TAU / 16, d = 3.2 + ring * 1.4,
           x = c.x + Math.sin(a) * d, z = c.z + Math.cos(a) * d;
-        if (!SN.isWater(x, z, 0.45) && !SN.blocked(x, z, 0.32))
+        if ((!SN.pointInRiver(x, z) || SN.onIsland(x, z)) && !SN.isWater(x, z, 0.45) && !SN.blocked(x, z, 0.32))
           return { x, z };
       }
     return null;
@@ -34744,8 +34755,14 @@ void main(){
         Object.assign(SN.player, { x: boat.x, z: boat.z, y: boat.y, health: 100, dead: 0, bail: null, vy: 0 });
         SN.player.car = boat; SN.playerRoot.visible = true;
         SN.enterExit();
-        assert(!SN.player.car, "快艇无法下车");
+        assert(!SN.player.car, "快艇无法下船");
         assert(!SN.isWater(SN.player.x, SN.player.z, 0.2), "下船后落在水里");
+        const bridge = SN.bridges[0], pier = bridge.boatPiers.find(p => p.z > 420);
+        const channelZ = pier.z - 23;
+        assert(!SN.isWater(bridge.x, channelZ), "桥面不应变成水面");
+        assert(!SN.boatBlocked(bridge.x, channelZ, SN.PI / 2, boat), "快艇无法通过桥下航道");
+        assert(SN.boatBlocked(pier.x, pier.z, SN.PI / 2, boat), "快艇穿过了桥墩");
+        assert(!SN.boatLanding({ x: bridge.x, z: channelZ }), "快艇不能在江心下船到桥面");
         SN.player.bail = null; SN.playerRoot.visible = true;
         assert((SN.ambientBoats || []).length >= 2, "江面没有往来快艇");
         const amb = SN.ambientBoats[0], ax = amb.x;

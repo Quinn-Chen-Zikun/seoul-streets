@@ -800,10 +800,14 @@
         SN.addProp(lx, lz, 0.45, 0.45, 8.8);
       }
     }
+    b.boatPiers = [];
     for (let z = b.z0 + 75; z < b.z1 - 60; z += 46) {
       const top = SN.bridgeProfile(b, z) - 2.1;
-      for (const side of [-1, 1])
-        SN.record(SN.sideBatch, b.x + side * half * 0.55, (top - 2.5) / 2, z, 2.2, top + 2.5, 3.6);
+      for (const side of [-1, 1]) {
+        const x = b.x + side * half * 0.55;
+        SN.record(SN.sideBatch, x, (top - 2.5) / 2, z, 2.2, top + 2.5, 3.6);
+        b.boatPiers.push({ x, z, halfWidth: 1.1, halfDepth: 1.8 });
+      }
       SN.record(SN.sideBatch, b.x, top - 0.3, z, deckW * 0.77, 0.8, 3.9);
     }
     for (let z = b.z0 + 80; z < b.z1 - 80; z += 30)
